@@ -130,24 +130,11 @@ python run_dashboard.py
 7. User can now post tweets via /test-post endpoint
 ```
 
-### Why These Changes Were Necessary
-
-1. **Playwright Limitations**: 
-   - Unreliable browser automation
-   - Required maintaining browser sessions
-   - Prone to breaking with Twitter UI changes
-
-2. **OAuth 2.0 PKCE Benefits**:
-   - Standard, reliable authentication method
-   - No browser automation required
-   - Proper user context for posting tweets
-   - Secure token management
-
 ## 🐛 Common Issues & Solutions
 
 ### 403 Forbidden Error
 - **Cause**: Missing scopes or incorrect app configuration
-- **Solution**: Ensure all required scopes are included and app has Elevated Access
+- **Solution**: Ensure all required scopes are included
 
 ### Invalid State Parameter
 - **Cause**: Server restarts clearing in-memory state
@@ -187,26 +174,14 @@ floodme/
 
 Some changes were made during development that can be reverted based on your workflow needs:
 
-### **Playwright vs OAuth 2.0 Workflow**
-
-- **Current Setup**: Uses OAuth 2.0 PKCE for authentication (recommended)
-- **Alternative**: Can revert to Playwright-based authentication if needed
-
 #### **To Revert to Playwright Workflow:**
 1. **`run_dashboard.py`**: Change target from `websocket:app` back to `main:app`
-2. **`main.py`**: Restore any removed Playwright-related code
-3. **Authentication**: Use Playwright for Twitter login instead of OAuth 2.0
 
 #### **Files with Revertible Changes:**
 - `backend/main.py` - Contains original `/comment` endpoint
 - `run_dashboard.py` - Server target configuration
 - Any Playwright-specific code that was temporarily removed
 
-### **Why OAuth 2.0 is Recommended:**
-- More reliable than browser automation
-- Standard authentication method
-- Better error handling and debugging
-- No dependency on Twitter UI changes
 
 ## 📚 API Endpoints
 

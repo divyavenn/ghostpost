@@ -175,14 +175,6 @@ export default function TweetDisplay({ tweet, replyText, onPublish, onSkip }: Tw
     </div>
   );
 }
-}
-            ✅
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
 
 // Add type declaration
 declare global {

@@ -34,7 +34,7 @@ def start_backend():
     # Start uvicorn server
     cmd = [
         sys.executable, "-m", "uvicorn", 
-        "main:app", 
+        "websocket:app", 
         "--host", "0.0.0.0", 
         "--port", "8000",
         "--reload"

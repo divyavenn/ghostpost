@@ -71,6 +71,55 @@ def post_take(take: str) -> Dict:
     pprint.pp(payload)
     return push(payload)
 
+def post_take_with_token(take: str, access_token: str) -> Dict:
+    """Post a tweet using user access token"""
+    url = "https://api.x.com/2/tweets"
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {"text": take}
+    pprint.pp(payload)
+    
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
+    
+    if response.status_code >= 400:
+        print(f"❌ HTTP Error {response.status_code}: {response.text}")
+        response.raise_for_status()
+    
+    return response.json()
+
+def post_take_as_reply_with_token(prompt: str, item: Dict, access_token: str) -> Dict:
+    """Post a reply using user access token"""
+    from main import ask_model
+    
+    tweet_id = item["id"]
+    thread_text = "\n\n".join(item.get("thread", [])) if isinstance(item.get("thread"), list) else str(item.get("thread", ""))
+    text = ask_model(f"{prompt}\n\nContext:\n{thread_text}")
+
+    url = "https://api.x.com/2/tweets"
+    
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "text": text,
+        "reply": {"in_reply_to_tweet_id": tweet_id},
+    }
+    pprint.pp(payload)
+    
+    response = requests.post(url, headers=headers, json=payload, timeout=30)
+    
+    if response.status_code >= 400:
+        print(f"[error] {response.status_code} {response.text}")
+        response.raise_for_status()
+    
+    return response.json()
+
 # --- example usage ---
 if __name__ == "__main__":
     # quick auth probe: who am I?

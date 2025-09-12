@@ -7,7 +7,7 @@ import os
 # Put your OBELISK_KEY in an environment variable for safety
 OBELISK_KEY = os.getenv("OBELISK_KEY", "sk-9aef8f5c845e4d6aa0cff6d41ff456bb")
 
-app = FastAPI()
+app = FastAPI(title="FloodMe API")
 
 
 

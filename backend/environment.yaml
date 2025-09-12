@@ -1,0 +1,42 @@
+name: floodme-backend
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+    # Web framework and API
+    - fastapi>=0.104.0
+    - uvicorn[standard]>=0.24.0
+    - python-multipart>=0.0.6
+    
+    # HTTP requests
+    - requests>=2.31.0
+    
+    # Authentication and security
+    - python-jose[cryptography]>=3.3.0
+    - passlib[bcrypt]>=1.7.4
+    - python-dotenv>=1.0.0
+    
+    # Database and Supabase
+    - supabase>=2.0.0
+    - postgrest>=0.13.0
+    
+    # Web scraping and browser automation
+    - playwright>=1.40.0
+    
+    # WebSocket support
+    - websockets>=12.0
+    
+    # Data handling
+    - pydantic>=2.5.0
+    
+    # Development and testing
+    - pytest>=7.4.0
+    - pytest-asyncio>=0.21.0
+    - black>=23.0.0
+    - flake8>=6.0.0
+    
+    # Logging and monitoring
+    - structlog>=23.0.0

@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  floodme-backend:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - OBELISK_KEY=${OBELISK_KEY}
+      - TWITTER_BEARER=${TWITTER_BEARER}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+    volumes:
+      - ./storage_state.json:/app/storage_state.json
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw  # For X11 forwarding if needed
+    env_file:
+      - .env
+    restart: unless-stopped
+    # Resource limits for production
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 1G
+          cpus: '0.5'
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

@@ -3,6 +3,8 @@ from playwright.async_api import async_playwright
 
 STATE_FILE = Path("storage_state.json")
 print(Path.cwd())
+
+
 async def log_in(username: str, password: str, browser=None):
     async with async_playwright() as p:
         if browser is None:
@@ -23,8 +25,12 @@ async def log_in(username: str, password: str, browser=None):
         return browser, ctx
          
 if __name__ == "__main__":
-    username = "proudlurker"
-    password = r"JXJ-pfd3bdv*myu0whb"
+    import os
+    import dotenv
+    dotenv.load_dotenv()
+
+    username = os.getenv("TWITTER_USERNAME")
+    password = os.getenv("TWITTER_PASSWORD")
     import asyncio
     asyncio.run(log_in(username, password))
     print("Login completed. Check storage_state.json for session details.")

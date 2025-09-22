@@ -13,7 +13,7 @@ from pathlib import Path
 # Import existing modules
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from headless_fetch import collect_from_page
-from login import log_in
+from backend.headless_login import log_in
 from better_fetch import get_home
 from post_takes import post_take, post_take_as_reply
 from main import ask_model

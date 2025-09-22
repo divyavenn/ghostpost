@@ -32,61 +32,32 @@ npm run build
 cd ..
 ```
 
-### 2. Twitter Developer App Configuration
+Make sure
 
-**CRITICAL**: Proper Twitter app configuration is essential for the authentication to work.
+# ISSUES
 
-#### App Settings in Twitter Developer Portal:
+backend/oauth_utils.py:230 gives you a working manual OAuth PKCE flow: the script launches a local callback server, walks the user through authorizing your X app, swaps the code for tokens, and posts one tweet by prompting for text.
+Posting on a user’s behalf is therefore possible, but only through this CLI-side flow; your FastAPI service already has a similar test endpoint (backend/websocket.py:575-647) yet neither piece persists tokens or wires into a multi-user session.
+Headless scrolling lives elsewhere (backend/headless_fetch.py), but it is disconnected from the OAuth login—there’s no automated reuse of the granted tokens to drive that browser session.
+Pros
 
-1. **App Type**: Select **"Native App"** (Public client)
-   - This enables OAuth 2.0 User Context authentication
-   - Required for posting tweets with user permissions
+Uses OAuth 2.0 PKCE, which X/Twitter requires for user login—no password sharing or embedded secrets.
+Requests the correct scopes (tweet.read tweet.write users.read offline.access) so you can read/write tweets for the authorized user.
+Keeps the flow self-contained: spin up the helper server, get tokens, post.
+Cons / Gaps
 
-2. **App Permissions**: Select **"Read and write and Direct message"**
-   - Enables tweet posting capabilities
-   - Required for the `tweet.write` scope
+Everything is manual: you must run the script locally, copy the URL, and paste the tweet. No multi-user or web UI integration.
+Access/refresh tokens are only printed; there’s no secure storage, rotation tracking, or refresh scheduling. A production app needs to encrypt and persist them per user.
+The code assumes the redirect URI is accessible from the user’s browser; that breaks once you deploy behind HTTPS or without port forwarding.
+There’s no consent or state management for multiple tokens—user_tokens in backend/websocket.py is just an in-memory dict that resets on restart.
+Headless browsing logic doesn’t tie into the authenticated session, so there’s no guarantee you’re scrolling with the same user context you just authorized.
+Error handling is basic: network failures, token refresh errors, or partial responses bubble up as program exits.
 
-4. **Callback URI**: Set to `http://localhost:8000/auth/callback` 
-   - This is only for testing on localhost:8000. When this updates to some other domain, you will have
-    to update it on the developer portal too.
-   - Must match exactly in your app configuration
+# TODO 
+- Wire the PKCE flow into your FastAPI app so users authenticate through your web UI, and persist their tokens (hashed/encrypted) in a database.
+- Build a token refresh job and reuse the stored credentials when posting or running the headless browser.
+- Gate the headless browser automation behind the stored, user-specific tokens or session cookies so you’re truly acting as the authorized user.
 
-#### Required OAuth 2.0 Scopes:
-- `tweet.read` - Read tweets
-- `tweet.write` - Post tweets and replies
-- `users.read` - Read user information
-- `offline.access` - Refresh tokens for persistent sessions
-
-### 3. Environment Variables
-
-Create a `.env` file in the project root:
-
-```bash
-# Twitter OAuth 2.0 Configuration
-TWITTER_CLIENT_ID=your_client_id_here
-TWITTER_CLIENT_SECRET=your_client_secret_here
-
-# Obelisk API Key (for AI-generated content)
-OBELISK_KEY=your_obelisk_key_here
-```
-
-### 4. Run the Application
-
-```bash
-# Start the backend server
-python run_dashboard.py
-
-# The dashboard will be available at:
-# - Frontend: http://localhost:8000
-# - API Docs: http://localhost:8000/docs
-# - WebSocket: ws://localhost:8000/ws/
-```
-
-## 🔧 Key Technical Changes Made
-
-### OAuth 2.0 PKCE Implementation
-
-**Solution**: Implemented OAuth 2.0 PKCE (Proof Key for Code Exchange) authentication flow.
 
 #### Files Created/Modified:
 

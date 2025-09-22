@@ -5,7 +5,7 @@ import time
 import os
 
 
-BEARER = os.getenv("TWITTER_BEARER", 
+BEARER = os.getenv("TWITTER_BEARER_TOKEN", 
                    r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi")
 BASE   = "https://api.twitter.com/2"
 

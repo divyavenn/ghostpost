@@ -1,8 +1,11 @@
 
 
+import asyncio
 from fastapi import FastAPI
 import requests
 import os
+from read_tweets import read_tweets
+from utils import notify, error 
 
 # Put your OBELISK_KEY in an environment variable for safety
 OBELISK_KEY = os.getenv("OBELISK_KEY", "sk-9aef8f5c845e4d6aa0cff6d41ff456bb")
@@ -54,122 +57,50 @@ def ask_model(prompt: str, system_message: str = None):
 
     return {"message": message}
 
-def generate_replies_for_trending_tweets(json_path='trending_cache.json', overwrite_existing=False, max_tweets=None, delay_seconds=1):
-    """
-    Read tweets from trending_cache.json, generate a reply for each using ask_model,
-    and add the reply to each tweet object.
-    
-    Args:
-        json_path (str): Path to the trending_cache.json file
-        overwrite_existing (bool): If True, regenerate replies even if they already exist
-        max_tweets (int, optional): Maximum number of tweets to process
-        delay_seconds (float): Seconds to wait between API calls to avoid rate limiting
-        
-    Returns:
-        list: Updated list of tweet objects with replies added
-    """
-    import json
-    import os
+async def generate_replies(delay_seconds=1, overwrite = False):
+    from read_tweets import write_to_cache
     import time
-    from pathlib import Path
+    from read_tweets import read_from_cache
     
-    # Determine the correct path to the json file
-    if not os.path.isabs(json_path):
-        # If it's a relative path, check current directory and one level up
-        if os.path.exists(json_path):
-            file_path = json_path
-        elif os.path.exists(os.path.join('..', json_path)):
-            file_path = os.path.join('..', json_path)
-        else:
-            # Try to find the file in the backend directory
-            backend_dir = Path(__file__).parent
-            root_dir = backend_dir.parent
-            if os.path.exists(os.path.join(backend_dir, json_path)):
-                file_path = os.path.join(backend_dir, json_path)
-            elif os.path.exists(os.path.join(root_dir, json_path)):
-                file_path = os.path.join(root_dir, json_path)
-            else:
-                raise FileNotFoundError(f"Could not find {json_path}")
-    else:
-        file_path = json_path
+    tweets = await read_from_cache()
     
-    print(f"Reading tweets from: {file_path}")
-    
-    # Read the trending tweets
-    try:
-        with open(file_path, 'r') as f:
-            tweets = json.load(f)
-    except Exception as e:
-        print(f"Error reading JSON file: {e}")
-        return []
-    
-    # Limit the number of tweets to process if specified
-    if max_tweets is not None and max_tweets > 0:
-        tweets_to_process = tweets[:max_tweets]
-    else:
-        tweets_to_process = tweets
-    
-    # Process each tweet
-    processed_count = 0
-    for tweet in tweets_to_process:
+    for tweet in tweets:
         # Skip if reply already exists and we're not overwriting
-        if not overwrite_existing and 'reply' in tweet and tweet['reply']:
-            print(f"Skipping tweet {tweet.get('id')} as it already has a reply")
+        if 'reply' in tweet and tweet['reply'] and not overwrite:
             continue
         
         prompt = str(tweet.get('thread', []))
         handle = tweet.get('handle', 'unknown')
-        
-        
         # Get model's reply with appropriate delay for rate limiting
         try:
             response = ask_model(prompt = prompt)
-            print(response)
             reply = response.get('message', '')
             
             # Add the reply to the tweet object
             tweet['reply'] = reply
-            print(f"Generated reply for tweet {prompt} by @{handle}: {reply[:50]}...")
-            processed_count += 1
+            notify(f"Generated reply for tweet {prompt} by @{handle}: {reply[:50]}...")
             
-            # Add delay between requests to avoid rate limiting
-            if delay_seconds > 0 and processed_count < len(tweets_to_process):
-                time.sleep(delay_seconds)
+            time.sleep(delay_seconds)
+            
         except Exception as e:
-            print(f"Error generating reply for tweet {tweet.get('id')}: {e}")
+            error(f"Error generating reply for tweet {tweet.get('id')}: {e}")
             tweet['reply'] = "Error generating reply"
     
     # Save the updated tweets back to the file
-    try:
-        with open(file_path, 'w') as f:
-            json.dump(tweets, f, indent=2)
-        print(f"Updated {processed_count} tweets with replies in {file_path}")
-    except Exception as e:
-        print(f"Error saving updated JSON file: {e}")
+    await write_to_cache(tweets, "Generated replies for tweets")
     
     return tweets
 
-if __name__ == "__main__":
+async def run_all() -> None:
     # Directly process trending_cache.json with hardcoded parameters
-    print("Starting to generate replies for tweets in trending_cache.json...")
-    
-    # Hardcoded configuration
-    json_path = 'trending_cache.json'  # Path relative to the script
-    overwrite_existing = True          # Set to True to regenerate all replies
-    max_tweets = None                  # Process all tweets
-    delay_seconds = 1.0                # 1 second delay between API calls
-    
-    # Run the reply generation
-    tweets = generate_replies_for_trending_tweets(
-        json_path=json_path,
-        overwrite_existing=overwrite_existing,
-        max_tweets=max_tweets,
-        delay_seconds=delay_seconds
-    )
-    
-    # Print summary
-    print(f"Completed generating replies for {len(tweets)} tweets")
-    print("Done!")
+    await read_tweets()
+    await generate_replies()
+
+    notify("Done!")
+
+
+if __name__ == "__main__":
+    asyncio.run(run_all())
     
     # Original example for reference
     # prompt = str([

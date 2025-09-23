@@ -14,7 +14,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright, Browser, BrowserContext
 from headless_fetch import collect_from_page
 from backend.headless_login import log_in
-from better_fetch import get_home
+from backend.read_tweets import get_home
 from post_takes import post_take, post_take_as_reply
 from main import ask_model
 

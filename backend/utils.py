@@ -7,6 +7,9 @@ AUTH_COOKIE = "auth_token"
 
 def notify(msg: str):
     print(msg)
+    
+def error(msg: str):
+    raise RuntimeError(f"❌ {msg}")
 
 def cookie_still_valid(path: Path) -> bool:
     if not path.exists():

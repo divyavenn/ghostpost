@@ -3,8 +3,8 @@ import json
 import re
 from pathlib import Path
 from playwright.async_api import async_playwright
-from headless_fetch import collect_from_page
-from utils import notify, error 
+from .headless_fetch import collect_from_page
+from .utils import notify, error 
 
 # -------- Config --------
 USERNAME = "proudlurker"

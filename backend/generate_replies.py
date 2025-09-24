@@ -4,9 +4,9 @@ import asyncio
 from fastapi import FastAPI
 import requests
 import os
-from read_tweets import read_tweets
-from utils import notify, error 
-from read_tweets import USERNAME
+from .read_tweets import read_tweets
+from .utils import notify, error 
+from .read_tweets import USERNAME
 
 # Put your OBELISK_KEY in an environment variable for safety
 OBELISK_KEY = os.getenv("OBELISK_KEY", "sk-9aef8f5c845e4d6aa0cff6d41ff456bb")

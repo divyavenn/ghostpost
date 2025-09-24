@@ -5,9 +5,12 @@ import time
 import os
 
 
-BEARER = os.getenv("TWITTER_BEARER_TOKEN", 
-                   r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi")
-BASE   = "https://api.twitter.com/2"
+BEARER = os.getenv(
+    "TWITTER_BEARER_TOKEN",
+    r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi",
+)
+BASE = "https://api.twitter.com/2"
+
 
 def request_from_x(url, params=None):
     hdrs = {"Authorization": f"Bearer {BEARER}"}
@@ -24,16 +27,22 @@ def request_from_x(url, params=None):
     r.raise_for_status()
     return r.json()
 
-@lru_cache(maxsize=128)              
+
+@lru_cache(maxsize=128)
 def user_id(username: str) -> str:
     resp = request_from_x(f"{BASE}/users/by/username/{username}")
     return resp["data"]["id"]
 
+
 def timeline(username: str, max_results=100):
-    uid  = user_id(username)
-    resp = request_from_x(f"{BASE}/users/{uid}/tweets",
-                params={"max_results": max_results,
-                        "tweet.fields": "public_metrics,created_at"})
+    uid = user_id(username)
+    resp = request_from_x(
+        f"{BASE}/users/{uid}/tweets",
+        params={
+            "max_results": max_results,
+            "tweet.fields": "public_metrics,created_at",
+        },
+    )
     return resp["data"]
 
 
@@ -44,5 +53,3 @@ if __name__ == "__main__":
     tweets = timeline("divya_venn", max_results=5)
     for t in tweets:
         print(t)
-        
-        

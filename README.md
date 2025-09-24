@@ -29,7 +29,10 @@ source $HOME/.local/bin/env
 ./setup_venv.sh
 
 # Run your FastAPI app
-uv run uvicorn backend.generate_replies:app --reload
+./start_backend.sh
+
+# test the /comment endpoint (leave start_backend.sh running) 
+./test_backend.sh
 
 # Development tools
 uv run black .
@@ -38,8 +41,6 @@ uv run pytest
 
 
 # Install additional dependencies
-source .venv/bin/activate
-uv pip install playwright python-dotenv
 playwright install chromium
 
 # Install frontend dependencies

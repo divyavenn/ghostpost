@@ -1,6 +1,7 @@
 """OAuth 2.0 PKCE utilities for X (Twitter) authentication."""
 
 import base64
+from datetime import datetime, timezone
 import hashlib
 import os
 import secrets
@@ -10,10 +11,8 @@ from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import dotenv
-
-from persist_token import load_token_cache, persist_token_to_file
 from utils import error, notify
-
+from user import get_user_info
 
 dotenv.load_dotenv()
 
@@ -82,7 +81,6 @@ def exchange_code_for_token(code: str, code_verifier: str) -> Dict[str, Any]:
 
 
 def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
-    """Refresh the access token using the long-lived refresh token."""
     import requests
 
     url = f"{BASE_URL}/oauth2/token"
@@ -92,22 +90,19 @@ def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
         "refresh_token": refresh_token,
     }
 
-    response = requests.post(url, data=data)
+    credentials = f"{client_id}:{client_secret}"
+    encoded_credentials = base64.b64encode(credentials.encode("utf-8")).decode("utf-8")
+    headers = {
+            "Authorization": f"Basic {encoded_credentials}",
+            "Content-Type": "application/x-www-form-urlencoded",
+    }
+
+
+    response = requests.post(url, data=data, headers=headers)
     response.raise_for_status()
     return response.json()
 
 
-def get_user_info(access_token: str) -> Dict[str, Any]:
-    """Fetch the authenticated user's metadata."""
-    import requests
-
-    url = "https://api.twitter.com/2/users/me"
-    params = {"user.fields": "id,username,name,public_metrics"}
-    headers = {"Authorization": f"Bearer {access_token}"}
-
-    response = requests.get(url, headers=headers, params=params)
-    response.raise_for_status()
-    return response.json()
 
 
 def _start_callback_server(redirect_uri: str, expected_state: str) -> Tuple[HTTPServer, threading.Event]:
@@ -176,9 +171,9 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> Tuple[HTTP
 
 
 async def oauth_login(username: str, state_file: str = "storage_state.json") -> str:
-    """Complete the OAuth flow via Playwright and persist the resulting tokens."""
+    from utils import store_browser_state, store_token
     from playwright.async_api import async_playwright
-
+    notify(f"🔐 Launching OAuth login for {username}")
     state = secrets.token_urlsafe(32)
     server, auth_event = _start_callback_server(redirect_uri, state)
     auth_url, code_verifier = get_authorization_url(state)
@@ -192,9 +187,8 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
 
             if not auth_event.wait(timeout=300):
                 error("OAuth browser flow timed out")
-                raise RuntimeError("OAuth flow timed out waiting for callback")
 
-            await context.storage_state(path=state_file)
+            await store_browser_state(username, context)
             await context.close()
             await browser.close()
 
@@ -206,7 +200,6 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
     code = params.get("code", [""])[0]
     if not code:
         error("Authorization code missing from callback response.")
-        raise RuntimeError("Authorization code missing from callback response.")
 
     token_response = exchange_code_for_token(code, code_verifier)
     access_token = token_response.get("access_token")
@@ -217,51 +210,39 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
     if not refresh_token:
         error("Refresh token not returned by X API.")
 
-    persist_token_to_file(username, refresh_token)
-    notify(f"💾 Stored OAuth refresh token for {username}")
+    store_token(username, refresh_token)
+
 
     return access_token
 
 
 async def ensure_access_token(username: str, state_file: str = "storage_state.json") -> str:
     """Return an access token for the user, refreshing or re-authenticating as needed."""
-    refresh_token = load_token_cache().get(username)
-
-    if isinstance(refresh_token, str) and refresh_token:
-        try:
-            refreshed = refresh_access_token(refresh_token)
-            access_token = refreshed.get("access_token")
-            if access_token:
-                new_refresh = refreshed.get("refresh_token") or refresh_token
-                persist_token_to_file(username, new_refresh)
-                notify(f"🔄 Refreshed OAuth token for {username}")
-                return access_token
-            notify(f"⚠️ Refresh response missing access token for {username}")
-        except Exception as exc:  # pragma: no cover - network errors
-            notify(f"⚠️ Failed to refresh token for {username}: {exc}")
-
-    notify(f"🔐 Launching OAuth login for {username}")
-    return await oauth_login(username=username, state_file=state_file)
+    from utils import read_user_token, store_token
+    try:
+        refresh_token = read_user_token(username)
+        refreshed = refresh_access_token(refresh_token)
+        access_token = refreshed.get("access_token")
+        new_refresh = refreshed.get("refresh_token") or refresh_token
+        store_token(username, new_refresh)
+        return access_token
+    except RuntimeError:
+        return await oauth_login(username=username, state_file=state_file)
 
 
 def main() -> None:
-    """CLI helper to obtain an access token and optional tweet."""
     import asyncio
-
-    username = os.getenv("TWITTER_USERNAME") or input("Twitter username (storage key): ").strip()
-    if not username:
-        raise SystemExit("Username required to store tokens.")
+    
+    username = "proudlurker"
 
     access_token = asyncio.run(ensure_access_token(username))
-    print("Access token ready.")
-
     try:
         user_info = get_user_info(access_token)
         handle = user_info.get("data", {}).get("username")
         if handle:
-            print(f"Authenticated as @{handle}")
+            notify(f"Authenticated as @{handle}")
     except Exception as exc:  # pragma: no cover - network required
-        print(f"Warning: could not fetch user info ({exc})")
+        error(f"Warning: could not fetch user info ({exc})")
 
 
 if __name__ == "__main__":

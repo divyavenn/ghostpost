@@ -28,7 +28,7 @@ export default function TweetDisplay({ tweet, replyText, onPublish, onSkip }: Tw
   const displayName = "stef 🫴";
   const handle = "@stefaesthesia";
   const verified = true;
-  const userAvatar = "https://pbs.twimg.com/profile_images/1700172320733253632/2QWw2Xrj_400x400.jpg";
+  const userAvatar = "https://pbs.twimg.com/profile_images/1803721062133211138/s3Zbrfw__normal.jpg";
   const myAvatar = "https://randomuser.me/api/portraits/women/44.jpg";
   
   // Parse created_at to show a relative time (like "5h")

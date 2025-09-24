@@ -50,15 +50,6 @@ def main():
     if not check_dependencies():
         return
     
-    # Check if .env file exists
-    env_file = Path(".env")
-    if not env_file.exists():
-        print("⚠️  .env file not found!")
-        print("💡 Copy .env.example to .env and configure your credentials")
-        response = input("Continue anyway? (y/N): ")
-        if response.lower() != 'y':
-            return
-    
     try:
         # Start backend server
         backend_process = start_backend()

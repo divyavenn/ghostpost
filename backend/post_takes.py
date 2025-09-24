@@ -2,7 +2,7 @@ import os
 import re
 import requests
 from typing import Dict
-from main import ask_model
+from backend.generate_replies import ask_model
 import pprint
 from urllib.parse import unquote
 
@@ -93,7 +93,7 @@ def post_take_with_token(take: str, access_token: str) -> Dict:
 
 def post_take_as_reply_with_token(prompt: str, item: Dict, access_token: str) -> Dict:
     """Post a reply using user access token"""
-    from main import ask_model
+    from backend.generate_replies import ask_model
     
     tweet_id = item["id"]
     thread_text = "\n\n".join(item.get("thread", [])) if isinstance(item.get("thread"), list) else str(item.get("thread", ""))

@@ -4,10 +4,9 @@ import re
 from pathlib import Path
 from playwright.async_api import async_playwright
 from headless_fetch import collect_from_page
-from utils import notify, cookie_still_valid, error 
+from utils import notify, error 
 
 # -------- Config --------
-STATE_FILE = Path("storage_state.json")
 USERNAME = "proudlurker"
 PASSWORD = r"JXJ-pfd3bdv*myu0whb"
 see_browser = True  # set to True to see the browser in action (for debugging)
@@ -16,13 +15,13 @@ QUERIES   = [
 ]
 USERNAMES = ["divya_venn"]
 MAX_TWEETS_RETRIEVE = 30  # per user or query
-CACHE_FILE = "trending_cache.json"
 
 
 
 # headless login, legacy code, currently use oAuth instead
 
 async def log_in(username: str, password: str, browser=None):
+    from utils import store_browser_state
     if browser is None:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=(not see_browser))
@@ -36,23 +35,18 @@ async def log_in(username: str, password: str, browser=None):
     await page.press('input[name="password"]', "Enter")
     await page.wait_for_url("https://x.com/home", timeout=30_000)
 
-    await ctx.storage_state(path=STATE_FILE)
-    notify("✅ Logged in; storage_state.json written")
+    await store_browser_state(username, ctx)
     return browser, ctx
 
 async def get_home(browser=None):
+    from utils import read_browser_state
     if browser is None:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=(not see_browser))
-    if STATE_FILE.exists() and cookie_still_valid(STATE_FILE):
-        ctx = await browser.new_context(storage_state=STATE_FILE)
-        notify("✅ auth_token looks fresh — using existing session")
-        return browser, ctx
-    else:
-        if STATE_FILE.exists():
-            STATE_FILE.unlink(missing_ok=True)
-        notify("🔐 Relogging (no/expired cookie)")
-        return await log_in(USERNAME, PASSWORD, browser)
+    session = await read_browser_state(browser, USERNAME)
+    if session:
+        return session
+    error("No authorization found; user needs to log in.")
 
 # -------- Core collectors --------
 GRAPHQL_TWEET_RE = re.compile(r"/i/api/graphql/[^/]+/(UserTweets|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)")
@@ -97,22 +91,8 @@ async def gather_trending(usernames, queries, max_scrolls=3):
         return results
 
 
-async def write_to_cache(tweets, description):
-    with open(CACHE_FILE, "w") as f:
-            json.dump(tweets, f, indent=2, ensure_ascii=False)
-    notify(f"💾{description} and wrote to cache")
-
-async def read_from_cache():
-    notify("💾 Reading tweets from cache")
-    try:
-        with open(CACHE_FILE, 'r') as f:
-            tweets = json.load(f)
-        return tweets
-    except Exception as e:
-        error(f"Error reading JSON file: {e}")
-        return []
-    
-async def read_tweets():
+async def read_tweets(username = USERNAME):
+    from utils import write_to_cache
     sorted_items = []
     # write results to cache file
     trending = await gather_trending(USERNAMES, QUERIES, max_scrolls=3)
@@ -120,20 +100,12 @@ async def read_tweets():
     sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
     if MAX_TWEETS_RETRIEVE:
         sorted_items = sorted_items[:MAX_TWEETS_RETRIEVE]  # top 50
-        write_to_cache(sorted_items, "Scraped relevant tweets")  
+        await write_to_cache(sorted_items, "Scraped relevant tweets", username=username)
     
 if __name__ == "__main__":
     async def main():
-        import os
         sorted_items = []
         
-        # # check if cached results exist
-        cache_file = "trending_cache.json"
-        # if os.path.exists(cache_file):
-        #     with open(cache_file) as f:
-        #         sorted_items = json.load(f)
-        #     notify("📂 Using cached trending results")
-        # else:
         if True:
             # write results to cache file
             trending = await gather_trending(USERNAMES, QUERIES, max_scrolls=3)
@@ -141,9 +113,8 @@ if __name__ == "__main__":
             sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
             if MAX_TWEETS_RETRIEVE:
                 sorted_items = sorted_items[:MAX_TWEETS_RETRIEVE]  # top 50
-            with open(cache_file, "w") as f:
-                json.dump(sorted_items, f, indent=2, ensure_ascii=False)
-            notify("💾 Wrote trending results to cache")
+            from utils import write_to_cache
+            await write_to_cache(sorted_items, "Wrote trending results", username=USERNAME)
 
 
     asyncio.run(main())

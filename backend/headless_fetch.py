@@ -1,7 +1,7 @@
 import re
 import asyncio
 from asyncio import sleep
-from full_thread import get_thread
+from .full_thread import get_thread
 
 TWEET_API_RE = re.compile(
   r"(UserTweets|TimelineTweets|AdaptiveSearchTimeline|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)"

@@ -13,12 +13,34 @@
 git clone <repository-url>
 cd floodme
 
-# Create and activate conda environment
-conda env create -f backend/environment.yaml
-conda activate floodme-backend
+## MAC uv install ##
+# install homebrew and uv if not already installed
+# homebrew 
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# uv 
+brew install uv
+
+## LINUX (ubuntu) uv install ##
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+
+
+# Setup uv .venv (one time) 
+./setup_venv.sh
+
+# Run your FastAPI app
+./start_backend.sh
+
+# test the /comment endpoint (leave start_backend.sh running) 
+./test_backend.sh
+
+# Development tools
+uv run black .
+uv run flake8
+uv run pytest
+
 
 # Install additional dependencies
-pip install playwright python-dotenv
 playwright install chromium
 
 # Install frontend dependencies

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface TweetData {
   id: string;
@@ -26,15 +26,22 @@ interface TweetDisplayProps {
 
 export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayProps) {
   const [editedText, setEditedText] = useState(tweet.reply);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // TODO: replace demo user metadata with real data once available.
   const displayName = tweet.username;
   const handle = tweet.handle;
-  const verified = true;
   const userAvatar = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_200x200.png';
   const myAvatar = 'https://pbs.twimg.com/profile_images/1803721062133211138/s3Zbrfw__normal.jpg';
 
-  const threadMessages = useMemo(() => [tweet.text, ...(tweet.thread ?? [])], [tweet.text, tweet.thread]);
+  const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [editedText]);
 
   const getRelativeTime = (dateStr: string): string => {
     try {
@@ -51,61 +58,84 @@ export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayP
     }
   };
 
+  const formatMetric = (value: number): string => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+    return String(value);
+  };
+
   return (
     <div className="mx-auto w-full max-w-xl rounded-2xl bg-black text-white shadow-2xl">
-      <div className="flex items-center justify-between border-b border-neutral-800 px-5 py-3">
+      <div className="flex items-center justify-between px-5 py-3">
         <button
           type="button"
           onClick={onSkip}
-          className="rounded-full p-2 text-xl leading-none text-white hover:bg-neutral-900"
+          className="rounded-full p-2 text-xl leading-none text-white transition hover:bg-neutral-900"
           aria-label="Close"
         >
           ×
         </button>
-        <span className="text-base font-bold text-sky-400">Drafts</span>
       </div>
 
-      <div className="px-5 py-4">
-        <div className="divide-y divide-neutral-800">
+      <div className="px-5 py-3">
+        <div className="space-y-4 pb-1">
           {threadMessages.map((message, index) => (
-            <div key={`${tweet.id}-${index}`} className="flex gap-3 py-4 first:pt-0">
+            <div key={`${tweet.id}-${index}`} className="relative flex gap-3">
               {index === 0 ? (
                 <img src={userAvatar} alt={displayName} className="h-12 w-12 rounded-full" />
               ) : (
                 <div className="h-12 w-12" aria-hidden="true" />
               )}
-              <div className="flex-1 space-y-1">
+              <div className="flex-1 space-y-1 pb-4">
                 {index === 0 && (
                   <div className="flex items-center gap-2 text-sm text-neutral-400">
                     <span className="text-base font-bold text-white">{displayName}</span>
-                    {verified && <span className="text-sky-400">✓</span>}
-                    <span>{handle}</span>
+                    <span>{'@' + handle}</span>
                     {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
                   </div>
                 )}
-                <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-white">{message}</p>
+                <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>
+                {index < threadMessages.length - 1 && (
+                  <div className="absolute inset-x-14 bottom-0 border-t border-neutral-800" aria-hidden="true" />
+                )}
               </div>
             </div>
           ))}
         </div>
-        <p className="text-sm text-neutral-500">
-          Replying to <span className="text-sky-400">{handle}</span>
+
+        <div className="flex items-center gap-8 pl-14 text-sm text-neutral-500" aria-label="Tweet engagement">
+          <div className="flex items-center gap-2">
+            <i className="fa-regular fa-comment text-lg text-neutral-500" aria-hidden="true" />
+            <span className="font-medium">{formatMetric(tweet.replies)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <i className="fa-solid fa-retweet text-lg text-neutral-500" aria-hidden="true" />
+            <span className="font-medium">{formatMetric(tweet.retweets)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <i className="fa-regular fa-heart text-lg text-neutral-500" aria-hidden="true" />
+            <span className="font-medium">{formatMetric(tweet.likes)}</span>
+          </div>
+        </div>
+
+        <p className="text-sm text-neutral-500 pt-7">
+          Replying to <span className="text-sky-400">{'@' + handle}</span>
         </p>
-        <div className="flex gap-3 pt-4">
+        <div className="flex gap-3 pt-6">
           <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
           <div className="flex-1">
             <textarea
+              ref={textareaRef}
               placeholder="Post your reply"
               value={editedText}
               onChange={(e) => setEditedText(e.target.value)}
-              className="w-full resize-none bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
-              rows={3}
+              className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
             />
           </div>
         </div>
       </div>
 
-      <div className="flex items-center justify-end border-t border-neutral-800 px-5 py-3">
+      <div className="flex items-center justify-end px-5 pb-8 pt-0">
         <button
           type="button"
           onClick={() => onPublish(editedText)}

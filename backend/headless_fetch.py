@@ -1,16 +1,16 @@
-import re
 import asyncio
+import re
 from asyncio import sleep
+from datetime import UTC
+
 from .full_thread import get_thread
 
-TWEET_API_RE = re.compile(
-    r"(UserTweets|TimelineTweets|AdaptiveSearchTimeline|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)"
-)
+TWEET_API_RE = re.compile(r"(UserTweets|TimelineTweets|AdaptiveSearchTimeline|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)")
 
 
 # --- helpers you already had/asked for ---
 def within_hours(created_at: str, hours: int = 72) -> bool:
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta
 
     def parse_twitter_date(s: str) -> datetime:
         return datetime.strptime(s, "%a %b %d %H:%M:%S %z %Y")
@@ -19,20 +19,14 @@ def within_hours(created_at: str, hours: int = 72) -> bool:
         dt = parse_twitter_date(created_at)
     except Exception:
         return False
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return dt >= now - timedelta(hours=hours)
 
 
 def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
     """Extract handle by searching for user ID in the data structure"""
     # Try to get a user ID to look for
-    uid = (
-        tweet_res.get("legacy", {}).get("user_id_str")
-        or tweet_res.get("rest_id")
-        or (
-            tweet_res.get("core", {}).get("user_results", {}).get("result", {}) or {}
-        ).get("rest_id")
-    )
+    uid = (tweet_res.get("legacy", {}).get("user_id_str") or tweet_res.get("rest_id") or (tweet_res.get("core", {}).get("user_results", {}).get("result", {}) or {}).get("rest_id"))
 
     # Check for direct screen_name in common paths first
     if isinstance(tweet_res, dict):
@@ -69,12 +63,12 @@ def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
             # Continue searching
             for v in obj.values():
                 r = walk(v)
-                if r:
+                if r: 
                     return r
         elif isinstance(obj, list):
             for v in obj:
                 r = walk(v)
-                if r:
+                if r: 
                     return r
         return None
 
@@ -98,11 +92,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
         eid = (entry.get("entryId") or "").lower()
         if eid.startswith(("promoted-", "promotedtweet-", "promotedtweet", "promoted")):
             return True
-        elem = (
-            entry.get("content", {}).get("clientEventInfo", {}).get("element")
-            or entry.get("clientEventInfo", {}).get("element")
-            or ""
-        )
+        elem = (entry.get("content", {}).get("clientEventInfo", {}).get("element") or entry.get("clientEventInfo", {}).get("element") or "")
         if isinstance(elem, str) and "promoted" in elem.lower():
             return True
         content = entry.get("content") or {}
@@ -117,25 +107,14 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
             return legacy["full_text"]
         if "text" in legacy and legacy["text"]:
             return legacy["text"]
-        note = (
-            tweet_res.get("note_tweet", {})
-            .get("note_tweet_results", {})
-            .get("result", {})
-            .get("text")
-        )
+        note = (tweet_res.get("note_tweet", {}).get("note_tweet_results", {}).get("result", {}).get("text"))
         if note:
             return note
         return ""
 
     def extract_followers(tweet_res: dict) -> int:
         try:
-            followers = (
-                ((tweet_res or {}).get("core") or {})
-                .get("user_results", {})
-                .get("result", {})
-                .get("legacy", {})
-                .get("followers_count")
-            )
+            followers = (((tweet_res or {}).get("core") or {}).get("user_results", {}).get("result", {}).get("legacy", {}).get("followers_count"))
             return int(followers) if isinstance(followers, int) else 0
         except Exception:
             return 0
@@ -179,23 +158,9 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                 return user_name, user_handle
 
         # Structure 4: Look in known potential paths based on observed API response structures
-        paths = [
-            ["legacy", "user"],
-            ["user"],
-            ["core", "user_results", "result", "legacy"],
-            ["core", "user_results", "result"],
-            [
-                "legacy",
-                "retweeted_status_result",
-                "result",
-                "core",
-                "user_results",
-                "result",
-                "legacy",
-            ],
-            ["legacy", "retweeted_status_result", "result", "legacy", "user"],
-            ["tweet", "core", "user_results", "result", "legacy"],
-        ]
+        paths = [["legacy", "user"], ["user"], ["core", "user_results", "result", "legacy"], ["core", "user_results", "result"],
+                 ["legacy", "retweeted_status_result", "result", "core", "user_results", "result", "legacy"], ["legacy", "retweeted_status_result", "result", "legacy", "user"],
+                 ["tweet", "core", "user_results", "result", "legacy"]]
 
         for path in paths:
             current = tweet_res
@@ -275,9 +240,9 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
         if text.startswith("RT @"):
             return False
         in_reply_to_user = legacy.get("in_reply_to_user_id_str")
-        # user_id          = legacy.get("user_id_str")
+        #user_id          = legacy.get("user_id_str")
         is_reply = legacy.get("in_reply_to_status_id_str") or in_reply_to_user
-        # if is_reply and (not user_id or not in_reply_to_user or user_id != in_reply_to_user):
+        #if is_reply and (not user_id or not in_reply_to_user or user_id != in_reply_to_user):
         if is_reply:
             return False
         return True
@@ -387,9 +352,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         continue
 
                     # optional: re-enable filters once debugged
-                    if (not is_original_post(legacy)) or (
-                        int(legacy.get("favorite_count", 0)) < min_likes
-                    ):
+                    if (not is_original_post(legacy)) or (int(legacy.get("favorite_count", 0)) < min_likes):
                         dbg("filter_original_or_likes", legacy.get("id_str"), resp=resp)
                         continue
 

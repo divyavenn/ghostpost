@@ -1,10 +1,11 @@
 import asyncio
-from fastapi import FastAPI
-import requests
 import os
-from .read_tweets import read_tweets
-from .utils import notify, error
+
+import requests
+from fastapi import FastAPI
+
 from .read_tweets import USERNAME
+from .utils import error, notify
 
 # Put your OBELISK_KEY in an environment variable for safety
 OBELISK_KEY = os.getenv("OBELISK_KEY", "sk-9aef8f5c845e4d6aa0cff6d41ff456bb")
@@ -16,20 +17,17 @@ app = FastAPI(title="FloodMe API")
 def ask_model(prompt: str, model: str = "divya-2-bon"):
     url = "https://obelisk.dread.technology/api/chat/completions"
 
-    headers = {
-        "Authorization": f"Bearer {OBELISK_KEY}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
 
     payload = {
         "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": "you are scrolling twitter. Casually respond to this thread in two to three lines as a stranger",
-            },
-            {"role": "user", "content": prompt},
-        ],
+        "messages": [{
+            "role": "system",
+            "content": "you are scrolling twitter. Casually respond to this thread in two to three lines as a stranger"
+        }, {
+            "role": "user",
+            "content": prompt
+        }]
     }
 
     try:
@@ -50,8 +48,9 @@ def ask_model(prompt: str, model: str = "divya-2-bon"):
 
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
-    from utils import read_from_cache, write_to_cache
     import time
+
+    from utils import read_from_cache, write_to_cache
 
     tweets = await read_from_cache(username=username)
     count = 0
@@ -60,26 +59,24 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
         if "reply" in tweet and tweet["reply"] and not overwrite:
             continue
 
-        prompt = str(tweet.get("thread", []))
-        handle = tweet.get("handle", "unknown")
+        prompt = str(tweet.get('thread', []))
+        tweet.get('handle', 'unknown')
         # Get model's reply with appropriate delay for rate limiting
         try:
             response = ask_model(prompt=prompt)
-            reply = response.get("message", "")
+            reply = response.get('message', '')
             count += 1
             # Add the reply to the tweet object
-            tweet["reply"] = reply
+            tweet['reply'] = reply
 
             time.sleep(delay_seconds)
 
         except Exception as e:
             error(f"Error generating reply for tweet {tweet.get('id')}: {e}")
-            tweet["reply"] = "Error generating reply"
+            tweet['reply'] = "Error generating reply"
 
     # Save the updated tweets back to the file
-    await write_to_cache(
-        tweets, f"Generated replies for {count} tweets", username=username
-    )
+    await write_to_cache(tweets, f"Generated replies for {count} tweets", username=username)
 
     return tweets
 

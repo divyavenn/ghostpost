@@ -1,18 +1,17 @@
 """OAuth 2.0 PKCE utilities for X (Twitter) authentication."""
 
 import base64
-from datetime import datetime, timezone
 import hashlib
 import os
 import secrets
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import dotenv
-from utils import error, notify
 from user import get_user_info
+from utils import error, notify
 
 dotenv.load_dotenv()
 
@@ -35,7 +34,7 @@ def generate_code_challenge(code_verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("utf-8")
 
 
-def get_authorization_url(state: Optional[str] = None) -> Tuple[str, str]:
+def get_authorization_url(state: str | None = None) -> tuple[str, str]:
     """Return the authorize URL and the code verifier used to build it."""
     code_verifier = generate_code_verifier()
     code_challenge = generate_code_challenge(code_verifier)
@@ -57,7 +56,7 @@ def get_authorization_url(state: Optional[str] = None) -> Tuple[str, str]:
     return auth_url, code_verifier
 
 
-def exchange_code_for_token(code: str, code_verifier: str) -> Dict[str, Any]:
+def exchange_code_for_token(code: str, code_verifier: str) -> dict[str, Any]:
     """Exchange an authorization code + verifier for an access token payload."""
     import requests
 
@@ -82,7 +81,7 @@ def exchange_code_for_token(code: str, code_verifier: str) -> Dict[str, Any]:
     return response.json()
 
 
-def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
+def refresh_access_token(refresh_token: str) -> dict[str, Any]:
     import requests
 
     url = f"{BASE_URL}/oauth2/token"
@@ -104,9 +103,7 @@ def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     return response.json()
 
 
-def _start_callback_server(
-    redirect_uri: str, expected_state: str
-) -> Tuple[HTTPServer, threading.Event]:
+def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTPServer, threading.Event]:
     """Spin up a local HTTP server to capture the OAuth redirect."""
     parsed = urlparse(redirect_uri)
     if parsed.scheme != "http":
@@ -119,6 +116,7 @@ def _start_callback_server(
     authorization_event = threading.Event()
 
     class OAuthCallbackHandler(BaseHTTPRequestHandler):  # type: ignore[misc]
+
         def log_message(self, format: str, *args) -> None:  # pragma: no cover
             return
 
@@ -151,9 +149,7 @@ def _start_callback_server(
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.end_headers()
-            self.wfile.write(
-                b"<html><body><h1>Authorization complete.</h1><p>You may close this window.</p></body></html>"
-            )
+            self.wfile.write(b"<html><body><h1>Authorization complete.</h1><p>You may close this window.</p></body></html>")
 
             authorization_event.set()
             threading.Thread(target=self.server.shutdown, daemon=True).start()  # type: ignore[arg-type]
@@ -161,9 +157,7 @@ def _start_callback_server(
     try:
         server = HTTPServer((host, port), OAuthCallbackHandler)
     except OSError as exc:  # pragma: no cover - depends on environment
-        raise SystemExit(
-            f"Could not start callback server on {host}:{port}. Update TWITTER_REDIRECT_URI to a free port."
-        ) from exc
+        raise SystemExit(f"Could not start callback server on {host}:{port}. Update TWITTER_REDIRECT_URI to a free port.") from exc
 
     server.authorization_params = None  # type: ignore[attr-defined]
 
@@ -174,9 +168,8 @@ def _start_callback_server(
 
 
 async def oauth_login(username: str, state_file: str = "storage_state.json") -> str:
-    from utils import store_browser_state, store_token
     from playwright.async_api import async_playwright
-
+    from utils import store_browser_state, store_token
     notify(f"🔐 Launching OAuth login for {username}")
     state = secrets.token_urlsafe(32)
     server, auth_event = _start_callback_server(redirect_uri, state)

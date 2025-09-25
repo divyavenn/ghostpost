@@ -6,25 +6,11 @@ Runs both the backend server and opens the frontend
 
 import subprocess
 import sys
-import os
 import time
 import webbrowser
 from pathlib import Path
 
 
-def check_dependencies():
-    """Check if all required dependencies are installed"""
-    try:
-        import fastapi
-        import uvicorn
-        import playwright
-
-        print("✅ All dependencies found")
-        return True
-    except ImportError as e:
-        print(f"❌ Missing dependency: {e}")
-        print("💡 Run: python setup.py to install dependencies")
-        return False
 
 
 def start_backend():
@@ -35,17 +21,7 @@ def start_backend():
     backend_dir = Path(__file__).parent / "backend"
 
     # Start uvicorn server
-    cmd = [
-        sys.executable,
-        "-m",
-        "uvicorn",
-        "websocket:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "8000",
-        "--reload",
-    ]
+    cmd = [sys.executable, "-m", "uvicorn", "websocket:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
     return subprocess.Popen(cmd, cwd=backend_dir)
 
@@ -53,10 +29,6 @@ def start_backend():
 def main():
     print("🤖 Twitter Agent Dashboard Launcher")
     print("=" * 40)
-
-    # Check dependencies
-    if not check_dependencies():
-        return
 
     try:
         # Start backend server

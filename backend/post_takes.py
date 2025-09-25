@@ -1,10 +1,10 @@
 import os
-import re
-import requests
-from typing import Dict
-from backend.generate_replies import ask_model
 import pprint
 from urllib.parse import unquote
+
+import requests
+
+from backend.generate_replies import ask_model
 
 # --- config ---
 # OAuth 2.0 *user access token* with permission to create posts (tweets)
@@ -38,7 +38,7 @@ if BEARER.startswith("AAAAAAAA"):  # typical app-only bearer prefix
     )
 
 
-def push(payload: Dict) -> Dict:
+def push(payload: dict) -> dict:
     r = SESSION.post(API_URL, json=payload, timeout=30)
     if r.status_code >= 400:
         try:
@@ -49,7 +49,7 @@ def push(payload: Dict) -> Dict:
     return r.json()
 
 
-def post_take_as_reply(prompt: str, item: Dict) -> Dict:
+def post_take_as_reply(prompt: str, item: dict) -> dict:
     tweet_id = item["id"]
     # if item["thread"] is a list, join it:
     thread_text = (
@@ -61,13 +61,15 @@ def post_take_as_reply(prompt: str, item: Dict) -> Dict:
 
     payload = {
         "text": text,
-        "reply": {"in_reply_to_tweet_id": tweet_id},
+        "reply": {
+            "in_reply_to_tweet_id": tweet_id
+        },
     }
     pprint.pp(payload)
     return push(payload)  # ← actually post
 
 
-def post_take_as_quote(prompt: str, item: Dict) -> Dict:
+def post_take_as_quote(prompt: str, item: dict) -> dict:
     tweet_id = item["id"]
     thread_text = (
         "\n\n".join(item.get("thread", []))
@@ -84,20 +86,17 @@ def post_take_as_quote(prompt: str, item: Dict) -> Dict:
     return push(payload)  # ← actually post
 
 
-def post_take(take: str) -> Dict:
+def post_take(take: str) -> dict:
     payload = {"text": take}
     pprint.pp(payload)
     return push(payload)
 
 
-def post_take_with_token(take: str, access_token: str) -> Dict:
+def post_take_with_token(take: str, access_token: str) -> dict:
     """Post a tweet using user access token"""
     url = "https://api.x.com/2/tweets"
 
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
     payload = {"text": take}
     pprint.pp(payload)
@@ -111,7 +110,7 @@ def post_take_with_token(take: str, access_token: str) -> Dict:
     return response.json()
 
 
-def post_take_as_reply_with_token(prompt: str, item: Dict, access_token: str) -> Dict:
+def post_take_as_reply_with_token(prompt: str, item: dict, access_token: str) -> dict:
     """Post a reply using user access token"""
     from backend.generate_replies import ask_model
 
@@ -125,14 +124,13 @@ def post_take_as_reply_with_token(prompt: str, item: Dict, access_token: str) ->
 
     url = "https://api.x.com/2/tweets"
 
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "Content-Type": "application/json",
-    }
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
 
     payload = {
         "text": text,
-        "reply": {"in_reply_to_tweet_id": tweet_id},
+        "reply": {
+            "in_reply_to_tweet_id": tweet_id
+        },
     }
     pprint.pp(payload)
 

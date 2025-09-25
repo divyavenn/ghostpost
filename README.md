@@ -4,7 +4,7 @@
 - Python 3.11+
 - Node.js 16+
 - Twitter Developer Account with Elevated Access
-- Conda/Mamba package manager
+- uv package manager 
 
 ### 1. Environment Setup
 
@@ -31,13 +31,10 @@ source $HOME/.local/bin/env
 # Run your FastAPI app
 ./start_backend.sh
 
-# test the /comment endpoint (leave start_backend.sh running) 
-./test_backend.sh
+# Run before commiting to fix formatting and linter thigns
+./fix-format.sh
 
-# Development tools
-uv run black .
-uv run flake8
-uv run pytest
+
 
 
 # Install additional dependencies
@@ -65,36 +62,6 @@ you will be using
 - Build a token refresh job and reuse the stored credentials when posting or running the headless browser.
 - Gate the headless browser automation behind the stored, user-specific tokens or session cookies so you’re truly acting as the authorized user.
 
-
-#### Files Created/Modified:
-
-1. **`backend/oauth_utils.py`** (NEW)
-   - Implements `TwitterPKCE` class for OAuth 2.0 flow
-   - Handles code verifier/challenge generation
-   - Manages token exchange and refresh
-   - **Critical**: Includes all required scopes: `tweet.read tweet.write users.read offline.access`
-
-2. **`backend/websocket.py`** (MODIFIED)
-   - Added OAuth 2.0 authentication routes:
-     - `GET /auth/login` - Start OAuth flow
-     - `GET /auth/callback` - Handle OAuth callback
-     - `GET /auth/status` - Check authentication status
-     - `POST /test-post` - Test tweet posting
-
-3. **`backend/post_takes.py`** (MODIFIED)
-   - Added `post_take_with_token()` function
-   - Uses user access tokens instead of app-only tokens
-   - Enables posting tweets with user context permissions
-
-4. **`backend/main.py`** (MINOR CHANGES - REVERTIBLE)
-   - Temporarily cleaned up for testing purposes
-   - Can be reverted if Playwright workflow is needed
-   - Contains the original `/comment` endpoint for AI-generated replies
-
-5. **`run_dashboard.py`** (MINOR CHANGES - REVERTIBLE)
-   - Updated to run `websocket.py` instead of `main.py` for dashboard
-   - Can be reverted based on workflow requirements
-   - Contains dependency checking and server startup logic
 
 ### Authentication Flow
 

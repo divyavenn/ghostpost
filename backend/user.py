@@ -1,8 +1,9 @@
+from typing import Any
+
 from utils import write_user_info
-from typing import Any, Dict
 
 
-def get_user_info_from_API(access_token: str) -> Dict[str, Any]:
+def get_user_info_from_API(access_token: str) -> dict[str, Any]:
     """Fetch the authenticated user's metadata and persist it locally."""
     import requests
 
@@ -34,7 +35,7 @@ def get_user_info_from_API(access_token: str) -> Dict[str, Any]:
     return user_record
 
 
-def get_user_info(access_token: str) -> Dict[str, Any]:
+def get_user_info(access_token: str) -> dict[str, Any]:
     """Fetch the authenticated user's metadata and persist it locally."""
     import requests
 

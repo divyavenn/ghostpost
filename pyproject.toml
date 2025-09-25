@@ -1,8 +1,9 @@
 [project]
 name = "floodme-backend"
 version = "0.1.0"
-description = "Backend for FloodMe"
+description = "backend for social media engagement tool"
 requires-python = ">=3.11,<3.12"
+
 dependencies = [
   # Web framework and API
   "fastapi>=0.104.0",
@@ -32,11 +33,14 @@ dependencies = [
 ]
 
 [dependency-groups]
+
 dev = [
   "pytest>=7.4.0",
   "pytest-asyncio>=0.21.0",
   "black>=23.0.0",
   "flake8>=6.0.0",
+  "ruff>=0.13.1",
+  "yapf>=0.43.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -45,3 +49,23 @@ packages = ["backend"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+
+[tool.yapf]
+based_on_style = "pep8"
+column_limit = 200
+
+
+[tool.ruff]
+
+# set line length (default 88 like Black)
+line-length = 300
+# ignore certain error codes
+lint.ignore = ["E501"]
+# select extra rule sets (flake8-bugbear, isort, etc.)
+# E = flake8 errors 
+# F = pyflakes
+# B = flake8-bugbear
+# I = isort
+# UP = suggest newer python syntax 
+lint.select = ["E", "F", "B", "I", "UP"]

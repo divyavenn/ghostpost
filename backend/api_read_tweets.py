@@ -1,8 +1,11 @@
-from datetime import datetime, timedelta
-from functools import lru_cache
-import requests
-import time
 import os
+import time
+from functools import lru_cache
+
+import requests
+
+BEARER = os.getenv("TWITTER_BEARER_TOKEN", r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi")
+BASE = "https://api.twitter.com/2"
 
 
 BEARER = os.getenv(
@@ -29,9 +32,12 @@ def request_from_x(url, params=None):
 
 
 @lru_cache(maxsize=128)
+
+@lru_cache(maxsize=128)
 def user_id(username: str) -> str:
     resp = request_from_x(f"{BASE}/users/by/username/{username}")
     return resp["data"]["id"]
+
 
 
 def timeline(username: str, max_results=100):

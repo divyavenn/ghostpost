@@ -1,10 +1,10 @@
 import asyncio
-import json
 import re
-from pathlib import Path
+
 from playwright.async_api import async_playwright
+
 from .headless_fetch import collect_from_page
-from .utils import notify, error
+from .utils import error, notify
 
 # -------- Config --------
 USERNAME = "proudlurker"
@@ -18,8 +18,6 @@ MAX_TWEETS_RETRIEVE = 30  # per user or query
 
 
 # headless login, legacy code, currently use oAuth instead
-
-
 async def log_in(username: str, password: str, browser=None):
     from utils import store_browser_state
 
@@ -128,9 +126,5 @@ if __name__ == "__main__":
             if MAX_TWEETS_RETRIEVE:
                 sorted_items = sorted_items[:MAX_TWEETS_RETRIEVE]  # top 50
             from utils import write_to_cache
-
-            await write_to_cache(
-                sorted_items, "Wrote trending results", username=USERNAME
-            )
 
     asyncio.run(main())

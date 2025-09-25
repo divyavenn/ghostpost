@@ -1,9 +1,9 @@
 import json
 import time
+from collections.abc import Iterable
 from datetime import datetime
-from typing import Any, Dict, Iterable, List, Optional, Tuple
 from pathlib import Path
-
+from typing import Any
 
 BACKEND_DIR = Path(__file__).resolve().parent
 CACHE_DIR = BACKEND_DIR / "cache"
@@ -15,14 +15,11 @@ USER_INFO_FILE = CACHE_DIR / "user_info.json"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 USERNAME = "proudlurker"
 
-
 def notify(msg: str):
     print(msg)
-
-
+    
 def error(msg: str):
     raise RuntimeError(f"❌ {msg}")
-
 
 def cookie_still_valid(state: Dict[str, Any]) -> bool:
     if not isinstance(state, dict):
@@ -33,7 +30,7 @@ def cookie_still_valid(state: Dict[str, Any]) -> bool:
     return False
 
 
-def _cache_key(username: Optional[str]) -> str:
+def _cache_key(username: str | None) -> str:
     key = (username or "default").strip()
     key = key or "default"
     sanitized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in key)
@@ -48,7 +45,7 @@ def get_user_interactions_log(username=USERNAME) -> Path:
     return CACHE_DIR / f"{_cache_key(username)}" / "log.json"
 
 
-def _archive_interactions_log(username: str, key: str) -> Optional[Path]:
+def _archive_interactions_log(username: str, key: str) -> Path | None:
     log_path = get_user_interactions_log(username)
     if not log_path.exists() or not log_path.is_file():
         return None
@@ -131,6 +128,7 @@ def delete_user_info(username=USERNAME) -> None:
         notify(f"🗑️ Removed OAuth token for {username}")
 
 
+
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
     path = get_user_tweet_cache(username)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -150,11 +148,10 @@ async def read_from_cache(username=USERNAME):
         error(f"Error reading JSON file: {exc}")
         return []
 
-
 async def store_browser_state(username: str, context) -> None:
     state = await context.storage_state()
     path = BROWSER_STATE_FILE
-    cache: Dict[str, Any] = {}
+    cache: dict[str, Any] = {}
     if path.exists():
         try:
             cached = json.loads(path.read_text())
@@ -169,7 +166,7 @@ async def store_browser_state(username: str, context) -> None:
     notify(f"✅ Browser state saved for {username}")
 
 
-async def read_browser_state(browser, username: str) -> Optional[Tuple[Any, Any]]:
+async def read_browser_state(browser, username: str) -> tuple[Any, Any] | None:
     path = BROWSER_STATE_FILE
     if not path.exists():
         return None
@@ -198,7 +195,7 @@ async def read_browser_state(browser, username: str) -> Optional[Tuple[Any, Any]
     return browser, ctx
 
 
-def load_user_info_entries() -> List[Dict[str, Any]]:
+def load_user_info_entries() -> list[dict[str, Any]]:
     if not USER_INFO_FILE.exists():
         return []
 
@@ -214,9 +211,7 @@ def load_user_info_entries() -> List[Dict[str, Any]]:
     return []
 
 
-def find_user_info(
-    entries: Iterable[Dict[str, Any]], handle: str
-) -> Optional[Dict[str, Any]]:
+def find_user_info(entries: Iterable[dict[str, Any]], handle: str) -> dict[str, Any] | None:
     for entry in entries:
         entry_handle = entry.get("handle") or entry.get("username")
         if entry_handle == handle:
@@ -224,7 +219,7 @@ def find_user_info(
     return None
 
 
-def write_user_info(user_info: Dict[str, Any]) -> Path:
+def write_user_info(user_info: dict[str, Any]) -> Path:
     # Persist user metadata to disk, updating the entry matching the handle/username."""
     handle = user_info.get("handle") or user_info.get("username")
 
@@ -248,7 +243,7 @@ def write_user_info(user_info: Dict[str, Any]) -> Path:
     return USER_INFO_FILE
 
 
-def read_user_info(handle: str) -> Optional[Dict[str, Any]]:
+def read_user_info(handle: str) -> dict[str, Any] | None:
     # Return cached user metadata for the provided handle/username."""
     if not handle:
         return None
@@ -257,7 +252,7 @@ def read_user_info(handle: str) -> Optional[Dict[str, Any]]:
     return find_user_info(entries, handle)
 
 
-def read_tokens() -> Dict[str, Any]:
+def read_tokens() -> dict[str, Any]:
     """Return the existing token map from disk (empty dict if missing/invalid)."""
     path = TOKEN_FILE
     if not path.exists():
@@ -271,7 +266,7 @@ def read_tokens() -> Dict[str, Any]:
         return {}
 
 
-def read_user_token(username: str) -> Optional[str]:
+def read_user_token(username: str) -> str | None:
     """Return the refresh token for the given user, or None if not found."""
     tokens = read_tokens()
     token = tokens.get(username)
@@ -280,6 +275,7 @@ def read_user_token(username: str) -> Optional[str]:
     else:
         error(f"No token found for user {username}")
         return None
+
 
 
 def store_token(username: str, refresh_token: str):

@@ -1,8 +1,8 @@
-import asyncio, re
+import asyncio
+import re
 
 # Match TweetDetail GraphQL calls
 TWEET_DETAIL_RE = re.compile(r"/i/api/graphql/[^/]+/TweetDetail")
-
 
 async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
     """
@@ -22,12 +22,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
         txt = legacy.get("full_text") or legacy.get("text")
         if txt:
             return txt
-        note = (
-            (node.get("note_tweet") or {})
-            .get("note_tweet_results", {})
-            .get("result", {})
-            .get("text")
-        )
+        note = ((node.get("note_tweet") or {}).get("note_tweet_results", {}).get("result", {}).get("text"))
         return note or ""
 
     async def on_response(resp):
@@ -62,12 +57,8 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
                 ic2 = (content.get("item") or {}).get("itemContent") or {}
                 if ic2:
                     candidates.append(ic2)
-                for it in content.get("items") or content.get("moduleItems") or []:
-                    cand = (
-                        (it.get("item") or {}).get("itemContent")
-                        or it.get("itemContent")
-                        or {}
-                    )
+                for it in (content.get("items") or content.get("moduleItems") or []):
+                    cand = (it.get("item") or {}).get("itemContent") or it.get("itemContent") or {}
                     if cand:
                         candidates.append(cand)
 

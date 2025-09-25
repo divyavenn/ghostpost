@@ -1,2 +1,2 @@
 #!/bin/bash
-uv run uvicorn backend.generate_replies:app --reload
+uv run uvicorn backend.main:app --reload

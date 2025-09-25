@@ -47,6 +47,11 @@ npm run build
 cd ..
 ```
 
+## Git branch management
+`git switch -c feature/<change summary>`
+
+
+
 ## X Developer API setup 
 1) Go to the X Developer Portal https://developer.x.com/en/portal/dashboard
 2) Create an app

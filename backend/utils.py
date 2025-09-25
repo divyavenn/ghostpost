@@ -21,7 +21,7 @@ def notify(msg: str):
 def error(msg: str):
     raise RuntimeError(f"❌ {msg}")
 
-def cookie_still_valid(state: Dict[str, Any]) -> bool:
+def cookie_still_valid(state: dict[str, Any]) -> bool:
     if not isinstance(state, dict):
         return False
     for c in state.get("cookies", []):

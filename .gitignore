@@ -209,3 +209,5 @@ __marimo__/
 node_modules/
 
 uv.lock
+
+.DS_Store

@@ -1,11 +1,9 @@
-
-
 import asyncio
 from fastapi import FastAPI
 import requests
 import os
 from .read_tweets import read_tweets
-from .utils import notify, error 
+from .utils import notify, error
 from .read_tweets import USERNAME
 
 # Put your OBELISK_KEY in an environment variable for safety
@@ -14,22 +12,24 @@ OBELISK_KEY = os.getenv("OBELISK_KEY", "sk-9aef8f5c845e4d6aa0cff6d41ff456bb")
 app = FastAPI(title="FloodMe API")
 
 
-
 @app.post("/comment")
 def ask_model(prompt: str, model: str = "divya-2-bon"):
     url = "https://obelisk.dread.technology/api/chat/completions"
 
     headers = {
         "Authorization": f"Bearer {OBELISK_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     payload = {
         "model": model,
-        "messages": [ 
-          {"role": "system", "content": "you are scrolling twitter. Casually respond to this thread in two to three lines as a stranger"},
-          {"role": "user", "content": prompt}
-        ]
+        "messages": [
+            {
+                "role": "system",
+                "content": "you are scrolling twitter. Casually respond to this thread in two to three lines as a stranger",
+            },
+            {"role": "user", "content": prompt},
+        ],
     }
 
     try:
@@ -49,7 +49,7 @@ def ask_model(prompt: str, model: str = "divya-2-bon"):
     return {"message": message}
 
 
-async def generate_replies(username = USERNAME, delay_seconds=1, overwrite=False):
+async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     from utils import read_from_cache, write_to_cache
     import time
 
@@ -57,29 +57,32 @@ async def generate_replies(username = USERNAME, delay_seconds=1, overwrite=False
     count = 0
     for tweet in tweets:
         # Skip if reply already exists and we're not overwriting
-        if 'reply' in tweet and tweet['reply'] and not overwrite:
+        if "reply" in tweet and tweet["reply"] and not overwrite:
             continue
-        
-        prompt = str(tweet.get('thread', []))
-        handle = tweet.get('handle', 'unknown')
+
+        prompt = str(tweet.get("thread", []))
+        handle = tweet.get("handle", "unknown")
         # Get model's reply with appropriate delay for rate limiting
         try:
-            response = ask_model(prompt = prompt)
-            reply = response.get('message', '')
+            response = ask_model(prompt=prompt)
+            reply = response.get("message", "")
             count += 1
             # Add the reply to the tweet object
-            tweet['reply'] = reply
-            
+            tweet["reply"] = reply
+
             time.sleep(delay_seconds)
-            
+
         except Exception as e:
             error(f"Error generating reply for tweet {tweet.get('id')}: {e}")
-            tweet['reply'] = "Error generating reply"
-    
+            tweet["reply"] = "Error generating reply"
+
     # Save the updated tweets back to the file
-    await write_to_cache(tweets, f"Generated replies for {count} tweets", username=username)
-    
+    await write_to_cache(
+        tweets, f"Generated replies for {count} tweets", username=username
+    )
+
     return tweets
+
 
 async def run_all() -> None:
     # Directly process trending_cache.json with hardcoded parameters
@@ -91,7 +94,7 @@ async def run_all() -> None:
 
 if __name__ == "__main__":
     asyncio.run(run_all())
-    
+
     # Original example for reference
     # prompt = str([
     #   "i know life happens wherever you are, but I can't help but feel like none of this is real. Like I'm wandering from door to door, temporary home to temporary home. I want to plunge my fingers into earth I own, buy furniture too heavy to move and plant roses",

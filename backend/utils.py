@@ -1,4 +1,3 @@
-
 import json
 import time
 from datetime import datetime
@@ -16,11 +15,14 @@ USER_INFO_FILE = CACHE_DIR / "user_info.json"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 USERNAME = "proudlurker"
 
+
 def notify(msg: str):
     print(msg)
-    
+
+
 def error(msg: str):
     raise RuntimeError(f"❌ {msg}")
+
 
 def cookie_still_valid(state: Dict[str, Any]) -> bool:
     if not isinstance(state, dict):
@@ -30,6 +32,7 @@ def cookie_still_valid(state: Dict[str, Any]) -> bool:
             return c.get("expires", 0) == 0 or c["expires"] > time.time() + 60
     return False
 
+
 def _cache_key(username: Optional[str]) -> str:
     key = (username or "default").strip()
     key = key or "default"
@@ -37,10 +40,11 @@ def _cache_key(username: Optional[str]) -> str:
     return sanitized or "default"
 
 
-def get_user_tweet_cache(username = USERNAME) -> Path:
+def get_user_tweet_cache(username=USERNAME) -> Path:
     return CACHE_DIR / f"{_cache_key(username)}" / "tweets_cache.json"
 
-def get_user_interactions_log(username = USERNAME) -> Path:
+
+def get_user_interactions_log(username=USERNAME) -> Path:
     return CACHE_DIR / f"{_cache_key(username)}" / "log.json"
 
 
@@ -80,7 +84,9 @@ def remove_user_cache(username: str, key: str) -> bool:
     return cache_removed
 
 
-def atomic_file_update(path: Path, data: Any, tmp_suffix: str = ".tmp", *, ensure_ascii: bool = False) -> None:
+def atomic_file_update(
+    path: Path, data: Any, tmp_suffix: str = ".tmp", *, ensure_ascii: bool = False
+) -> None:
     if data:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(tmp_suffix)
@@ -108,7 +114,7 @@ def remove_entry_from_map(path: Path, username: str, tmp_suffix: str) -> bool:
     return True
 
 
-def delete_user_info(username = USERNAME) -> None:
+def delete_user_info(username=USERNAME) -> None:
     """Delete cached data, tokens, and browser state for the user, archiving logs."""
     key = _cache_key(username)
     archived_log = _archive_interactions_log(username, key)
@@ -123,9 +129,9 @@ def delete_user_info(username = USERNAME) -> None:
 
     if remove_entry_from_map(TOKEN_FILE, username, ".json.tmp"):
         notify(f"🗑️ Removed OAuth token for {username}")
-    
 
-async def write_to_cache(tweets, description: str, *, username = USERNAME) -> Path:
+
+async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
     path = get_user_tweet_cache(username)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(tweets, indent=2, ensure_ascii=False))
@@ -133,7 +139,7 @@ async def write_to_cache(tweets, description: str, *, username = USERNAME) -> Pa
     return path
 
 
-async def read_from_cache(username = USERNAME):
+async def read_from_cache(username=USERNAME):
     path = get_user_tweet_cache(username)
     notify(f"💾 Reading tweets from cache ({path.name})")
     if not path.exists():
@@ -143,6 +149,7 @@ async def read_from_cache(username = USERNAME):
     except Exception as exc:
         error(f"Error reading JSON file: {exc}")
         return []
+
 
 async def store_browser_state(username: str, context) -> None:
     state = await context.storage_state()
@@ -160,7 +167,6 @@ async def store_browser_state(username: str, context) -> None:
 
     atomic_file_update(path, cache)
     notify(f"✅ Browser state saved for {username}")
-
 
 
 async def read_browser_state(browser, username: str) -> Optional[Tuple[Any, Any]]:
@@ -191,6 +197,7 @@ async def read_browser_state(browser, username: str) -> Optional[Tuple[Any, Any]
     notify(f"✅ Retrieved browser state for {username}")
     return browser, ctx
 
+
 def load_user_info_entries() -> List[Dict[str, Any]]:
     if not USER_INFO_FILE.exists():
         return []
@@ -207,7 +214,9 @@ def load_user_info_entries() -> List[Dict[str, Any]]:
     return []
 
 
-def find_user_info(entries: Iterable[Dict[str, Any]], handle: str) -> Optional[Dict[str, Any]]:
+def find_user_info(
+    entries: Iterable[Dict[str, Any]], handle: str
+) -> Optional[Dict[str, Any]]:
     for entry in entries:
         entry_handle = entry.get("handle") or entry.get("username")
         if entry_handle == handle:
@@ -261,6 +270,7 @@ def read_tokens() -> Dict[str, Any]:
         error("⚠️ could not parse existing token file")
         return {}
 
+
 def read_user_token(username: str) -> Optional[str]:
     """Return the refresh token for the given user, or None if not found."""
     tokens = read_tokens()
@@ -270,6 +280,7 @@ def read_user_token(username: str) -> Optional[str]:
     else:
         error(f"No token found for user {username}")
         return None
+
 
 def store_token(username: str, refresh_token: str):
     """Persist the refresh token to a shared JSON map keyed by user identifier."""

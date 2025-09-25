@@ -24,7 +24,9 @@ BASE_URL = "https://api.x.com/2"
 
 def generate_code_verifier() -> str:
     """Generate a cryptographically random code verifier (43-128 characters)."""
-    return base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode("utf-8")
+    return (
+        base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode("utf-8")
+    )
 
 
 def generate_code_challenge(code_verifier: str) -> str:
@@ -93,19 +95,18 @@ def refresh_access_token(refresh_token: str) -> Dict[str, Any]:
     credentials = f"{client_id}:{client_secret}"
     encoded_credentials = base64.b64encode(credentials.encode("utf-8")).decode("utf-8")
     headers = {
-            "Authorization": f"Basic {encoded_credentials}",
-            "Content-Type": "application/x-www-form-urlencoded",
+        "Authorization": f"Basic {encoded_credentials}",
+        "Content-Type": "application/x-www-form-urlencoded",
     }
-
 
     response = requests.post(url, data=data, headers=headers)
     response.raise_for_status()
     return response.json()
 
 
-
-
-def _start_callback_server(redirect_uri: str, expected_state: str) -> Tuple[HTTPServer, threading.Event]:
+def _start_callback_server(
+    redirect_uri: str, expected_state: str
+) -> Tuple[HTTPServer, threading.Event]:
     """Spin up a local HTTP server to capture the OAuth redirect."""
     parsed = urlparse(redirect_uri)
     if parsed.scheme != "http":
@@ -131,7 +132,9 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> Tuple[HTTP
             self.server.authorization_params = params  # type: ignore[attr-defined]
 
             if "error" in params:
-                message = params.get("error_description", [""])[0] or "Authorization failed."
+                message = (
+                    params.get("error_description", [""])[0] or "Authorization failed."
+                )
                 self.send_response(400)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.end_headers()
@@ -173,6 +176,7 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> Tuple[HTTP
 async def oauth_login(username: str, state_file: str = "storage_state.json") -> str:
     from utils import store_browser_state, store_token
     from playwright.async_api import async_playwright
+
     notify(f"🔐 Launching OAuth login for {username}")
     state = secrets.token_urlsafe(32)
     server, auth_event = _start_callback_server(redirect_uri, state)
@@ -212,13 +216,15 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
 
     store_token(username, refresh_token)
 
-
     return access_token
 
 
-async def ensure_access_token(username: str, state_file: str = "storage_state.json") -> str:
+async def ensure_access_token(
+    username: str, state_file: str = "storage_state.json"
+) -> str:
     """Return an access token for the user, refreshing or re-authenticating as needed."""
     from utils import read_user_token, store_token
+
     try:
         refresh_token = read_user_token(username)
         refreshed = refresh_access_token(refresh_token)
@@ -232,7 +238,7 @@ async def ensure_access_token(username: str, state_file: str = "storage_state.js
 
 def main() -> None:
     import asyncio
-    
+
     username = "proudlurker"
 
     access_token = asyncio.run(ensure_access_token(username))

@@ -3,6 +3,7 @@ import asyncio, re
 # Match TweetDetail GraphQL calls
 TWEET_DETAIL_RE = re.compile(r"/i/api/graphql/[^/]+/TweetDetail")
 
+
 async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
     """
     Return all tweets in the thread authored by the original poster (self-thread only).
@@ -40,9 +41,13 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
 
         # Collect instructions from both containers
         instructions = []
-        tc_v2 = (data.get("data") or {}).get("threaded_conversation_with_injections_v2") or {}
+        tc_v2 = (data.get("data") or {}).get(
+            "threaded_conversation_with_injections_v2"
+        ) or {}
         instructions.extend(tc_v2.get("instructions", []) or [])
-        tc_v1 = (data.get("data") or {}).get("threaded_conversation_with_injections") or {}
+        tc_v1 = (data.get("data") or {}).get(
+            "threaded_conversation_with_injections"
+        ) or {}
         instructions.extend(tc_v1.get("instructions", []) or [])
 
         for inst in instructions:
@@ -52,15 +57,19 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
                 # Candidate shapes containing tweets
                 candidates = []
                 ic = content.get("itemContent") or {}
-                if ic: 
-                  candidates.append(ic)
+                if ic:
+                    candidates.append(ic)
                 ic2 = (content.get("item") or {}).get("itemContent") or {}
-                if ic2: 
-                  candidates.append(ic2)
-                for it in (content.get("items") or content.get("moduleItems") or []):
-                    cand = (it.get("item") or {}).get("itemContent") or it.get("itemContent") or {}
-                    if cand: 
-                      candidates.append(cand)
+                if ic2:
+                    candidates.append(ic2)
+                for it in content.get("items") or content.get("moduleItems") or []:
+                    cand = (
+                        (it.get("item") or {}).get("itemContent")
+                        or it.get("itemContent")
+                        or {}
+                    )
+                    if cand:
+                        candidates.append(cand)
 
                 for cand in candidates:
                     raw = (cand.get("tweet_results") or {}).get("result")
@@ -92,11 +101,24 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
                             allow = True
                         else:
                             reply_to_uid = legacy.get("in_reply_to_user_id_str")
-                            mentions = (legacy.get("entities") or {}).get("user_mentions") or []
-                            mention_ids = [m.get("id_str") for m in mentions if isinstance(m, dict) and m.get("id_str")]
+                            mentions = (legacy.get("entities") or {}).get(
+                                "user_mentions"
+                            ) or []
+                            mention_ids = [
+                                m.get("id_str")
+                                for m in mentions
+                                if isinstance(m, dict) and m.get("id_str")
+                            ]
                             # Only the root author may be mentioned (or none mentioned)
-                            only_author_mentioned = (len(mention_ids) == 0) or (len(mention_ids) == 1 and mention_ids[0] == root_author_id)
-                            if uid == root_author_id and reply_to_uid == root_author_id and only_author_mentioned:
+                            only_author_mentioned = (len(mention_ids) == 0) or (
+                                len(mention_ids) == 1
+                                and mention_ids[0] == root_author_id
+                            )
+                            if (
+                                uid == root_author_id
+                                and reply_to_uid == root_author_id
+                                and only_author_mentioned
+                            ):
                                 allow = True
                         if allow:
                             text = extract_text(node)

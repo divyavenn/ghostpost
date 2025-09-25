@@ -13,7 +13,7 @@ app = FastAPI(title="FloodMe API")
 
 
 @app.post("/comment")
-def ask_model(prompt: str, model: str = None):
+def ask_model(prompt: str, model: str = "divya-2-bon"):
     url = "https://obelisk.dread.technology/api/chat/completions"
 
     headers = {
@@ -86,7 +86,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
 async def run_all() -> None:
     # Directly process trending_cache.json with hardcoded parameters
-    await read_tweets()
+    #await read_tweets()
     await generate_replies()
 
     notify("Done!")

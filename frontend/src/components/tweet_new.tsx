@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface TweetData {
   id: string;
@@ -7,8 +7,11 @@ export interface TweetData {
   retweets: number;
   quotes: number;
   replies: number;
+  handle: string;
   score: number;
+  username: string;
   followers: number;
+  reply: string;
   created_at: string;
   url: string;
   thread?: string[];
@@ -21,155 +24,125 @@ interface TweetDisplayProps {
   onSkip: () => void;
 }
 
-export default function TweetDisplay({ tweet, replyText, onPublish, onSkip }: TweetDisplayProps) {
-  const [editedText, setEditedText] = useState(replyText);
+export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayProps) {
+  const [editedText, setEditedText] = useState(tweet.reply);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // For demo purposes, we'll use some static values that match the screenshot
-  const displayName = "stef 🫴";
-  const handle = "@stefaesthesia";
-  const verified = true;
-  const userAvatar = "https://pbs.twimg.com/profile_images/1803721062133211138/s3Zbrfw__normal.jpg";
-  const myAvatar = "https://randomuser.me/api/portraits/women/44.jpg";
-  
-  // Parse created_at to show a relative time (like "5h")
+  const displayName = tweet.username;
+  const handle = tweet.handle;
+  const userAvatar = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_200x200.png';
+  const myAvatar = 'https://pbs.twimg.com/profile_images/1803721062133211138/s3Zbrfw__normal.jpg';
+
+  const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [editedText]);
+
   const getRelativeTime = (dateStr: string): string => {
     try {
       const tweetDate = new Date(dateStr);
       const now = new Date();
       const diffHours = Math.floor((now.getTime() - tweetDate.getTime()) / (1000 * 60 * 60));
-      
-      if (diffHours < 1) return "now";
+
+      if (diffHours < 1) return 'now';
       if (diffHours < 24) return `${diffHours}h`;
-      if (diffHours < 48) return "1d";
+      if (diffHours < 48) return '1d';
       return `${Math.floor(diffHours / 24)}d`;
     } catch {
-      return "5h"; // Fallback to match screenshot
+      return '';
     }
   };
 
+  const formatMetric = (value: number): string => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+    return String(value);
+  };
+
   return (
-    <div
-      style={{
-        background: '#000000',
-        borderRadius: '16px',
-        maxWidth: '600px',
-        margin: '0 auto',
-        boxShadow: '0 4px 15px rgba(0, 0, 0, 0.5)',
-        position: 'relative',
-        color: '#fff',
-        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif'
-      }}
-    >
-      {/* Modal header with close button */}
-      <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #333' }}>
-        <div>
-          <button 
-            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', padding: '8px' }}
-            onClick={onSkip}
-          >
-            ✕
-          </button>
-        </div>
-        <div style={{ color: '#1d9bf0', fontWeight: 'bold', fontSize: '16px' }}>
-          Drafts
-        </div>
+    <div className="mx-auto w-full max-w-xl rounded-2xl bg-black text-white shadow-2xl">
+      <div className="flex items-center justify-between px-5 py-3">
+        <button
+          type="button"
+          onClick={onSkip}
+          className="rounded-full p-2 text-xl leading-none text-white transition hover:bg-neutral-900"
+          aria-label="Close"
+        >
+          ×
+        </button>
       </div>
 
-      {/* Tweet content */}
-      <div style={{ padding: '16px' }}>
-        {/* Tweet author info */}
-        <div style={{ display: 'flex', marginBottom: '12px' }}>
-          <img 
-            src={userAvatar} 
-            alt={displayName} 
-            style={{ width: '48px', height: '48px', borderRadius: '50%', marginRight: '12px' }} 
-          />
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontWeight: 'bold', marginRight: '4px' }}>{displayName}</span>
-              {verified && <span style={{ color: '#1d9bf0', marginRight: '4px' }}>✓</span>}
-              <span style={{ color: '#71767b', marginRight: '4px' }}>{handle}</span>
-              <span style={{ color: '#71767b' }}>· {getRelativeTime(tweet.created_at)}</span>
+      <div className="px-5 py-3">
+        <div className="space-y-4 pb-1">
+          {threadMessages.map((message, index) => (
+            <div key={`${tweet.id}-${index}`} className="relative flex gap-3">
+              {index === 0 ? (
+                <img src={userAvatar} alt={displayName} className="h-12 w-12 rounded-full" />
+              ) : (
+                <div className="h-12 w-12" aria-hidden="true" />
+              )}
+              <div className="flex-1 space-y-1 pb-4">
+                {index === 0 && (
+                  <div className="flex items-center gap-2 text-sm text-neutral-400">
+                    <span className="text-base font-bold text-white">{displayName}</span>
+                    <span>{'@' + handle}</span>
+                    {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
+                  </div>
+                )}
+                <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>
+                {index < threadMessages.length - 1 && (
+                  <div className="absolute inset-x-14 bottom-0 border-t border-neutral-800" aria-hidden="true" />
+                )}
+              </div>
             </div>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-8 pl-14 text-sm text-neutral-500" aria-label="Tweet engagement">
+          <div className="flex items-center gap-2">
+            <i className="fa-regular fa-comment text-lg text-neutral-500" aria-hidden="true" />
+            <span className="font-medium">{formatMetric(tweet.replies)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <i className="fa-solid fa-retweet text-lg text-neutral-500" aria-hidden="true" />
+            <span className="font-medium">{formatMetric(tweet.retweets)}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <i className="fa-regular fa-heart text-lg text-neutral-500" aria-hidden="true" />
+            <span className="font-medium">{formatMetric(tweet.likes)}</span>
           </div>
         </div>
 
-        {/* Tweet text */}
-        <div style={{ fontSize: '16px', lineHeight: '1.5', marginBottom: '12px', whiteSpace: 'pre-wrap' }}>
-          {tweet.text}
-          {tweet.text.length > 140 && (
-            <span style={{ color: '#1d9bf0', cursor: 'pointer' }}>Show more</span>
-          )}
-        </div>
-
-        {/* Replying to */}
-        <div style={{ color: '#71767b', fontSize: '14px', marginBottom: '16px' }}>
-          Replying to <span style={{ color: '#1d9bf0' }}>{handle}</span>
-        </div>
-
-        {/* Reply box */}
-        <div style={{ display: 'flex', marginTop: '12px', position: 'relative' }}>
-          <img 
-            src={myAvatar} 
-            alt="Your avatar" 
-            style={{ width: '40px', height: '40px', borderRadius: '50%', marginRight: '12px', alignSelf: 'flex-start' }} 
-          />
-          <div style={{ flexGrow: 1 }}>
+        <p className="text-sm text-neutral-500 pt-7">
+          Replying to <span className="text-sky-400">{'@' + handle}</span>
+        </p>
+        <div className="flex gap-3 pt-6">
+          <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
+          <div className="flex-1">
             <textarea
+              ref={textareaRef}
               placeholder="Post your reply"
               value={editedText}
               onChange={(e) => setEditedText(e.target.value)}
-              style={{
-                width: '100%',
-                minHeight: '80px',
-                background: 'transparent',
-                border: 'none',
-                color: '#fff',
-                fontSize: '18px',
-                resize: 'none',
-                outline: 'none',
-                padding: '0',
-                marginBottom: '16px',
-                fontFamily: 'inherit'
-              }}
+              className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
             />
-
-            {/* Action buttons */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button style={{ background: 'none', border: 'none', color: '#1d9bf0', cursor: 'pointer', padding: '8px' }}>
-                  📷
-                </button>
-                <button style={{ background: 'none', border: 'none', color: '#1d9bf0', cursor: 'pointer', padding: '8px' }}>
-                  📊
-                </button>
-                <button style={{ background: 'none', border: 'none', color: '#1d9bf0', cursor: 'pointer', padding: '8px' }}>
-                  😀
-                </button>
-                <button style={{ background: 'none', border: 'none', color: '#1d9bf0', cursor: 'pointer', padding: '8px' }}>
-                  📅
-                </button>
-                <button style={{ background: 'none', border: 'none', color: '#1d9bf0', cursor: 'pointer', padding: '8px' }}>
-                  📍
-                </button>
-              </div>
-              <button
-                onClick={() => onPublish(editedText)}
-                style={{
-                  background: '#1d9bf0',
-                  color: '#fff',
-                  border: 'none',
-                  borderRadius: '9999px',
-                  padding: '8px 16px',
-                  fontWeight: 'bold',
-                  cursor: 'pointer'
-                }}
-              >
-                Reply
-              </button>
-            </div>
           </div>
         </div>
+      </div>
+
+      <div className="flex items-center justify-end px-5 pb-8 pt-0">
+        <button
+          type="button"
+          onClick={() => onPublish(editedText)}
+          className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
+        >
+          Reply
+        </button>
       </div>
     </div>
   );

@@ -11,8 +11,6 @@ import webbrowser
 from pathlib import Path
 
 
-
-
 def start_backend():
     """Start the FastAPI backend server"""
     print("🚀 Starting backend server...")

@@ -19,19 +19,15 @@ USER_ACCESS = "1689356162716610560-pSgc0JQ3NQqatheVV4nKLSt9Gpcing"
 ACCESS_TOKEN_SECRET = "dVGhm8yc2pnbAIdPjjv2uHBosVhDYbE0GYXj4ctVaqg5x"
 
 SESSION = requests.Session()
-SESSION.headers.update(
-    {
-        "Authorization": f"Bearer {BEARER}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-    }
-)
+SESSION.headers.update({
+    "Authorization": f"Bearer {BEARER}",
+    "Content-Type": "application/json",
+    "Accept": "application/json",
+})
 
 # Sanity checks: warn if token looks URL-encoded or like an app-only token
 if "%" in (RAW_TOKEN or ""):
-    print(
-        "[warn] Your bearer token appears URL-encoded. Decoded automatically. If posting still 403s, ensure it's a *user* access token with tweet.write scope."
-    )
+    print("[warn] Your bearer token appears URL-encoded. Decoded automatically. If posting still 403s, ensure it's a *user* access token with tweet.write scope.")
 if BEARER.startswith("AAAAAAAA"):  # typical app-only bearer prefix
     print(
         "[warn] Token looks like an *app-only* bearer. Posting requires a *user-context* access token with tweet.write. Generate an OAuth 2.0 user token (PKCE) for your app and set TWITTER_USER_BEARER."
@@ -52,11 +48,7 @@ def push(payload: dict) -> dict:
 def post_take_as_reply(prompt: str, item: dict) -> dict:
     tweet_id = item["id"]
     # if item["thread"] is a list, join it:
-    thread_text = (
-        "\n\n".join(item.get("thread", []))
-        if isinstance(item.get("thread"), list)
-        else str(item.get("thread", ""))
-    )
+    thread_text = ("\n\n".join(item.get("thread", [])) if isinstance(item.get("thread"), list) else str(item.get("thread", "")))
     text = ask_model(f"{prompt}\n\nContext:\n{thread_text}")
 
     payload = {
@@ -71,11 +63,7 @@ def post_take_as_reply(prompt: str, item: dict) -> dict:
 
 def post_take_as_quote(prompt: str, item: dict) -> dict:
     tweet_id = item["id"]
-    thread_text = (
-        "\n\n".join(item.get("thread", []))
-        if isinstance(item.get("thread"), list)
-        else str(item.get("thread", ""))
-    )
+    thread_text = ("\n\n".join(item.get("thread", [])) if isinstance(item.get("thread"), list) else str(item.get("thread", "")))
     text = ask_model(f"{prompt}\n\nContext:\n{thread_text}")
 
     payload = {
@@ -115,11 +103,7 @@ def post_take_as_reply_with_token(prompt: str, item: dict, access_token: str) ->
     from backend.generate_replies import ask_model
 
     tweet_id = item["id"]
-    thread_text = (
-        "\n\n".join(item.get("thread", []))
-        if isinstance(item.get("thread"), list)
-        else str(item.get("thread", ""))
-    )
+    thread_text = ("\n\n".join(item.get("thread", [])) if isinstance(item.get("thread"), list) else str(item.get("thread", "")))
     text = ask_model(f"{prompt}\n\nContext:\n{thread_text}")
 
     url = "https://api.x.com/2/tweets"

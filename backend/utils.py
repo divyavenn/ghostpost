@@ -15,11 +15,14 @@ USER_INFO_FILE = CACHE_DIR / "user_info.json"
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 USERNAME = "proudlurker"
 
+
 def notify(msg: str):
     print(msg)
-    
+
+
 def error(msg: str):
     raise RuntimeError(f"❌ {msg}")
+
 
 def cookie_still_valid(state: dict[str, Any]) -> bool:
     if not isinstance(state, dict):
@@ -81,9 +84,7 @@ def remove_user_cache(username: str, key: str) -> bool:
     return cache_removed
 
 
-def atomic_file_update(
-    path: Path, data: Any, tmp_suffix: str = ".tmp", *, ensure_ascii: bool = False
-) -> None:
+def atomic_file_update(path: Path, data: Any, tmp_suffix: str = ".tmp", *, ensure_ascii: bool = False) -> None:
     if data:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp_path = path.with_suffix(tmp_suffix)
@@ -128,7 +129,6 @@ def delete_user_info(username=USERNAME) -> None:
         notify(f"🗑️ Removed OAuth token for {username}")
 
 
-
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
     path = get_user_tweet_cache(username)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -147,6 +147,7 @@ async def read_from_cache(username=USERNAME):
     except Exception as exc:
         error(f"Error reading JSON file: {exc}")
         return []
+
 
 async def store_browser_state(username: str, context) -> None:
     state = await context.storage_state()
@@ -275,7 +276,6 @@ def read_user_token(username: str) -> str | None:
     else:
         error(f"No token found for user {username}")
         return None
-
 
 
 def store_token(username: str, refresh_token: str):

@@ -7,6 +7,13 @@ from fastapi import FastAPI
 from .read_tweets import USERNAME
 from .utils import error, notify
 
+try:
+    from backend.resolve_imports import ensure_standalone_imports
+except ModuleNotFoundError:  # Running from inside backend/
+    from resolve_imports import ensure_standalone_imports
+
+ensure_standalone_imports(globals())
+
 # Put your OBELISK_KEY in an environment variable for safety
 OBELISK_KEY = os.getenv("OBELISK_KEY", "sk-9aef8f5c845e4d6aa0cff6d41ff456bb")
 

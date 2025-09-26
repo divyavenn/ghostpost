@@ -1,9 +1,20 @@
 import asyncio
 import re
 from asyncio import sleep
-from datetime import UTC
 
 from .full_thread import get_thread
+
+try:  # Python 3.11+
+    from datetime import UTC  # type: ignore[attr-defined]
+except ImportError:  # Python <3.11
+    UTC = UTC
+
+try:
+    from backend.resolve_imports import ensure_standalone_imports
+except ModuleNotFoundError:  # Running from inside backend/
+    from resolve_imports import ensure_standalone_imports
+
+ensure_standalone_imports(globals())
 
 TWEET_API_RE = re.compile(r"(UserTweets|TimelineTweets|AdaptiveSearchTimeline|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)")
 
@@ -39,9 +50,7 @@ def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
             return tweet_res["user"]["screen_name"]
 
         # Check in core.user_results
-        user_result = (
-            tweet_res.get("core", {}).get("user_results", {}).get("result", {}) or {}
-        )
+        user_result = (tweet_res.get("core", {}).get("user_results", {}).get("result", {}) or {})
         if user_result.get("legacy", {}).get("screen_name"):
             return user_result["legacy"]["screen_name"]
 
@@ -63,12 +72,12 @@ def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
             # Continue searching
             for v in obj.values():
                 r = walk(v)
-                if r: 
+                if r:
                     return r
         elif isinstance(obj, list):
             for v in obj:
                 r = walk(v)
-                if r: 
+                if r:
                     return r
         return None
 
@@ -289,10 +298,10 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
 
         for inst in collect_instructions(data):
             if inst.get("type") not in (
-                "TimelineAddEntries",
-                "TimelineReplaceEntry",
-                "TimelineReplaceEntries",
-                "TimelineAddToModule",
+                    "TimelineAddEntries",
+                    "TimelineReplaceEntry",
+                    "TimelineReplaceEntries",
+                    "TimelineAddToModule",
             ):
                 continue
 
@@ -309,19 +318,13 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                 if item:
                     candidates.append(item)
                 for it in content.get("items") or content.get("moduleItems") or []:
-                    ic = (
-                        (it.get("item") or {}).get("itemContent")
-                        or it.get("itemContent")
-                        or {}
-                    )
+                    ic = ((it.get("item") or {}).get("itemContent") or it.get("itemContent") or {})
                     if ic:
                         candidates.append(ic)
 
                 found_any = False
                 for it_item in candidates:
-                    raw = get(it_item, "tweet_results", "result") or get(
-                        content, "item", "content", "tweet_results", "result"
-                    )
+                    raw = get(it_item, "tweet_results", "result") or get(content, "item", "content", "tweet_results", "result")
                     if not isinstance(raw, dict):
                         continue
 
@@ -345,9 +348,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                     if not created_at:
                         dbg("no_created_at", legacy.get("id_str"), resp=resp)
                         continue
-                    if not within_hours(
-                        created_at, hours=48
-                    ):  # keep your current 27h test window
+                    if not within_hours(created_at, hours=48):  # keep your current 27h test window
                         dbg("too_old", legacy.get("id_str"), resp=resp)
                         continue
 
@@ -370,9 +371,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         # Try to extract handle using the older extract_handle method
                         extracted_handle = extract_handle(node, data)
                         if extracted_handle:
-                            print(
-                                f"DEBUG: Got handle from extract_handle: {extracted_handle}"
-                            )
+                            print(f"DEBUG: Got handle from extract_handle: {extracted_handle}")
                             user_handle = extracted_handle
                         elif handle:  # Fall back to URL handle if provided
                             print(f"DEBUG: Falling back to URL handle: {handle}")
@@ -393,11 +392,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         "score": engagement_score(legacy),
                         "followers": extract_followers(node),
                         "created_at": created_at,
-                        "url": (
-                            f"https://x.com/{user_handle}/status/{tid}"
-                            if (user_handle)
-                            else f"https://x.com/i/web/status/{tid}"
-                        ),
+                        "url": (f"https://x.com/{user_handle}/status/{tid}" if (user_handle) else f"https://x.com/i/web/status/{tid}"),
                         "username": user_name,
                         "handle": user_handle,
                     }

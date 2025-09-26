@@ -6,14 +6,26 @@ from playwright.async_api import async_playwright
 from .headless_fetch import collect_from_page
 from .utils import error, notify
 
+try:
+    from backend.resolve_imports import ensure_standalone_imports
+except ModuleNotFoundError:  # Running from inside backend/
+    from resolve_imports import ensure_standalone_imports
+
+ensure_standalone_imports(globals())
+
 # -------- Config --------
 USERNAME = "proudlurker"
+
 PASSWORD = r"JXJ-pfd3bdv*myu0whb"
+
 see_browser = True  # set to True to see the browser in action (for debugging)
+
 QUERIES = [
     "multimodal ai -filter:links -filter:replies -is:retweet lang:en",
 ]
+
 USERNAMES = ["divya_venn"]
+
 MAX_TWEETS_RETRIEVE = 30  # per user or query
 
 
@@ -51,9 +63,7 @@ async def get_home(browser=None):
 
 
 # -------- Core collectors --------
-GRAPHQL_TWEET_RE = re.compile(
-    r"/i/api/graphql/[^/]+/(UserTweets|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)"
-)
+GRAPHQL_TWEET_RE = re.compile(r"/i/api/graphql/[^/]+/(UserTweets|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)")
 
 
 async def fetch_user_tweets(ctx, handle: str, **kwargs):
@@ -120,11 +130,8 @@ if __name__ == "__main__":
             # write results to cache file
             trending = await gather_trending(USERNAMES, QUERIES, max_scrolls=3)
             # sort by score desc
-            sorted_items = sorted(
-                trending.values(), key=lambda x: x["score"], reverse=True
-            )
+            sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
             if MAX_TWEETS_RETRIEVE:
                 sorted_items = sorted_items[:MAX_TWEETS_RETRIEVE]  # top 50
-            from utils import write_to_cache
 
     asyncio.run(main())

@@ -48,11 +48,13 @@ cd ..
 ```
 
 ## Git branch management
+
 `git switch -c feature/<change summary>`
 
 
 
 ## X Developer API setup 
+
 1) Go to the X Developer Portal https://developer.x.com/en/portal/dashboard
 2) Create an app
 3) Go to keys and tokens
@@ -63,6 +65,7 @@ you will be using
 
 
 # TODO (in order of priority)
+
 * all actions (reply gen, user approvals, edits and deletes) get added to an append only log (jsonL format)
 * create "approved" tag on tweets_cache, store both original generation and final version (edited version)
 * create posting flow that goes through tweets_cache and posts approved tweets
@@ -72,6 +75,7 @@ you will be using
 
 
 ### Authentication Flow
+
 ```
 1. User visits /auth/login
 2. Redirected to Twitter OAuth 2.0 authorization page

@@ -35,11 +35,6 @@ source $HOME/.local/bin/env
 ./fix-format.sh
 
 
-
-
-# Install additional dependencies
-playwright install chromium
-
 # Install frontend dependencies
 cd frontend
 npm install

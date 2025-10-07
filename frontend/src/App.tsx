@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
 import { api } from './api/client';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import { AnimatedText } from './components/AnimatedText';
 
 function App() {
   const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
@@ -251,9 +252,10 @@ function App() {
               autoplay
             />
           </div>
-          <div className= {loadingPhase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl y text-center"}>
-            {loadingPhase === 'scraping' ? 'Scraping tweets...' : 'Generating replies...'}
-          </div>
+          <AnimatedText
+            text={loadingPhase === 'scraping' ? 'Scraping tweets' : 'Generating replies'}
+            className={loadingPhase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl text-center"}
+          />
         </div>
       </div>
     );

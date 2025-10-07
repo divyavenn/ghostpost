@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
 export interface TweetData {
   id: string;
@@ -32,6 +33,7 @@ interface TweetDisplayProps {
 export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false }: TweetDisplayProps) {
   const [editedText, setEditedText] = useState(tweet.reply || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isDeleteHovered, setIsDeleteHovered] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -134,15 +136,26 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
       }`}
     >
       {!readOnly && (
-        <div className="flex items-center justify-between px-5 py-3">
+        <div className="flex items-center justify-between ml-[-20px] mb-2">
           <button
             type="button"
             onClick={onSkip}
-            className="group relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-red-600"
+            onMouseEnter={() => setIsDeleteHovered(true)}
+            onMouseLeave={() => setIsDeleteHovered(false)}
+            className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors"
             aria-label="Delete"
           >
-            <span className="text-xl text-white group-hover:hidden">×</span>
-            <span className="hidden text-xs font-semibold text-white group-hover:inline">Del</span>
+            {isDeleteHovered ? (
+              <div className="w-8 h-8">
+                <DotLottieReact
+                  src="/src/assets/x.lottie"
+                  loop
+                  autoplay
+                />
+              </div>
+            ) : (
+              <span className="text-xl text-white">×</span>
+            )}
           </button>
         </div>
       )}

@@ -40,12 +40,10 @@ def _cache_key(username: str | None) -> str:
     return sanitized or "default"
 
 
-def get_user_tweet_cache(username=USERNAME) -> Path:
-    return CACHE_DIR / f"{_cache_key(username)}" / "tweets_cache.json"
 
 
 def get_user_interactions_log(username=USERNAME) -> Path:
-    return CACHE_DIR / f"{_cache_key(username)}" / "log.json"
+    return CACHE_DIR / f"{_cache_key(username)}_log.json"
 
 
 def _archive_interactions_log(username: str, key: str) -> Path | None:
@@ -63,25 +61,6 @@ def _archive_interactions_log(username: str, key: str) -> Path | None:
     return archive_path
 
 
-def remove_user_cache(username: str, key: str) -> bool:
-    cache_removed = False
-    tweet_cache = get_user_tweet_cache(username)
-    user_dir = tweet_cache.parent
-
-    if tweet_cache.exists():
-        tweet_cache.unlink(missing_ok=True)
-        cache_removed = True
-
-    if user_dir.exists() and user_dir.is_dir():
-        for child in user_dir.iterdir():
-            if child.is_file():
-                child.unlink(missing_ok=True)
-                cache_removed = True
-        try:
-            user_dir.rmdir()
-        except OSError:
-            pass
-    return cache_removed
 
 
 def atomic_file_update(path: Path, data: Any, tmp_suffix: str = ".tmp", *, ensure_ascii: bool = False) -> None:
@@ -112,41 +91,8 @@ def remove_entry_from_map(path: Path, username: str, tmp_suffix: str) -> bool:
     return True
 
 
-def delete_user_info(username=USERNAME) -> None:
-    """Delete cached data, tokens, and browser state for the user, archiving logs."""
-    key = _cache_key(username)
-    archived_log = _archive_interactions_log(username, key)
-    if archived_log:
-        notify(f"📦 Archived interaction log for {username} -> {archived_log.name}")
-
-    if remove_user_cache(username, key):
-        notify(f"🗑️ Deleted cached tweet data for {username}")
-
-    if remove_entry_from_map(BROWSER_STATE_FILE, username, ".tmp"):
-        notify(f"🗑️ Removed browser state for {username}")
-
-    if remove_entry_from_map(TOKEN_FILE, username, ".json.tmp"):
-        notify(f"🗑️ Removed OAuth token for {username}")
 
 
-async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
-    path = get_user_tweet_cache(username)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(tweets, indent=2, ensure_ascii=False))
-    notify(f"💾{description} and wrote to cache")
-    return path
-
-
-async def read_from_cache(username=USERNAME):
-    path = get_user_tweet_cache(username)
-    notify(f"💾 Reading tweets from cache ({path.name})")
-    if not path.exists():
-        return []
-    try:
-        return json.loads(path.read_text())
-    except Exception as exc:
-        error(f"Error reading JSON file: {exc}")
-        return []
 
 
 async def store_browser_state(username: str, context) -> None:

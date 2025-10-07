@@ -10,8 +10,8 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import dotenv
-from user import get_user_info
-from utils import error, notify
+from backend.user import get_user_info
+from backend.utils import error, notify
 
 dotenv.load_dotenv()
 
@@ -32,8 +32,8 @@ def generate_code_challenge(code_verifier: str) -> str:
     return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("utf-8")
 
 
+# Return the authorize URL and the code verifier used to build it.
 def get_authorization_url(state: str | None = None) -> tuple[str, str]:
-    """Return the authorize URL and the code verifier used to build it."""
     code_verifier = generate_code_verifier()
     code_challenge = generate_code_challenge(code_verifier)
 
@@ -54,8 +54,8 @@ def get_authorization_url(state: str | None = None) -> tuple[str, str]:
     return auth_url, code_verifier
 
 
+# Exchange an authorization code + verifier for an access token payload.
 def exchange_code_for_token(code: str, code_verifier: str) -> dict[str, Any]:
-    """Exchange an authorization code + verifier for an access token payload."""
     import requests
 
     url = f"{BASE_URL}/oauth2/token"
@@ -165,7 +165,7 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTP
 
 async def oauth_login(username: str, state_file: str = "storage_state.json") -> str:
     from playwright.async_api import async_playwright
-    from utils import store_browser_state, store_token
+    from backend.utils import store_browser_state, store_token
     notify(f"🔐 Launching OAuth login for {username}")
     state = secrets.token_urlsafe(32)
     server, auth_event = _start_callback_server(redirect_uri, state)
@@ -210,7 +210,7 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
 
 async def ensure_access_token(username: str, state_file: str = "storage_state.json") -> str:
     """Return an access token for the user, refreshing or re-authenticating as needed."""
-    from utils import read_user_token, store_token
+    from backend.utils import read_user_token, store_token
 
     try:
         refresh_token = read_user_token(username)

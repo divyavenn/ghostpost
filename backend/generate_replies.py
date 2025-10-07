@@ -2,7 +2,6 @@ import asyncio
 import os
 
 import requests
-from fastapi import FastAPI
 
 from .read_tweets import USERNAME
 from .utils import error, notify
@@ -15,12 +14,9 @@ except ModuleNotFoundError:  # Running from inside backend/
 ensure_standalone_imports(globals())
 
 # Put your OBELISK_KEY in an environment variable for safety
-OBELISK_KEY = os.getenv("OBELISK_KEY", "sk-9aef8f5c845e4d6aa0cff6d41ff456bb")
-
-app = FastAPI(title="FloodMe API")
+OBELISK_KEY = os.getenv("OBELISK_KEY")
 
 
-@app.post("/comment")
 def ask_model(prompt: str, model: str = "divya-2-bon"):
     url = "https://obelisk.dread.technology/api/chat/completions"
 
@@ -52,6 +48,7 @@ def ask_model(prompt: str, model: str = "divya-2-bon"):
         return {"error": "Unexpected API response", "raw": data}
 
     return {"message": message}
+
 
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):

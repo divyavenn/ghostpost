@@ -24,10 +24,14 @@ interface TweetDisplayProps {
   onPublish: (text: string) => void;
   onSkip: () => void;
   onEditReply?: (newReply: string) => void;
+  isDeleting?: boolean;
+  isPosting?: boolean;
+  readOnly?: boolean;
 }
 
-export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply }: TweetDisplayProps) {
+export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false }: TweetDisplayProps) {
   const [editedText, setEditedText] = useState(tweet.reply || '');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -41,6 +45,7 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply }: TweetDis
   // Update editedText when tweet changes
   useEffect(() => {
     setEditedText(tweet.reply || '');
+    setHasUnsavedChanges(false);
   }, [tweet.id, tweet.reply]);
 
   // Auto-resize textarea
@@ -52,21 +57,40 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply }: TweetDis
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [editedText]);
 
-  // Debounced API call when text changes
+  // Handle text change and mark as unsaved
   const handleTextChange = (newText: string) => {
     setEditedText(newText);
 
-    // Clear existing timer
+    // Mark as having unsaved changes if different from original
+    if (newText !== tweet.reply) {
+      setHasUnsavedChanges(true);
+    } else {
+      setHasUnsavedChanges(false);
+    }
+
+    // Clear existing debounce timer
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
     }
+  };
 
-    // Set new timer to call API after 1 second of no typing
-    debounceTimerRef.current = setTimeout(() => {
-      if (onEditReply && newText !== tweet.reply) {
-        onEditReply(newText);
-      }
-    }, 1000);
+  // Save changes manually
+  const handleSave = async () => {
+    if (onEditReply && editedText !== tweet.reply) {
+      await onEditReply(editedText);
+      setHasUnsavedChanges(false);
+    }
+  };
+
+  // Handle publish - save first if needed, then publish
+  const handlePublish = async () => {
+    // Save changes first if there are any
+    if (hasUnsavedChanges && onEditReply && editedText !== tweet.reply) {
+      await onEditReply(editedText);
+      setHasUnsavedChanges(false);
+    }
+    // Then publish
+    onPublish(editedText);
   };
 
   // Cleanup timer on unmount
@@ -100,17 +124,28 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply }: TweetDis
   };
 
   return (
-    <div className="mx-auto w-full min-w-xl max-w-[70%] px-[2%] py-[1%] rounded-2xl bg-black text-white shadow-2xl">
-      <div className="flex items-center justify-between px-5 py-3">
-        <button
-          type="button"
-          onClick={onSkip}
-          className="rounded-full p-2 text-xl leading-none text-white transition hover:bg-neutral-900"
-          aria-label="Close"
-        >
-          ×
-        </button>
-      </div>
+    <div
+      className={`mx-auto w-full min-w-xl max-w-[70%] px-[2%] py-[1%] rounded-2xl bg-black text-white shadow-2xl transition-all ${
+        isDeleting
+          ? 'duration-300 scale-95 opacity-0'
+          : isPosting
+          ? 'duration-400 translate-x-[150%] opacity-0'
+          : 'duration-300 scale-100 opacity-100 translate-x-0'
+      }`}
+    >
+      {!readOnly && (
+        <div className="flex items-center justify-between px-5 py-3">
+          <button
+            type="button"
+            onClick={onSkip}
+            className="group relative flex h-8 w-8 items-center justify-center rounded-full transition-colors hover:bg-red-600"
+            aria-label="Delete"
+          >
+            <span className="text-xl text-white group-hover:hidden">×</span>
+            <span className="hidden text-xs font-semibold text-white group-hover:inline">Del</span>
+          </button>
+        </div>
+      )}
 
       <div className="px-5 py-3">
         <div className="space-y-4 pb-1">
@@ -153,32 +188,61 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply }: TweetDis
           </div>
         </div>
 
-        <p className="text-sm text-neutral-500 pt-7">
-          Replying to <span className="text-sky-400">{'@' + handle}</span>
-        </p>
-        <div className="flex gap-3 pt-6">
-          <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
-          <div className="flex-1">
-            <textarea
-              ref={textareaRef}
-              placeholder="Post your reply"
-              value={editedText}
-              onChange={(e) => handleTextChange(e.target.value)}
-              className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
-            />
-          </div>
-        </div>
+        {!readOnly ? (
+          <>
+            <p className="text-sm text-neutral-500 pt-7">
+              Replying to <span className="text-sky-400">{'@' + handle}</span>
+            </p>
+            <div className="flex gap-3 pt-6">
+              <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
+              <div className="flex-1">
+                <textarea
+                  ref={textareaRef}
+                  placeholder="Post your reply"
+                  value={editedText}
+                  onChange={(e) => handleTextChange(e.target.value)}
+                  className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
+                />
+              </div>
+            </div>
+          </>
+        ) : (
+          editedText && (
+            <>
+              <p className="text-sm text-neutral-500 pt-7">
+                Your reply to <span className="text-sky-400">{'@' + handle}</span>
+              </p>
+              <div className="flex gap-3 pt-6">
+                <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
+                <div className="flex-1">
+                  <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{editedText}</p>
+                </div>
+              </div>
+            </>
+          )
+        )}
       </div>
 
-      <div className="flex items-center justify-end px-5 pb-8 pt-0">
-        <button
-          type="button"
-          onClick={() => onPublish(editedText)}
-          className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
-        >
-          Reply
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="flex items-center justify-end gap-3 px-5 pb-8 pt-0">
+          {hasUnsavedChanges && (
+            <button
+              type="button"
+              onClick={handleSave}
+              className="rounded-full bg-neutral-700 px-5 py-2 text-sm font-semibold text-white transition hover:bg-neutral-600"
+            >
+              Save
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handlePublish}
+            className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
+          >
+            Reply
+          </button>
+        </div>
+      )}
     </div>
   );
 }

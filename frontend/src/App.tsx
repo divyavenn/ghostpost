@@ -7,6 +7,10 @@ function App() {
   const [tweets, setTweets] = useState<TweetData[]>([]);
   const [currentTweetIndex, setCurrentTweetIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [deletingTweetIds, setDeletingTweetIds] = useState<Set<string>>(new Set());
+  const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
+  const [postedTweets, setPostedTweets] = useState<TweetData[]>([]);
+  const [activeTab, setActiveTab] = useState<'generated' | 'posted'>('generated');
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -55,6 +59,24 @@ function App() {
     }
   };
 
+  const handleRefresh = async () => {
+    if (!username) return;
+
+    setIsLoading(true);
+    try {
+      // Call the read tweets endpoint to scrape new tweets
+      const result = await api.readTweets(username);
+      console.log(`Scraped ${result.count} new tweets`);
+
+      // Reload the cache after scraping
+      await loadTweets(username);
+    } catch (error) {
+      console.error('Failed to refresh tweets:', error);
+      alert('Failed to refresh tweets. Please try again.');
+      setIsLoading(false);
+    }
+  };
+
   const handleLogin = async () => {
     try {
       console.log('Starting OAuth flow...');
@@ -97,28 +119,92 @@ function App() {
     }
   };
 
-  const handlePublish = async (text: string) => {
-    if (!username || !tweets[currentTweetIndex]) return;
+  const handlePublish = async (tweetId: string, text: string) => {
+    if (!username) return;
 
-    const tweet = tweets[currentTweetIndex];
-    try {
-      await api.postReply(username, text, tweet.id, tweet.cache_id);
-      alert('Reply posted successfully!');
-      // Move to next tweet
-      handleSkip();
-    } catch (error) {
-      console.error('Failed to post reply:', error);
-      alert('Failed to post reply. Please try again.');
-    }
+    // Mark as posting to trigger animation
+    setPostingTweetIds(prev => new Set(prev).add(tweetId));
+
+    // Wait for animation to complete
+    setTimeout(async () => {
+      const tweet = tweets.find(t => t.id === tweetId);
+      if (!tweet) return;
+
+      try {
+        await api.postReply(username, text, tweet.id, tweet.cache_id);
+        // Remove tweet from cache backend without logging (since we already logged the post)
+        await api.deleteTweet(username, tweet.id, false);
+
+        // Add to posted tweets list
+        setPostedTweets(prev => [{...tweet, reply: text}, ...prev]);
+
+        // Remove from local state
+        const updatedTweets = tweets.filter(t => t.id !== tweetId);
+        setTweets(updatedTweets);
+
+        // Remove from posting set
+        setPostingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+
+        // Adjust index if needed
+        if (currentTweetIndex >= updatedTweets.length) {
+          setCurrentTweetIndex(Math.max(0, updatedTweets.length - 1));
+        }
+      } catch (error) {
+        console.error('Failed to post reply:', error);
+        alert('Failed to post reply. Please try again.');
+        // Remove from posting set on error
+        setPostingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+      }
+    }, 400); // Match animation duration
   };
 
-  const handleSkip = () => {
-    if (currentTweetIndex < tweets.length - 1) {
-      setCurrentTweetIndex(currentTweetIndex + 1);
-    } else {
-      setCurrentTweetIndex(0);
-    }
+  const handleDelete = async (tweetId: string) => {
+    if (!username) return;
+
+    // Mark as deleting to trigger animation
+    setDeletingTweetIds(prev => new Set(prev).add(tweetId));
+
+    // Wait for animation to complete
+    setTimeout(async () => {
+      try {
+        await api.deleteTweet(username, tweetId);
+
+        // Remove from local state
+        const updatedTweets = tweets.filter(t => t.id !== tweetId);
+        setTweets(updatedTweets);
+
+        // Remove from deleting set
+        setDeletingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+
+        // Adjust index if needed
+        if (currentTweetIndex >= updatedTweets.length) {
+          setCurrentTweetIndex(Math.max(0, updatedTweets.length - 1));
+        }
+      } catch (error) {
+        console.error('Failed to delete tweet:', error);
+        alert('Failed to delete tweet. Please try again.');
+        // Remove from deleting set on error
+        setDeletingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+      }
+    }, 300); // Match animation duration
   };
+
 
   if (!username) {
     return (
@@ -159,7 +245,7 @@ function App() {
           <div className="text-center text-white">
             <p className="text-xl mb-4">No tweets found in cache</p>
             <button
-              onClick={() => loadTweets(username)}
+              onClick={handleRefresh}
               className="rounded-full bg-sky-500 px-6 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
             >
               Refresh
@@ -170,11 +256,9 @@ function App() {
     );
   }
 
-  const currentTweet = tweets[currentTweetIndex];
-
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-950 p-6">
-      <div className="absolute top-6 right-6">
+    <div className="flex min-h-screen flex-col bg-neutral-950">
+      <div className="absolute top-6 right-6 z-10">
         <button
           onClick={handleLogout}
           className="rounded-full bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
@@ -183,19 +267,84 @@ function App() {
         </button>
       </div>
 
-      <div className="flex flex-1 items-center justify-center">
-        <TweetDisplay
-          tweet={currentTweet}
-          replyText={currentTweet.reply || ''}
-          onPublish={handlePublish}
-          onSkip={handleSkip}
-          onEditReply={(newReply) => handleEditReply(currentTweet.id, newReply)}
-        />
+      {/* Tab Navigation */}
+      <div className="flex justify-center gap-4 pt-6 pb-4">
+        <button
+          onClick={() => setActiveTab('generated')}
+          className={`px-6 py-2 text-sm font-semibold transition rounded-full ${
+            activeTab === 'generated'
+              ? 'bg-sky-500 text-white'
+              : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
+          }`}
+        >
+          Generated ({tweets.length})
+        </button>
+        <button
+          onClick={() => setActiveTab('posted')}
+          className={`px-6 py-2 text-sm font-semibold transition rounded-full ${
+            activeTab === 'posted'
+              ? 'bg-sky-500 text-white'
+              : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
+          }`}
+        >
+          Posted ({postedTweets.length})
+        </button>
       </div>
 
-      <div className="text-center text-neutral-500 mt-4">
-        Tweet {currentTweetIndex + 1} of {tweets.length}
+      {/* Continuous scroll with hidden scrollbar */}
+      <div className="flex-1 overflow-y-auto scrollbar-hide">
+        <div className="space-y-6 py-10 px-6">
+          {activeTab === 'generated' ? (
+            tweets.length === 0 ? (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-neutral-400 text-lg">No tweets in cache</p>
+              </div>
+            ) : (
+              tweets.map((tweet) => (
+                <TweetDisplay
+                  key={tweet.id}
+                  tweet={tweet}
+                  replyText={tweet.reply || ''}
+                  onPublish={(text) => handlePublish(tweet.id, text)}
+                  onSkip={() => handleDelete(tweet.id)}
+                  onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
+                  isDeleting={deletingTweetIds.has(tweet.id)}
+                  isPosting={postingTweetIds.has(tweet.id)}
+                />
+              ))
+            )
+          ) : (
+            postedTweets.length === 0 ? (
+              <div className="flex items-center justify-center h-64">
+                <p className="text-neutral-400 text-lg">No tweets posted yet</p>
+              </div>
+            ) : (
+              postedTweets.map((tweet) => (
+                <TweetDisplay
+                  key={tweet.id}
+                  tweet={tweet}
+                  replyText={tweet.reply || ''}
+                  onPublish={() => {}}
+                  onSkip={() => {}}
+                  isDeleting={false}
+                  isPosting={false}
+                  readOnly={true}
+                />
+              ))
+            )
+          )}
+        </div>
       </div>
+
+      <style>{`
+        .scrollbar-hide::-webkit-scrollbar {
+          display: none;
+        }
+        .scrollbar-hide {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+        }
+      `}</style>
     </div>
   );
 }

@@ -53,6 +53,13 @@ export const api = {
     if (!response.ok) throw new Error('Failed to edit reply');
   },
 
+  deleteTweet: async (username: string, tweetId: string, logDeletion: boolean = true): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/tweets/${username}/${tweetId}?log_deletion=${logDeletion}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to delete tweet');
+  },
+
   postReply: async (username: string, text: string, tweetId: string, cacheId?: string): Promise<{ data: { id: string } }> => {
     const response = await fetch(`${API_BASE_URL}/post/reply?username=${encodeURIComponent(username)}`, {
       method: 'POST',
@@ -66,6 +73,23 @@ export const api = {
       }),
     });
     if (!response.ok) throw new Error('Failed to post reply');
+    return response.json();
+  },
+
+  readTweets: async (username: string, payload?: {
+    usernames?: string[];
+    queries?: string[];
+    max_scrolls?: number;
+    max_tweets?: number;
+  }): Promise<{ message: string; count: number; tweets: TweetData[] }> => {
+    const response = await fetch(`${API_BASE_URL}/read/${encodeURIComponent(username)}/tweets`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    if (!response.ok) throw new Error('Failed to read tweets');
     return response.json();
   },
 };

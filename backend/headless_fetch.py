@@ -7,7 +7,8 @@ from .full_thread import get_thread
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # Python <3.11
-    UTC = UTC
+    from datetime import timezone
+    UTC = timezone.utc
 
 try:
     from backend.resolve_imports import ensure_standalone_imports

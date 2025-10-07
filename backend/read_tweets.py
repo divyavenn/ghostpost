@@ -33,7 +33,7 @@ MAX_TWEETS_RETRIEVE = 30  # per user or query
 
 # headless login, legacy code, currently use oAuth instead
 async def log_in(username: str, password: str, browser=None):
-    from utils import store_browser_state
+    from backend.utils import store_browser_state
 
     if browser is None:
         async with async_playwright() as p:
@@ -53,7 +53,7 @@ async def log_in(username: str, password: str, browser=None):
 
 
 async def get_home(browser=None):
-    from utils import read_browser_state
+    from backend.utils import read_browser_state
 
     if browser is None:
         async with async_playwright() as p:

@@ -74,13 +74,19 @@ def get_tweet_by_id(tweets: list[dict[str, Any]], tweet_id: str) -> dict[str, An
     return None
 
 
-async def delete_tweet(username: str, tweet_id: str) -> bool:
-    """Delete a tweet from the user's cache by tweet_id."""
+async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) -> bool:
+    """Delete a tweet from the user's cache by tweet_id.
+
+    Args:
+        username: The username who owns the cache
+        tweet_id: The ID of the tweet to delete
+        log_deletion: Whether to log this deletion (False when deleting after posting)
+    """
     from backend.logging import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)
 
-    # Find the tweet to get its cache_id before deletion
+    # Find the tweet to get its cache_id and reply before deletion
     tweet_to_delete = None
     for t in tweets:
         if t.get("id") == tweet_id or t.get("tweet_id") == tweet_id:
@@ -91,6 +97,7 @@ async def delete_tweet(username: str, tweet_id: str) -> bool:
         return False  # Tweet not found
 
     cache_id = tweet_to_delete.get("cache_id")
+    deleted_reply = tweet_to_delete.get("reply", "")
 
     # Remove the tweet
     tweets = [t for t in tweets if t.get("id") != tweet_id and t.get("tweet_id") != tweet_id]
@@ -100,13 +107,20 @@ async def delete_tweet(username: str, tweet_id: str) -> bool:
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
     notify(f"💾 Deleted tweet {tweet_id}")
 
-    # Log the deletion with cache_id
-    log_tweet_action(
-        username,
-        TweetAction.DELETED,
-        tweet_id,
-        metadata={"cache_id": cache_id} if cache_id else None
-    )
+    # Log the deletion only if requested (skip when deleting after posting)
+    if log_deletion:
+        metadata = {}
+        if cache_id:
+            metadata["cache_id"] = cache_id
+        if deleted_reply:
+            metadata["deleted_reply"] = deleted_reply
+
+        log_tweet_action(
+            username,
+            TweetAction.DELETED,
+            tweet_id,
+            metadata=metadata if metadata else None
+        )
     return True
 
 
@@ -209,9 +223,15 @@ async def get_tweets(username: str) -> list[dict[str, Any]]:
 
 
 @router.delete("/{username}/{tweet_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_tweet_endpoint(username: str, tweet_id: str) -> None:
-    """Delete a tweet from the user's cache."""
-    deleted = await delete_tweet(username, tweet_id)
+async def delete_tweet_endpoint(username: str, tweet_id: str, log_deletion: bool = True) -> None:
+    """Delete a tweet from the user's cache.
+
+    Args:
+        username: The username who owns the cache
+        tweet_id: The ID of the tweet to delete
+        log_deletion: Whether to log this deletion (default True, use False when deleting after posting)
+    """
+    deleted = await delete_tweet(username, tweet_id, log_deletion=log_deletion)
     if not deleted:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

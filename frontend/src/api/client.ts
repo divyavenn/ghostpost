@@ -92,4 +92,19 @@ export const api = {
     if (!response.ok) throw new Error('Failed to read tweets');
     return response.json();
   },
+
+  generateReplies: async (username: string, payload?: {
+    delay_seconds?: number;
+    overwrite?: boolean;
+  }): Promise<{ message: string; total_tweets: number; replies_generated: number }> => {
+    const response = await fetch(`${API_BASE_URL}/generate/${encodeURIComponent(username)}/replies`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload || {}),
+    });
+    if (!response.ok) throw new Error('Failed to generate replies');
+    return response.json();
+  },
 };

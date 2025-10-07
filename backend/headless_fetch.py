@@ -434,7 +434,8 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
     for t in tweets.values():
         t["thread"] = await get_thread(ctx, t["url"], root_id=t["id"])
 
-        # Keep the text in the main tweet for display
-        # t.pop("text", None)  # Uncomment if you want to save space
+        # Replace the truncated text with the full text from the thread (first element)
+        if t["thread"] and len(t["thread"]) > 0:
+            t["text"] = t["thread"][0]
 
     return tweets

@@ -53,8 +53,7 @@ def ask_model(prompt: str, model: str = "divya-2-bon"):
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     import time
-
-    from utils import read_from_cache, write_to_cache
+    from backend.tweets_cache import read_from_cache, write_to_cache
 
     tweets = await read_from_cache(username=username)
     count = 0
@@ -91,6 +90,46 @@ async def run_all() -> None:
     await generate_replies()
 
     notify("Done!")
+
+
+# API Router
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
+
+router = APIRouter(prefix="/generate", tags=["generate"])
+
+
+class GenerateRepliesRequest(BaseModel):
+    delay_seconds: int = 1
+    overwrite: bool = False
+
+
+@router.post("/{username}/replies")
+async def generate_replies_endpoint(username: str, payload: GenerateRepliesRequest | None = None) -> dict:
+    """Generate AI replies for tweets in the cache."""
+    try:
+        if payload is None:
+            tweets = await generate_replies(username=username)
+        else:
+            tweets = await generate_replies(
+                username=username,
+                delay_seconds=payload.delay_seconds,
+                overwrite=payload.overwrite
+            )
+
+        # Count tweets with replies
+        reply_count = sum(1 for t in tweets if t.get('reply'))
+
+        return {
+            "message": "Replies generated successfully",
+            "total_tweets": len(tweets),
+            "replies_generated": reply_count
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error generating replies: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
 import { api } from './api/client';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 
 function App() {
   const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
   const [tweets, setTweets] = useState<TweetData[]>([]);
   const [currentTweetIndex, setCurrentTweetIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingPhase, setLoadingPhase] = useState<'scraping' | 'generating' | null>(null);
   const [deletingTweetIds, setDeletingTweetIds] = useState<Set<string>>(new Set());
   const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
   const [postedTweets, setPostedTweets] = useState<TweetData[]>([]);
@@ -64,16 +66,24 @@ function App() {
 
     setIsLoading(true);
     try {
-      // Call the read tweets endpoint to scrape new tweets
-      const result = await api.readTweets(username);
-      console.log(`Scraped ${result.count} new tweets`);
+      // Step 1: Call the read tweets endpoint to scrape new tweets
+      setLoadingPhase('scraping');
+      const readResult = await api.readTweets(username);
+      console.log(`Scraped ${readResult.count} new tweets`);
 
-      // Reload the cache after scraping
+      // Step 2: Generate AI replies for the scraped tweets
+      setLoadingPhase('generating');
+      const generateResult = await api.generateReplies(username);
+      console.log(`Generated ${generateResult.replies_generated} replies`);
+
+      // Step 3: Reload the cache to show the new tweets with replies
+      setLoadingPhase(null);
       await loadTweets(username);
     } catch (error) {
       console.error('Failed to refresh tweets:', error);
       alert('Failed to refresh tweets. Please try again.');
       setIsLoading(false);
+      setLoadingPhase(null);
     }
   };
 
@@ -222,10 +232,29 @@ function App() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading && !loadingPhase) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
         <div className="text-white text-xl">Loading tweets...</div>
+      </div>
+    );
+  }
+
+  if (loadingPhase) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
+        <div className="flex flex-col items-center gap-6">
+          <div className={loadingPhase === 'scraping' ? 'mt-[-230px] w-[700px] h-[700px]' : 'w-[250px] h-[250px]'}>
+            <DotLottieReact
+              src={loadingPhase === 'scraping' ? '/src/assets/desktop.lottie' : '/src/assets/writing.lottie'}
+              loop
+              autoplay
+            />
+          </div>
+          <div className= {loadingPhase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl y text-center"}>
+            {loadingPhase === 'scraping' ? 'Scraping tweets...' : 'Generating replies...'}
+          </div>
+        </div>
       </div>
     );
   }
@@ -258,7 +287,13 @@ function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-950">
-      <div className="absolute top-6 right-6 z-10">
+      <div className="absolute top-6 right-6 z-10 flex gap-3">
+        <button
+          onClick={handleRefresh}
+          className="rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700"
+        >
+          Refresh
+        </button>
         <button
           onClick={handleLogout}
           className="rounded-full bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"

@@ -4,7 +4,7 @@ from typing import Optional
 from urllib.parse import unquote
 
 import requests
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
 
@@ -92,7 +92,7 @@ async def post_tweet(username: str, payload: Tweet) -> dict:
 
 
 @router.post("/reply")
-async def post_reply(username: str, payload: ReplyTweet) -> dict:
+async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
     data = {
         "text": payload.text,
         "reply": {

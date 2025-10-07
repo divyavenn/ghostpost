@@ -44,7 +44,7 @@ def get_authorization_url(state: str | None = None) -> tuple[str, str]:
         "response_type": "code",
         "client_id": client_id,
         "redirect_uri": redirect_uri,
-        "scope": "tweet.read tweet.write users.read offline.access",
+        "scope": "tweet.read tweet.write users.read follows.read follows.write offline.access",
         "state": state,
         "code_challenge": code_challenge,
         "code_challenge_method": "S256",

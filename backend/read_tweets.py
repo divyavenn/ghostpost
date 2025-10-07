@@ -20,7 +20,7 @@ USERNAME = "proudlurker"
 
 PASSWORD = r"JXJ-pfd3bdv*myu0whb"
 
-see_browser = True  # set to True to see the browser in action (for debugging)
+see_browser = False  # set to True to see the browser in action (for debugging)
 
 QUERIES = [
     "multimodal ai -filter:links -filter:replies -is:retweet lang:en",

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 export interface TweetData {
   id: string;
+  cache_id?: string;
   text: string;
   likes: number;
   retweets: number;
@@ -11,7 +12,7 @@ export interface TweetData {
   score: number;
   username: string;
   followers: number;
-  reply: string;
+  reply?: string;
   created_at: string;
   url: string;
   thread?: string[];
@@ -22,11 +23,13 @@ interface TweetDisplayProps {
   replyText: string;
   onPublish: (text: string) => void;
   onSkip: () => void;
+  onEditReply?: (newReply: string) => void;
 }
 
-export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayProps) {
-  const [editedText, setEditedText] = useState(tweet.reply);
+export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply }: TweetDisplayProps) {
+  const [editedText, setEditedText] = useState(tweet.reply || '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const displayName = tweet.username;
   const handle = tweet.handle;
@@ -35,6 +38,12 @@ export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayP
 
   const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
 
+  // Update editedText when tweet changes
+  useEffect(() => {
+    setEditedText(tweet.reply || '');
+  }, [tweet.id, tweet.reply]);
+
+  // Auto-resize textarea
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -42,6 +51,32 @@ export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayP
     textarea.style.height = 'auto';
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [editedText]);
+
+  // Debounced API call when text changes
+  const handleTextChange = (newText: string) => {
+    setEditedText(newText);
+
+    // Clear existing timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
+    // Set new timer to call API after 1 second of no typing
+    debounceTimerRef.current = setTimeout(() => {
+      if (onEditReply && newText !== tweet.reply) {
+        onEditReply(newText);
+      }
+    }, 1000);
+  };
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   const getRelativeTime = (dateStr: string): string => {
     try {
@@ -65,7 +100,7 @@ export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayP
   };
 
   return (
-    <div className="mx-auto w-full max-w-xl rounded-2xl bg-black text-white shadow-2xl">
+    <div className="mx-auto w-full min-w-xl max-w-[70%] px-[2%] py-[1%] rounded-2xl bg-black text-white shadow-2xl">
       <div className="flex items-center justify-between px-5 py-3">
         <button
           type="button"
@@ -128,7 +163,7 @@ export default function TweetDisplay({ tweet, onPublish, onSkip }: TweetDisplayP
               ref={textareaRef}
               placeholder="Post your reply"
               value={editedText}
-              onChange={(e) => setEditedText(e.target.value)}
+              onChange={(e) => handleTextChange(e.target.value)}
               className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
             />
           </div>

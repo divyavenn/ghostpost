@@ -27,7 +27,13 @@ def get_user_tweet_cache(username=USERNAME) -> Path:
 
 
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
+    import uuid
     from backend.logging import TweetAction, log_tweet_action
+
+    # Add cache_id to each tweet if not present
+    for tweet in tweets:
+        if "cache_id" not in tweet:
+            tweet["cache_id"] = str(uuid.uuid4())
 
     path = get_user_tweet_cache(username)
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
@@ -36,8 +42,14 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
     # Log each tweet being written
     for tweet in tweets:
         tweet_id = tweet.get("id") or tweet.get("tweet_id")
-        if tweet_id:
-            log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id))
+        cache_id = tweet.get("cache_id")
+        if tweet_id and cache_id:
+            log_tweet_action(
+                username,
+                TweetAction.WRITTEN,
+                str(tweet_id),
+                metadata={"cache_id": cache_id}
+            )
 
     return path
 
@@ -68,26 +80,40 @@ async def delete_tweet(username: str, tweet_id: str) -> bool:
 
     tweets = await read_from_cache(username)
 
-    # Find and remove the tweet
-    original_count = len(tweets)
-    tweets = [t for t in tweets if t.get("id") != tweet_id and t.get("tweet_id") != tweet_id]
+    # Find the tweet to get its cache_id before deletion
+    tweet_to_delete = None
+    for t in tweets:
+        if t.get("id") == tweet_id or t.get("tweet_id") == tweet_id:
+            tweet_to_delete = t
+            break
 
-    if len(tweets) == original_count:
+    if not tweet_to_delete:
         return False  # Tweet not found
+
+    cache_id = tweet_to_delete.get("cache_id")
+
+    # Remove the tweet
+    tweets = [t for t in tweets if t.get("id") != tweet_id and t.get("tweet_id") != tweet_id]
 
     # Write to cache without logging (to avoid duplicate WRITTEN logs)
     path = get_user_tweet_cache(username)
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
     notify(f"💾 Deleted tweet {tweet_id}")
 
-    # Log the deletion
-    log_tweet_action(username, TweetAction.DELETED, tweet_id)
+    # Log the deletion with cache_id
+    log_tweet_action(
+        username,
+        TweetAction.DELETED,
+        tweet_id,
+        metadata={"cache_id": cache_id} if cache_id else None
+    )
     return True
 
 
 async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool:
     """Edit the reply text for a specific tweet in the cache."""
     from backend.logging import TweetAction, log_tweet_action
+    import difflib
 
     tweets = await read_from_cache(username)
 
@@ -95,7 +121,19 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool
     if not tweet:
         return False
 
-    old_reply = tweet.get("reply")
+    old_reply = tweet.get("reply", "")
+    cache_id = tweet.get("cache_id")
+    original_tweet_id = tweet.get("id")  # The tweet this reply is responding to
+
+    # Generate diff
+    diff = list(difflib.unified_diff(
+        old_reply.splitlines(keepends=True),
+        new_reply.splitlines(keepends=True),
+        lineterm='',
+        fromfile='old_reply',
+        tofile='new_reply'
+    ))
+
     tweet["reply"] = new_reply
 
     # Write to cache without logging (to avoid duplicate WRITTEN logs)
@@ -103,13 +141,15 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
     notify(f"💾 Edited reply for tweet {tweet_id}")
 
-    # Log the edit with metadata
-    log_tweet_action(
-        username,
-        TweetAction.EDITED,
-        tweet_id,
-        metadata={"old_reply": old_reply, "new_reply": new_reply}
-    )
+    # Log the edit with comprehensive metadata
+    metadata = {
+        "cache_id": cache_id,
+        "new_reply": new_reply,
+        "diff": "".join(diff),
+        "replying_to_tweet_id": original_tweet_id
+    }
+
+    log_tweet_action(username, TweetAction.EDITED, tweet_id, metadata=metadata)
     return True
 
 

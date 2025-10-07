@@ -1,0 +1,71 @@
+import { type TweetData } from '../components/tweet_new';
+
+const API_BASE_URL = 'http://localhost:8000';
+
+export interface AuthResponse {
+  auth_url: string;
+  state: string;
+}
+
+export interface TwitterStatus {
+  connected: boolean;
+  twitter_handle: string | null;
+  expires_at: string | null;
+}
+
+export const api = {
+  // Auth endpoints
+  startTwitterOAuth: async (redirectTo?: string): Promise<AuthResponse> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        redirect_to: redirectTo
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to start OAuth');
+    return response.json();
+  },
+
+  getTwitterStatus: async (): Promise<TwitterStatus> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/status`);
+    if (!response.ok) throw new Error('Failed to get Twitter status');
+    return response.json();
+  },
+
+  // Tweet cache endpoints
+  getTweetsCache: async (username: string): Promise<TweetData[]> => {
+    const response = await fetch(`${API_BASE_URL}/tweets/${username}`);
+    if (!response.ok) throw new Error('Failed to fetch tweets');
+    return response.json();
+  },
+
+  editTweetReply: async (username: string, tweetId: string, newReply: string): Promise<void> => {
+    const response = await fetch(`${API_BASE_URL}/tweets/${username}/${tweetId}/reply`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ new_reply: newReply }),
+    });
+    if (!response.ok) throw new Error('Failed to edit reply');
+  },
+
+  postReply: async (username: string, text: string, tweetId: string, cacheId?: string): Promise<{ data: { id: string } }> => {
+    const response = await fetch(`${API_BASE_URL}/post/reply?username=${encodeURIComponent(username)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text,
+        tweet_id: tweetId,
+        cache_id: cacheId,
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to post reply');
+    return response.json();
+  },
+};

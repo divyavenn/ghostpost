@@ -1,9 +1,7 @@
 from typing import Any
 from backend.tweets_cache import remove_user_cache
 from backend.utils import remove_entry_from_map, _cache_key, ARCHIVE_DIR, BROWSER_STATE_FILE, TOKEN_FILE, notify
-from backend.utils import _archive_interactions_log
-from utils import write_user_info
-
+from backend.utils import _archive_interactions_log, write_user_info
 def get_user_info(access_token: str) -> dict[str, Any]:
     """Fetch the authenticated user's metadata and persist it locally."""
     import requests

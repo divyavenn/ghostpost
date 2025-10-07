@@ -97,6 +97,67 @@ async def get_log_statistics(username: str) -> dict[str, Any]:
         "stats": stats
     }
 
+
+def get_logs_by_cache_id(username: str, cache_id: str) -> list[dict[str, Any]]:
+    """Get all log entries for a specific cache_id."""
+    all_entries = read_user_log(username)
+    return [
+        entry for entry in all_entries
+        if entry.get("metadata", {}).get("cache_id") == cache_id
+    ]
+
+
+def get_logs_by_posted_tweet_id(username: str, posted_tweet_id: str) -> list[dict[str, Any]]:
+    """Get all log entries for a specific posted_tweet_id by finding its cache_id first."""
+    all_entries = read_user_log(username)
+
+    # Find the cache_id from the POSTED log entry
+    cache_id = None
+    for entry in all_entries:
+        if (entry.get("action") == TweetAction.POSTED.value and
+            entry.get("metadata", {}).get("posted_tweet_id") == posted_tweet_id):
+            cache_id = entry.get("metadata", {}).get("cache_id")
+            break
+
+    if not cache_id:
+        return []
+
+    # Return all logs for that cache_id
+    return get_logs_by_cache_id(username, cache_id)
+
+
+@router.get("/{username}/cache/{cache_id}")
+async def get_logs_by_cache_id_endpoint(username: str, cache_id: str) -> dict[str, Any]:
+    """Get all log entries for a specific cache_id."""
+    entries = get_logs_by_cache_id(username, cache_id)
+    return {
+        "username": username,
+        "cache_id": cache_id,
+        "count": len(entries),
+        "entries": entries
+    }
+
+
+@router.get("/{username}/posted/{posted_tweet_id}")
+async def get_logs_by_posted_tweet_id_endpoint(username: str, posted_tweet_id: str) -> dict[str, Any]:
+    """Get all log entries for a specific posted_tweet_id."""
+    entries = get_logs_by_posted_tweet_id(username, posted_tweet_id)
+
+    # Get the cache_id if found
+    cache_id = None
+    for entry in entries:
+        if entry.get("metadata", {}).get("cache_id"):
+            cache_id = entry["metadata"]["cache_id"]
+            break
+
+    return {
+        "username": username,
+        "posted_tweet_id": posted_tweet_id,
+        "cache_id": cache_id,
+        "count": len(entries),
+        "entries": entries
+    }
+
 @router.post("/{username}/append_log")
 def log_tweet_action(username: str, action: TweetAction,tweet_id: str, metadata: dict[str, Any] | None = None
 ) -> None:

@@ -233,3 +233,10 @@ def store_token(username: str, refresh_token: str):
 
     atomic_file_update(path, tokens, ".json.tmp")
     notify(f"💾 Stored OAuth refresh token for {username}")
+
+
+def _cache_key(username: str | None) -> str:
+    key = (username or "default").strip()
+    key = key or "default"
+    sanitized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in key)
+    return sanitized or "default"

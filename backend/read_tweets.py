@@ -1,7 +1,9 @@
 import asyncio
 import re
 
+from fastapi import APIRouter, HTTPException, status
 from playwright.async_api import async_playwright
+from pydantic import BaseModel
 
 from .headless_fetch import collect_from_page
 from .utils import error, notify
@@ -108,17 +110,62 @@ async def gather_trending(usernames, queries, max_scrolls=3):
         return results
 
 
-async def read_tweets(username=USERNAME):
-    from utils import write_to_cache
+async def read_tweets(username=USERNAME, usernames=None, queries=None, max_scrolls=3, max_tweets=None):
+    from backend.tweets_cache import write_to_cache
+
+    if usernames is None:
+        usernames = USERNAMES
+    if queries is None:
+        queries = QUERIES
+    if max_tweets is None:
+        max_tweets = MAX_TWEETS_RETRIEVE
 
     sorted_items = []
     # write results to cache file
-    trending = await gather_trending(USERNAMES, QUERIES, max_scrolls=3)
+    trending = await gather_trending(usernames, queries, max_scrolls=max_scrolls)
     # sort by score desc
     sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
-    if MAX_TWEETS_RETRIEVE:
-        sorted_items = sorted_items[:MAX_TWEETS_RETRIEVE]  # top 50
-        await write_to_cache(sorted_items, "Scraped relevant tweets", username=username)
+    if max_tweets:
+        sorted_items = sorted_items[:max_tweets]
+    await write_to_cache(sorted_items, "Scraped relevant tweets", username=username)
+    return sorted_items
+
+
+# API Router
+router = APIRouter(prefix="/read", tags=["read"])
+
+
+class ReadTweetsRequest(BaseModel):
+    usernames: list[str] | None = None
+    queries: list[str] | None = None
+    max_scrolls: int = 3
+    max_tweets: int | None = None
+
+
+@router.post("/{username}/tweets")
+async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None = None) -> dict:
+    """Scrape tweets from usernames and queries, save to cache."""
+    try:
+        if payload is None:
+            tweets = await read_tweets(username=username)
+        else:
+            tweets = await read_tweets(
+                username=username,
+                usernames=payload.usernames,
+                queries=payload.queries,
+                max_scrolls=payload.max_scrolls,
+                max_tweets=payload.max_tweets
+            )
+        return {
+            "message": "Tweets scraped and cached successfully",
+            "count": len(tweets),
+            "tweets": tweets
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error scraping tweets: {str(e)}"
+        )
 
 
 if __name__ == "__main__":

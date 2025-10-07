@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from backend.utils import atomic_file_update
+from backend.utils import atomic_file_update, _cache_key
 
 BACKEND_DIR = Path(__file__).resolve().parent
 CACHE_DIR = BACKEND_DIR / "cache"
@@ -22,21 +22,23 @@ def error(msg: str):
     raise RuntimeError(f"❌ {msg}")
 
 
-def _cache_key(username: str | None) -> str:
-    key = (username or "default").strip()
-    key = key or "default"
-    sanitized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in key)
-    return sanitized or "default"
-
-
 def get_user_tweet_cache(username=USERNAME) -> Path:
     return CACHE_DIR / f"{_cache_key(username)}_tweets.json"
 
 
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
+    from backend.logging import TweetAction, log_tweet_action
+
     path = get_user_tweet_cache(username)
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
     notify(f"💾{description} and wrote to cache")
+
+    # Log each tweet being written
+    for tweet in tweets:
+        tweet_id = tweet.get("id") or tweet.get("tweet_id")
+        if tweet_id:
+            log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id))
+
     return path
 
 
@@ -62,6 +64,8 @@ def get_tweet_by_id(tweets: list[dict[str, Any]], tweet_id: str) -> dict[str, An
 
 async def delete_tweet(username: str, tweet_id: str) -> bool:
     """Delete a tweet from the user's cache by tweet_id."""
+    from backend.logging import TweetAction, log_tweet_action
+
     tweets = await read_from_cache(username)
 
     # Find and remove the tweet
@@ -71,21 +75,41 @@ async def delete_tweet(username: str, tweet_id: str) -> bool:
     if len(tweets) == original_count:
         return False  # Tweet not found
 
-    await write_to_cache(tweets, f"Deleted tweet {tweet_id}", username=username)
+    # Write to cache without logging (to avoid duplicate WRITTEN logs)
+    path = get_user_tweet_cache(username)
+    atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+    notify(f"💾 Deleted tweet {tweet_id}")
+
+    # Log the deletion
+    log_tweet_action(username, TweetAction.DELETED, tweet_id)
     return True
 
 
 async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool:
     """Edit the reply text for a specific tweet in the cache."""
+    from backend.logging import TweetAction, log_tweet_action
+
     tweets = await read_from_cache(username)
 
     tweet = get_tweet_by_id(tweets, tweet_id)
     if not tweet:
         return False
 
+    old_reply = tweet.get("reply")
     tweet["reply"] = new_reply
 
-    await write_to_cache(tweets, f"Edited reply for tweet {tweet_id}", username=username)
+    # Write to cache without logging (to avoid duplicate WRITTEN logs)
+    path = get_user_tweet_cache(username)
+    atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+    notify(f"💾 Edited reply for tweet {tweet_id}")
+
+    # Log the edit with metadata
+    log_tweet_action(
+        username,
+        TweetAction.EDITED,
+        tweet_id,
+        metadata={"old_reply": old_reply, "new_reply": new_reply}
+    )
     return True
 
 

@@ -39,7 +39,9 @@ class ReplyTweet(BaseModel):
     tweet_id: str
 
 
-async def post(username, payload: dict) -> dict: 
+async def post(username, payload: dict) -> dict:
+    from backend.logging import TweetAction, log_tweet_action
+
     access_token = await _get_access_token_for_user(username)
 
     url = "https://api.x.com/2/tweets"
@@ -54,7 +56,20 @@ async def post(username, payload: dict) -> dict:
             detail=f"Twitter API error: {response.text}"
         )
 
-    return response.json()
+    result = response.json()
+
+    # Log the post
+    tweet_id = result.get("data", {}).get("id")
+    if tweet_id:
+        metadata = {"text": payload.get("text")}
+        if "reply" in payload:
+            metadata["reply_to"] = payload["reply"].get("in_reply_to_tweet_id")
+        if "quote_tweet_id" in payload:
+            metadata["quote_tweet_id"] = payload["quote_tweet_id"]
+
+        log_tweet_action(username, TweetAction.POSTED, str(tweet_id), metadata=metadata)
+
+    return result
     
 
 @router.post("/tweet")

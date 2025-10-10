@@ -3,6 +3,8 @@ import {TweetDisplay, type TweetData } from './components/tweet_new';
 import { api } from './api/client';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { AnimatedText } from './components/AnimatedText';
+import desktopLottie from './assets/desktop.lottie';
+import writingLottie from './assets/writing.lottie';
 
 function App() {
   const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
@@ -247,7 +249,7 @@ function App() {
         <div className="flex flex-col items-center gap-6">
           <div className={loadingPhase === 'scraping' ? 'mt-[-230px] w-[700px] h-[700px]' : 'w-[250px] h-[250px]'}>
             <DotLottieReact
-              src={loadingPhase === 'scraping' ? '/src/assets/desktop.lottie' : '/src/assets/writing.lottie'}
+              src={loadingPhase === 'scraping' ? desktopLottie : writingLottie}
               loop
               autoplay
             />

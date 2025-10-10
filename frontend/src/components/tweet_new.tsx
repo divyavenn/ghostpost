@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import xLottie from '../assets/x.lottie';
 
 export interface TweetData {
   id: string;
@@ -148,7 +149,7 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
             {isDeleteHovered ? (
               <div className="w-8 h-8">
                 <DotLottieReact
-                  src="/src/assets/x.lottie"
+                  src={xLottie}
                   loop
                   autoplay
                 />

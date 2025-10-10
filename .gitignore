@@ -210,7 +210,6 @@ node_modules/
 
 uv.lock
 
-# Server-specific data files that should not be tracked
 backend/cache/proudlurker_log.jsonl
 backend/cache/proudlurker_tweets.json
 

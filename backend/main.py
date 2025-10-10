@@ -13,11 +13,7 @@ app = FastAPI(title="FloodMe API")
 # Add CORS middleware to allow frontend to make requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://localhost:3000",
-        "http://192.168.8.57:3000",  # Production frontend on server
-    ],
+    allow_origins=["*"],  # Allow all origins for development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

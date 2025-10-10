@@ -8,19 +8,22 @@
 
     `ssh divya@192.168.8.57`
 
-# Initial setup on new serer
+# Initial setup on new server
 
-3) If the repo does not exist on the machine, pull it 
+1) Add the IP address of your server to CORS and to the Twitter Developer Portal. If you don't know it you can find it using `ip addr show`
+    - Go to the X Developer Portal https://developer.x.com/en/portal/dashboard
+    - Go to user authentication settings
+    - Make sure [IP Address]/auth/callback is in the Callback URI in App Info in the X developer portal for the account you will be using
+
+
+2) If the repo does not exist on the machine, pull it 
     `git clone https://github.com/Bread-Technologies/floodme.git`
     `git config --global user.email "server@bread.com"`
     `git config --global user.name "Bread Server"`
-
-4) Enter repo
-
     `cd floodme`
 
 
-5) Install the backend dependencies. Create an environment file in the backend folder. Press i to edit the document and fill in information. Press escape and :wq to save. 
+3) Install the backend dependencies. Create an environment file in the backend folder. Press i to edit the document and fill in information. Press escape and :wq to save. 
 
     `cd backend`
     `uv sync`
@@ -33,7 +36,7 @@ Create an environment file in the backend folder. Press i to edit the document a
     `npm run build`
     `cp .env.example .env.production && vim .env.production`
 
-6) Create a file to configure the systemd backend service. This will set up a persistent backend process on port 8000 and starts on its own again if the computer reboots or something. 
+4) Create a file to configure the systemd backend service. This will set up a persistent backend process on port 8000 and starts on its own again if the computer reboots or something. 
 
     `sudo vim /etc/systemd/system/floodme-backend.service`
 
@@ -50,7 +53,7 @@ Press i and copy paste this into vim. Press escape and :wq to save.
 [Service]
   User=divya
   WorkingDirectory=/home/divya/floodme/backend
-  EnvironmentFile=/home/divya/floodme/backend/.env
+  EnvironmentFile=/home/divya/floodme/backend/.env.production
   # explicitly include user's local bin so uv is found
   Environment="PATH=/home/divya/.local/bin:/usr/bin:/bin"
   # run using uv so it sets up its environment
@@ -66,7 +69,7 @@ Press i and copy paste this into vim. Press escape and :wq to save.
 
 ```
 
-7) Create a file to configure the systemd frontend service. This will set up a persistent backend process on port 3000 and start on its own again if the computer reboots or something. 
+5) Create a file to configure the systemd frontend service. This will set up a persistent backend process on port 3000 and start on its own again if the computer reboots or something. 
 
     `sudo vim /etc/systemd/system/floodme-frontend.service`
 
@@ -108,9 +111,10 @@ Run the following commands. Apparently this is what they do:
 
 ![alt text](image.png)
 
-8) Make the redeploy script executable
+6) Make the redeploy script executable
 
     `chmod +x ../redeploy.sh`
+
 
 
 

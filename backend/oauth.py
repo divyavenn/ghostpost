@@ -17,7 +17,7 @@ dotenv.load_dotenv()
 
 client_id = os.getenv("TWITTER_CLIENT_ID")
 client_secret = os.getenv("TWITTER_CLIENT_SECRET")
-redirect_uri = os.getenv("TWITTER_REDIRECT_URI", "http://localhost:8000/auth/callback")
+redirect_uri = os.getenv("BACKEND_URL") + "/auth/callback"
 BASE_URL = "https://api.x.com/2"
 
 

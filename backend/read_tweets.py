@@ -162,7 +162,7 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
             "tweets": tweets
         }
     except Exception as e:
-        raise HTTPException(
+        raise HTTPException from Exception(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error scraping tweets: {str(e)}"
         )

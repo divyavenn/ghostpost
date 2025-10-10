@@ -65,7 +65,7 @@ Press i and copy paste this into vim. Press escape and :wq to save.
 
 ```
 
-7) Create a file to configure the systemd frontend service. This will set up a persistent backend process on port 3000 and starts on its own again if the computer reboots or something. 
+7) Create a file to configure the systemd frontend service. This will set up a persistent backend process on port 3000 and start on its own again if the computer reboots or something. 
 
 `sudo vim /etc/systemd/system/floodme-frontend.service`
 
@@ -131,11 +131,7 @@ Run the following commands. Apparently this is what they do:
 
   `cd floodme`
 
-4) Commit data to dev machine to use for rebakes.
-
-  `git add backend/cache/ && git commit -m "Update cache from server" && git push origin main`
-
-5) Run the redeploy script to pull updates and restart services. The user info will update from the dev server while other data gets pushed. 
+4) Run the redeploy script to pull updates and restart services. The user info will update from the dev server while other data gets pushed. 
 
   `./redeploy.sh`
 
@@ -144,3 +140,9 @@ Run the following commands. Apparently this is what they do:
   `sudo systemctl status floodme-backend floodme-frontend`
 
   Press `q` to exit the status view.
+
+  
+  # Try out the code!
+
+  Backend will be running on http://192.168.8.57:8000
+  Frontend will be running on http://192.168.8.57:3000

@@ -1,13 +1,15 @@
   #!/bin/bash
+  # Commit data to dev machine to use for rebakes. **IMPORTANT: Do NOT include user_info.json in this commit - that file comes from dev.**
+  git add backend/cache/*.jsonl && git commit -m "Update cache from server" && git push origin main
 
   # Fetch latest code
   git fetch origin
 
-  # Keep server's cache files except user_info.json
-  git checkout origin/main -- backend/cache/user_info.json
+  # Discard any uncommitted changes
+  git restore .
 
-  # Merge other changes from main
-  git merge origin/main --no-edit
+  # Rebase local commits (cache updates) on top of remote
+  git rebase origin/main
 
   # Backend: Install deps if needed
   cd backend

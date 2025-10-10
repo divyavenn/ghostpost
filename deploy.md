@@ -151,3 +151,8 @@ Run the following commands. Apparently this is what they do:
 
   Backend will be running on http://192.168.8.57:8000
   Frontend will be running on http://192.168.8.57:3000
+
+  # Debugging 
+
+  You can use `journalctl -u floodme-backend -f` to see the logs from the backend. Guess how you see logs from the frontend?
+  `journalctl -u floodme-frontend -f`

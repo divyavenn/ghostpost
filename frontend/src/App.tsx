@@ -93,6 +93,10 @@ function App() {
   const handleLogin = async () => {
     try {
       console.log('Starting OAuth flow...');
+
+      // Open popup immediately to avoid popup blocker
+      const popup = window.open('about:blank', '_blank');
+
       // Start Twitter OAuth - this will redirect to Twitter
       const response = await api.startTwitterOAuth(window.location.origin);
       console.log('OAuth response:', response);
@@ -101,11 +105,17 @@ function App() {
       console.log('Auth URL:', auth_url);
 
       if (!auth_url) {
+        popup?.close();
         throw new Error('No auth URL received from server');
       }
 
-      // Open Twitter OAuth in new tab
-      window.open(auth_url, '_blank');
+      // Redirect the already-open popup to Twitter OAuth
+      if (popup) {
+        popup.location.href = auth_url;
+      } else {
+        // Fallback if popup was blocked
+        window.location.href = auth_url;
+      }
     } catch (error) {
       console.error('Login failed:', error);
       alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  assetsInclude: ['**/*.lottie'], // Treat .lottie files as static assets
   define: {
     // Provide a polyfill for process.env
     'process.env': {

@@ -1,14 +1,17 @@
   #!/bin/bash
-  # Commit data to dev machine to use for rebakes. **IMPORTANT: Do NOT include user_info.json in this commit - that file comes from dev.**
-  git add backend/cache/*.jsonl && git commit -m "Update logs from server" && git push origin main
+
+  # Commit cache files EXCEPT user_info.json
+  git add backend/cache/*.jsonl backend/cache/*.json
+  git restore --staged backend/cache/user_info.json
+  git commit -m "Update cache from server" || true
+
+  # Discard changes to user_info.json so dev version wins
+  git restore backend/cache/user_info.json
 
   # Fetch latest code
   git fetch origin
 
-  # Discard any uncommitted changes. this is important bc user_info will have local (unimportant) changes like current follower count. 
-  git restore .
-
-  # Rebase local commits (cache updates) on top of remote
+  # Rebase local commits on top of remote
   git rebase origin/main
 
   # Backend: Install deps if needed

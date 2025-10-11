@@ -176,6 +176,16 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
                     <span className="text-base font-bold text-white">{displayName}</span>
                     <span>{'@' + handle}</span>
                     {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
+                    <a
+                      href={tweet.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-1 text-neutral-400 hover:text-sky-400 transition-colors"
+                      aria-label="View original tweet on Twitter"
+                      title="View on Twitter"
+                    >
+                      <i className="fa-solid fa-arrow-up-right-from-square text-sm" />
+                    </a>
                   </div>
                 )}
                 <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>

@@ -130,25 +130,17 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
             return 0
 
     def extract_user_data(tweet_res: dict) -> tuple:
-        """Extract username and handle from tweet data"""
+        """Extract username and handle from tweet data - for the ACTUAL POSTER, not quoted/retweeted users"""
         user_handle = None
         user_name = None
 
         # Debug: Print the first level of keys in the tweet_res dict
         # print(f"DEBUG: tweet_res keys: {list(tweet_res.keys() if isinstance(tweet_res, dict) else [])}")
 
-        # Try the most common Twitter API response structures
+        # IMPORTANT: Priority order matters here. We need to get the actual tweet author,
+        # NOT the author of any quoted/retweeted content!
 
-        # Structure 1: Direct user property in legacy
-        if tweet_res.get("legacy", {}).get("user", {}):
-            user = tweet_res["legacy"]["user"]
-            user_handle = user.get("screen_name")
-            user_name = user.get("name")
-            if user_handle:
-                # print(f"DEBUG: Found user in legacy.user: {user_name} / @{user_handle}")
-                return user_name, user_handle
-
-        # Structure 2: User in core.user_results
+        # HIGHEST PRIORITY: User in core.user_results (this is the actual tweet author)
         if tweet_res.get("core", {}).get("user_results", {}).get("result", {}):
             user_result = tweet_res["core"]["user_results"]["result"]
             if user_result.get("legacy", {}):
@@ -157,6 +149,15 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                 if user_handle:
                     # print(f"DEBUG: Found user in core.user_results: {user_name} / @{user_handle}")
                     return user_name, user_handle
+
+        # Structure 2: Direct user property in legacy (sometimes used for older API responses)
+        if tweet_res.get("legacy", {}).get("user", {}):
+            user = tweet_res["legacy"]["user"]
+            user_handle = user.get("screen_name")
+            user_name = user.get("name")
+            if user_handle:
+                # print(f"DEBUG: Found user in legacy.user: {user_name} / @{user_handle}")
+                return user_name, user_handle
 
         # Structure 3: Direct user property (not in legacy)
         if tweet_res.get("user", {}):
@@ -168,9 +169,15 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                 return user_name, user_handle
 
         # Structure 4: Look in known potential paths based on observed API response structures
-        paths = [["legacy", "user"], ["user"], ["core", "user_results", "result", "legacy"], ["core", "user_results", "result"],
-                 ["legacy", "retweeted_status_result", "result", "core", "user_results", "result", "legacy"], ["legacy", "retweeted_status_result", "result", "legacy", "user"],
-                 ["tweet", "core", "user_results", "result", "legacy"]]
+        # NOTE: We explicitly EXCLUDE paths that go through retweeted_status_result or quoted_status_result
+        # because those would give us the wrong user
+        paths = [
+            ["core", "user_results", "result", "legacy"],
+            ["core", "user_results", "result"],
+            ["legacy", "user"],
+            ["user"],
+            ["tweet", "core", "user_results", "result", "legacy"]
+        ]
 
         for path in paths:
             current = tweet_res
@@ -188,41 +195,35 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                     # print(f"DEBUG: Found user through path {path}: {user_name} / @{user_handle}")
                     return user_name, user_handle
 
-        # Structure 5: Deep recursive search for user info
-        def search_for_user(obj, depth=0, max_depth=5):
+        # Structure 5: Targeted search for user info (avoiding quoted/retweeted content)
+        def search_for_user(obj, depth=0, max_depth=3, avoid_keys=None):
+            if avoid_keys is None:
+                avoid_keys = {"quoted_status_result", "retweeted_status_result", "quoted_tweet", "retweeted_tweet"}
+
             if depth >= max_depth:
                 return None, None
 
             if not isinstance(obj, dict):
                 return None, None
 
+            # Skip if this is a quoted/retweeted content container
+            if any(key in obj for key in avoid_keys):
+                return None, None
+
             # Check if this object has user info
             if "screen_name" in obj and obj.get("screen_name"):
                 return obj.get("name"), obj.get("screen_name")
 
-            # Check common user containers
-            for key in ["user", "legacy", "result"]:
+            # Check common user containers (in priority order)
+            for key in ["core", "user", "legacy"]:
                 if key in obj and isinstance(obj[key], dict):
-                    user_n, user_h = search_for_user(obj[key], depth + 1, max_depth)
+                    user_n, user_h = search_for_user(obj[key], depth + 1, max_depth, avoid_keys)
                     if user_h:
                         return user_n, user_h
-
-            # Search all other dictionary values
-            for val in obj.values():
-                if isinstance(val, dict):
-                    user_n, user_h = search_for_user(val, depth + 1, max_depth)
-                    if user_h:
-                        return user_n, user_h
-                elif isinstance(val, list):
-                    for item in val:
-                        if isinstance(item, dict):
-                            user_n, user_h = search_for_user(item, depth + 1, max_depth)
-                            if user_h:
-                                return user_n, user_h
 
             return None, None
 
-        # Try deep recursive search if all else failed
+        # Try targeted search if all else failed
         deep_name, deep_handle = search_for_user(tweet_res)
         if deep_handle:
             # print(f"DEBUG: Found user through deep search: {deep_name} / @{deep_handle}")

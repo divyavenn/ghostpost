@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from backend.oauth import get_authorization_url, exchange_code_for_token
 from backend.user import get_user_info
-from backend.utils import store_token
+from backend.utils import store_token, read_user_info
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -98,6 +98,14 @@ async def twitter_callback(
 
         # Store the refresh token for this user
         store_token(twitter_handle, refresh_token)
+
+        # Check if user has a trained model
+        cached_user = read_user_info(twitter_handle)
+        if not cached_user or not cached_user.get("model"):
+            return RedirectResponse(
+                url=f"{redirect_to}/no-model",
+                status_code=303
+            )
 
         # Redirect back to frontend with username
         return RedirectResponse(

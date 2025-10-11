@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
-import { api } from './api/client';
+import { api, type UserInfo } from './api/client';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { AnimatedText } from './components/AnimatedText';
+import { UserSettingsModal } from './components/UserSettingsModal';
 import desktopLottie from './assets/desktop.lottie';
 import writingLottie from './assets/writing.lottie';
 
@@ -16,6 +17,8 @@ function App() {
   const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
   const [postedTweets, setPostedTweets] = useState<TweetData[]>([]);
   const [activeTab, setActiveTab] = useState<'generated' | 'posted'>('generated');
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -37,14 +40,25 @@ function App() {
       // OAuth successful, save username and load tweets
       setUsername(callbackUsername);
       localStorage.setItem('username', callbackUsername);
+      loadUserInfo(callbackUsername);
       loadTweets(callbackUsername);
 
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (username) {
+      loadUserInfo(username);
       loadTweets(username);
     }
   }, []);
+
+  const loadUserInfo = async (user: string) => {
+    try {
+      const info = await api.getUserInfo(user);
+      setUserInfo(info);
+    } catch (error) {
+      console.error('Failed to load user info:', error);
+    }
+  };
 
   const loadTweets = async (user: string) => {
     setIsLoading(true);
@@ -233,7 +247,7 @@ function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-8">FloodMe</h1>
+          <h1 className="text-4xl font-bold text-white mb-8">GhostPost</h1>
           <button
             onClick={handleLogin}
             className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
@@ -303,6 +317,12 @@ function App() {
     <div className="flex min-h-screen flex-col bg-neutral-950">
       <div className="absolute top-6 right-6 z-10 flex gap-3">
         <button
+          onClick={() => setIsSettingsOpen(true)}
+          className="rounded-full bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
+        >
+          Settings
+        </button>
+        <button
           onClick={handleRefresh}
           className="rounded-full bg-green-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-green-700"
         >
@@ -315,6 +335,19 @@ function App() {
           Logout ({username})
         </button>
       </div>
+
+      {userInfo && (
+        <UserSettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          username={username!}
+          userInfo={{
+            profile_pic_url: userInfo.profile_pic_url,
+            username: userInfo.username,
+            follower_count: userInfo.follower_count,
+          }}
+        />
+      )}
 
       {/* Tab Navigation */}
       <div className="flex justify-center gap-4 pt-6 pb-4">

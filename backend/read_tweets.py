@@ -112,13 +112,21 @@ async def gather_trending(usernames, queries, max_scrolls=3):
 
 async def read_tweets(username=USERNAME, usernames=None, queries=None, max_scrolls=3, max_tweets=None):
     from backend.tweets_cache import write_to_cache
+    from backend.user import read_user_settings
+
+    # Try to get settings from user_info.json first
+    user_settings = read_user_settings(username)
+
+    # Check if user settings exist (required for per-user configuration)
+    if not user_settings:
+        error(f"No settings found for user {username}. Please configure settings first.")
 
     if usernames is None:
-        usernames = USERNAMES
+        usernames = user_settings.get("relevant_accounts", [])
     if queries is None:
-        queries = QUERIES
+        queries = user_settings.get("queries", [])
     if max_tweets is None:
-        max_tweets = MAX_TWEETS_RETRIEVE
+        max_tweets = user_settings.get("max_tweets_retrieve", MAX_TWEETS_RETRIEVE)
 
     sorted_items = []
     # write results to cache file

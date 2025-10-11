@@ -13,6 +13,21 @@ export interface TwitterStatus {
   expires_at: string | null;
 }
 
+export interface UserSettings {
+  queries: string[];
+  relevant_accounts: string[];
+  max_tweets_retrieve: number;
+}
+
+export interface UserInfo {
+  handle: string;
+  username: string;
+  profile_pic_url: string;
+  follower_count: number;
+  email?: string;
+  model?: string;
+}
+
 export const api = {
   // Auth endpoints
   startTwitterOAuth: async (redirectTo?: string): Promise<AuthResponse> => {
@@ -105,6 +120,57 @@ export const api = {
       body: JSON.stringify(payload || {}),
     });
     if (!response.ok) throw new Error('Failed to generate replies');
+    return response.json();
+  },
+
+  // User settings endpoints
+  getUserInfo: async (handle: string): Promise<UserInfo> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/info`);
+    if (!response.ok) throw new Error('Failed to get user info');
+    return response.json();
+  },
+
+  getUserSettings: async (handle: string): Promise<UserSettings> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings`);
+    if (!response.ok) throw new Error('Failed to get user settings');
+    return response.json();
+  },
+
+  updateUserSettings: async (handle: string, settings: Partial<UserSettings>): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(settings),
+    });
+    if (!response.ok) throw new Error('Failed to update user settings');
+    return response.json();
+  },
+
+  removeAccount: async (handle: string, account: string): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings/account/${encodeURIComponent(account)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to remove account');
+    return response.json();
+  },
+
+  removeQuery: async (handle: string, query: string): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings/query`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    });
+    if (!response.ok) throw new Error('Failed to remove query');
+    return response.json();
+  },
+
+  validateTwitterHandle: async (handle: string): Promise<{ valid: boolean; handle: string; data?: unknown; error?: string }> => {
+    const response = await fetch(`${API_BASE_URL}/user/validate/${encodeURIComponent(handle)}`);
+    if (!response.ok) throw new Error('Failed to validate Twitter handle');
     return response.json();
   },
 };

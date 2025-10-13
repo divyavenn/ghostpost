@@ -13,7 +13,35 @@ export interface TwitterStatus {
   expires_at: string | null;
 }
 
+export interface UserSettings {
+  queries: string[];
+  relevant_accounts: Record<string, boolean>; // {handle: validated}
+  max_tweets_retrieve: number;
+}
+
+export interface UserInfo {
+  handle: string;
+  username: string;
+  profile_pic_url: string;
+  follower_count: number;
+  email?: string;
+  model?: string;
+}
+
+export interface ValidationDelayConfig {
+  delay_seconds: number;
+  delay_ms: number;
+  tier: string;
+}
+
 export const api = {
+  // Config endpoints
+  getValidationDelay: async (): Promise<ValidationDelayConfig> => {
+    const response = await fetch(`${API_BASE_URL}/user/config/validation-delay`);
+    if (!response.ok) throw new Error('Failed to get validation delay config');
+    return response.json();
+  },
+
   // Auth endpoints
   startTwitterOAuth: async (redirectTo?: string): Promise<AuthResponse> => {
     const response = await fetch(`${API_BASE_URL}/auth/twitter/start`, {
@@ -105,6 +133,109 @@ export const api = {
       body: JSON.stringify(payload || {}),
     });
     if (!response.ok) throw new Error('Failed to generate replies');
+    return response.json();
+  },
+
+  // User settings endpoints
+  getUserInfo: async (handle: string): Promise<UserInfo> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/info`);
+    if (!response.ok) throw new Error('Failed to get user info');
+    return response.json();
+  },
+
+  getUserSettings: async (handle: string): Promise<UserSettings> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings`);
+    if (!response.ok) throw new Error('Failed to get user settings');
+    return response.json();
+  },
+
+  updateUserSettings: async (handle: string, settings: Partial<UserSettings>): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(settings),
+    });
+    if (!response.ok) throw new Error('Failed to update user settings');
+    return response.json();
+  },
+
+  addAccount: async (handle: string, accountHandle: string, validated: boolean): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings/account`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ handle: accountHandle, validated }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to add account' }));
+      throw new Error(error.detail || 'Failed to add account');
+    }
+    return response.json();
+  },
+
+  updateAccountValidation: async (handle: string, account: string, validated: boolean): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings/account/${encodeURIComponent(account)}/validation?validated=${validated}`, {
+      method: 'PATCH',
+    });
+    if (!response.ok) throw new Error('Failed to update account validation');
+    return response.json();
+  },
+
+  removeAccount: async (handle: string, account: string): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings/account/${encodeURIComponent(account)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to remove account');
+    return response.json();
+  },
+
+  removeQuery: async (handle: string, query: string): Promise<{ message: string; settings: UserSettings }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings/query`, {
+      method: 'DELETE',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query }),
+    });
+    if (!response.ok) throw new Error('Failed to remove query');
+    return response.json();
+  },
+
+  validateTwitterHandle: async (username: string, handle: string): Promise<{ valid: boolean; handle: string; data?: unknown; error?: string }> => {
+    // Use a longer timeout to allow for retry logic on the backend (up to 30 seconds)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/user/${encodeURIComponent(username)}/validate/${encodeURIComponent(handle)}`,
+        { signal: controller.signal }
+      );
+      clearTimeout(timeoutId);
+
+      if (!response.ok) throw new Error('Failed to validate Twitter handle');
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        return {
+          valid: false,
+          handle,
+          error: 'Validation timed out. The Twitter API may be rate limiting requests. Please try again in a moment.'
+        };
+      }
+      throw error;
+    }
+  },
+
+  validateAllAccounts: async (username: string): Promise<{ message: string; validated_count: number }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(username)}/validate-accounts`, {
+      method: 'POST'
+    });
+    if (!response.ok) throw new Error('Failed to validate accounts');
     return response.json();
   },
 };

@@ -18,6 +18,10 @@ export interface TweetData {
   created_at: string;
   url: string;
   thread?: string[];
+  scraped_from?: {
+    type: 'account' | 'query';
+    value: string;
+  };
 }
 
 interface TweetDisplayProps {
@@ -128,7 +132,7 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
 
   return (
     <div
-      className={`mx-auto w-full min-w-xl max-w-[70%] px-[2%] py-[1%] rounded-2xl bg-black text-white shadow-2xl transition-all ${
+      className={`w-full px-[2%] py-[1%] rounded-2xl bg-black text-white shadow-2xl transition-all ${
         isDeleting
           ? 'duration-300 scale-95 opacity-0'
           : isPosting
@@ -136,8 +140,8 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
           : 'duration-300 scale-100 opacity-100 translate-x-0'
       }`}
     >
-      {!readOnly && (
-        <div className="flex items-center justify-between ml-[-20px] mb-2">
+      <div className="flex items-center justify-between ml-[-20px] mb-2">
+        {!readOnly && (
           <button
             type="button"
             onClick={onSkip}
@@ -158,8 +162,18 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
               <span className="text-xl text-white">×</span>
             )}
           </button>
-        </div>
-      )}
+        )}
+        <a
+          href={tweet.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="ml-auto text-neutral-400 hover:text-sky-400 transition-colors"
+          aria-label="View original tweet on Twitter"
+          title="View on Twitter"
+        >
+          <i className="fa-solid fa-arrow-up-right-from-square text-sm" />
+        </a>
+      </div>
 
       <div className="px-5 py-3">
         <div className="space-y-4 pb-1">
@@ -176,16 +190,16 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
                     <span className="text-base font-bold text-white">{displayName}</span>
                     <span>{'@' + handle}</span>
                     {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
-                    <a
-                      href={tweet.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-1 text-neutral-400 hover:text-sky-400 transition-colors"
-                      aria-label="View original tweet on Twitter"
-                      title="View on Twitter"
-                    >
-                      <i className="fa-solid fa-arrow-up-right-from-square text-sm" />
-                    </a>
+                    {tweet.scraped_from && (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-neutral-800 text-xs text-neutral-400">
+                        <i className={`fa-solid ${tweet.scraped_from.type === 'account' ? 'fa-user' : 'fa-magnifying-glass'}`} />
+                        <span>
+                          {tweet.scraped_from.type === 'account'
+                            ? `@${tweet.scraped_from.value}`
+                            : tweet.scraped_from.value}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>

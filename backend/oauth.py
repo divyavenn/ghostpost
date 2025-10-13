@@ -13,7 +13,7 @@ import dotenv
 from backend.user import get_user_info
 from backend.utils import error, notify
 
-dotenv.load_dotenv()
+dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 client_id = os.getenv("TWITTER_CLIENT_ID")
 client_secret = os.getenv("TWITTER_CLIENT_SECRET")
@@ -203,21 +203,33 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
     if not refresh_token:
         error("Refresh token not returned by X API.")
 
-    store_token(username, refresh_token)
+    expires_in = token_response.get("expires_in", 7200)  # Default 2 hours
+    store_token(username, refresh_token, access_token, expires_in)
 
     return access_token
 
 
 async def ensure_access_token(username: str, state_file: str = "storage_state.json") -> str:
     """Return an access token for the user, refreshing or re-authenticating as needed."""
-    from backend.utils import read_user_token, store_token
+    import time
+
+    from backend.utils import read_user_access_token, read_user_token, store_token
 
     try:
+        # Check if we have a cached access token that's still valid
+        cached_access_token, expires_at = read_user_access_token(username)
+        if cached_access_token and expires_at and time.time() < expires_at:
+            notify(f"♻️ Using cached access token for {username} (expires in {int(expires_at - time.time())}s)")
+            return cached_access_token
+
+        # Token expired or missing, refresh it
         refresh_token = read_user_token(username)
         refreshed = refresh_access_token(refresh_token)
         access_token = refreshed.get("access_token")
         new_refresh = refreshed.get("refresh_token") or refresh_token
-        store_token(username, new_refresh)
+        expires_in = refreshed.get("expires_in", 7200)  # Default 2 hours
+        store_token(username, new_refresh, access_token, expires_in)
+        notify(f"🔄 Refreshed access token for {username}")
         return access_token
     except RuntimeError:
         return await oauth_login(username=username, state_file=state_file)

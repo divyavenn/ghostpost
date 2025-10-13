@@ -36,53 +36,120 @@ def within_hours(created_at: str, hours: int = 72) -> bool:
 
 
 def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
-    """Extract handle by searching for user ID in the data structure"""
-    # Try to get a user ID to look for
-    uid = (tweet_res.get("legacy", {}).get("user_id_str") or tweet_res.get("rest_id") or (tweet_res.get("core", {}).get("user_results", {}).get("result", {}) or {}).get("rest_id"))
+    """Extract handle by searching for user ID in the data structure - fallback method"""
+    if not isinstance(tweet_res, dict):
+        return None
 
-    # Check for direct screen_name in common paths first
-    if isinstance(tweet_res, dict):
-        # Direct screen_name in legacy
-        if tweet_res.get("legacy", {}).get("screen_name"):
-            return tweet_res["legacy"]["screen_name"]
+    # Strategy 1: Try to get the user ID from the tweet author
+    uid = None
+    try:
+        # First try to get user_id from legacy (most common)
+        uid = tweet_res.get("legacy", {}).get("user_id_str")
+        if not uid:
+            # Try core.user_results.result.rest_id
+            uid = (tweet_res.get("core", {}).get("user_results", {}).get("result", {}) or {}).get("rest_id")
+        if not uid:
+            # Try rest_id at top level (less common)
+            uid = tweet_res.get("rest_id")
+    except (AttributeError, TypeError):
+        pass
 
-        # Check in user object
+    # Strategy 2: Check for direct screen_name in common paths first
+    # This is fast and works for most cases
+    try:
+        # Check in core.user_results.result.legacy (most reliable for author)
+        user_result = tweet_res.get("core", {}).get("user_results", {}).get("result", {})
+        if user_result and isinstance(user_result, dict):
+            handle = user_result.get("legacy", {}).get("screen_name")
+            if handle and isinstance(handle, str):
+                return handle
+
+        # Check for tweet wrapper
+        if "tweet" in tweet_res and isinstance(tweet_res["tweet"], dict):
+            inner_tweet = tweet_res["tweet"]
+            user_result = inner_tweet.get("core", {}).get("user_results", {}).get("result", {})
+            if user_result and isinstance(user_result, dict):
+                handle = user_result.get("legacy", {}).get("screen_name")
+                if handle and isinstance(handle, str):
+                    return handle
+
+        # Check in direct user object
         if tweet_res.get("user", {}).get("screen_name"):
-            return tweet_res["user"]["screen_name"]
+            handle = tweet_res["user"]["screen_name"]
+            if handle and isinstance(handle, str):
+                return handle
 
-        # Check in core.user_results
-        user_result = (tweet_res.get("core", {}).get("user_results", {}).get("result", {}) or {})
-        if user_result.get("legacy", {}).get("screen_name"):
-            return user_result["legacy"]["screen_name"]
+        # Check in legacy.user
+        if tweet_res.get("legacy", {}).get("user", {}).get("screen_name"):
+            handle = tweet_res["legacy"]["user"]["screen_name"]
+            if handle and isinstance(handle, str):
+                return handle
+    except (AttributeError, TypeError):
+        pass
 
-    # Fall back to searching by user ID
-    if not uid or not data:
-        return None
+    # Strategy 3: If we have a user ID and the full data payload, search by matching user ID
+    if uid and data:
+        def walk(obj, depth=0, max_depth=10):
+            if depth >= max_depth:
+                return None
 
-    def walk(obj):
+            if isinstance(obj, dict):
+                # Check if this object is a user with matching rest_id
+                if obj.get("rest_id") == uid:
+                    # Found matching user, look for screen_name
+                    handle = obj.get("legacy", {}).get("screen_name")
+                    if handle and isinstance(handle, str):
+                        return handle
+
+                # Continue searching in nested dicts
+                for key, val in obj.items():
+                    # Skip quoted/retweeted content to avoid wrong user
+                    if key in {"quoted_status_result", "retweeted_status_result", "quoted_tweet", "retweeted_tweet"}:
+                        continue
+                    result = walk(val, depth + 1, max_depth)
+                    if result:
+                        return result
+
+            elif isinstance(obj, list):
+                for item in obj:
+                    result = walk(item, depth + 1, max_depth)
+                    if result:
+                        return result
+
+            return None
+
+        result = walk(data)
+        if result:
+            return result
+
+    # Strategy 4: Last resort - broad search for any screen_name (risky, could get wrong user)
+    # Only use if we have no other option
+    def find_any_screen_name(obj, depth=0, max_depth=5):
+        if depth >= max_depth:
+            return None
+
         if isinstance(obj, dict):
-            # Direct match by rest_id
-            if obj.get("rest_id") == uid:
-                legacy = obj.get("legacy", {})
-                h = legacy.get("screen_name")
-                if h:
-                    return h
-            # Direct screen_name check in every dict
-            if obj.get("screen_name"):
-                return obj.get("screen_name")
-            # Continue searching
-            for v in obj.values():
-                r = walk(v)
-                if r:
-                    return r
-        elif isinstance(obj, list):
-            for v in obj:
-                r = walk(v)
-                if r:
-                    return r
+            # Avoid quoted/retweeted content
+            if any(key in obj for key in {"quoted_status_result", "retweeted_status_result"}):
+                return None
+
+            # Check for screen_name at this level
+            if "screen_name" in obj and obj.get("screen_name"):
+                handle = obj["screen_name"]
+                # Validate it looks like a Twitter handle
+                if isinstance(handle, str) and handle and " " not in handle and len(handle) <= 15:
+                    return handle
+
+            # Search in priority order
+            for key in ["core", "user_results", "user", "legacy"]:
+                if key in obj:
+                    result = find_any_screen_name(obj[key], depth + 1, max_depth)
+                    if result:
+                        return result
+
         return None
 
-    return walk(data)
+    return find_any_screen_name(tweet_res)
 
 
 async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
@@ -134,103 +201,126 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
         user_handle = None
         user_name = None
 
-        # Debug: Print the first level of keys in the tweet_res dict
+        # Debug: Uncomment to see tweet structure when debugging
         # print(f"DEBUG: tweet_res keys: {list(tweet_res.keys() if isinstance(tweet_res, dict) else [])}")
+
+        if not isinstance(tweet_res, dict):
+            return None, None
 
         # IMPORTANT: Priority order matters here. We need to get the actual tweet author,
         # NOT the author of any quoted/retweeted content!
 
-        # HIGHEST PRIORITY: User in core.user_results (this is the actual tweet author)
-        if tweet_res.get("core", {}).get("user_results", {}).get("result", {}):
-            user_result = tweet_res["core"]["user_results"]["result"]
-            if user_result.get("legacy", {}):
-                user_handle = user_result["legacy"].get("screen_name")
-                user_name = user_result["legacy"].get("name")
+        # Strategy 1: HIGHEST PRIORITY - User in core.user_results.result.legacy
+        # This is the most reliable location for the tweet author in modern Twitter API responses
+        try:
+            user_result = tweet_res.get("core", {}).get("user_results", {}).get("result", {})
+            if user_result and isinstance(user_result, dict):
+                legacy = user_result.get("legacy", {})
+                if legacy:
+                    user_handle = legacy.get("screen_name")
+                    user_name = legacy.get("name")
+                    if user_handle:
+                        return user_name, user_handle
+        except (AttributeError, TypeError):
+            pass
+
+        # Strategy 2: Check if there's a 'tweet' wrapper (TweetWithVisibilityResults)
+        if "tweet" in tweet_res and isinstance(tweet_res["tweet"], dict):
+            inner_tweet = tweet_res["tweet"]
+            try:
+                user_result = inner_tweet.get("core", {}).get("user_results", {}).get("result", {})
+                if user_result and isinstance(user_result, dict):
+                    legacy = user_result.get("legacy", {})
+                    if legacy:
+                        user_handle = legacy.get("screen_name")
+                        user_name = legacy.get("name")
+                        if user_handle:
+                            return user_name, user_handle
+            except (AttributeError, TypeError):
+                pass
+
+        # Strategy 3: Legacy structure - user embedded directly in legacy
+        try:
+            if tweet_res.get("legacy", {}).get("user", {}):
+                user = tweet_res["legacy"]["user"]
+                user_handle = user.get("screen_name")
+                user_name = user.get("name")
                 if user_handle:
-                    # print(f"DEBUG: Found user in core.user_results: {user_name} / @{user_handle}")
                     return user_name, user_handle
+        except (AttributeError, TypeError):
+            pass
 
-        # Structure 2: Direct user property in legacy (sometimes used for older API responses)
-        if tweet_res.get("legacy", {}).get("user", {}):
-            user = tweet_res["legacy"]["user"]
-            user_handle = user.get("screen_name")
-            user_name = user.get("name")
-            if user_handle:
-                # print(f"DEBUG: Found user in legacy.user: {user_name} / @{user_handle}")
-                return user_name, user_handle
-
-        # Structure 3: Direct user property (not in legacy)
-        if tweet_res.get("user", {}):
-            user = tweet_res["user"]
-            user_handle = user.get("screen_name")
-            user_name = user.get("name")
-            if user_handle:
-                # print(f"DEBUG: Found direct user: {user_name} / @{user_handle}")
-                return user_name, user_handle
-
-        # Structure 4: Look in known potential paths based on observed API response structures
-        # NOTE: We explicitly EXCLUDE paths that go through retweeted_status_result or quoted_status_result
-        # because those would give us the wrong user
-        paths = [
-            ["core", "user_results", "result", "legacy"],
-            ["core", "user_results", "result"],
-            ["legacy", "user"],
-            ["user"],
-            ["tweet", "core", "user_results", "result", "legacy"]
-        ]
-
-        for path in paths:
-            current = tweet_res
-            valid_path = True
-            for key in path:
-                if not isinstance(current, dict) or key not in current:
-                    valid_path = False
-                    break
-                current = current[key]
-
-            if valid_path and isinstance(current, dict):
-                if current.get("screen_name"):
-                    user_handle = current.get("screen_name")
-                    user_name = current.get("name")
-                    # print(f"DEBUG: Found user through path {path}: {user_name} / @{user_handle}")
+        # Strategy 4: Direct user property at top level
+        try:
+            if tweet_res.get("user", {}):
+                user = tweet_res["user"]
+                user_handle = user.get("screen_name")
+                user_name = user.get("name")
+                if user_handle:
                     return user_name, user_handle
+        except (AttributeError, TypeError):
+            pass
 
-        # Structure 5: Targeted search for user info (avoiding quoted/retweeted content)
-        def search_for_user(obj, depth=0, max_depth=3, avoid_keys=None):
-            if avoid_keys is None:
-                avoid_keys = {"quoted_status_result", "retweeted_status_result", "quoted_tweet", "retweeted_tweet"}
-
+        # Strategy 5: Recursive search avoiding quoted/retweeted content
+        def search_for_user(obj, depth=0, max_depth=5, parent_key=None):
+            # Stop at max depth
             if depth >= max_depth:
                 return None, None
 
             if not isinstance(obj, dict):
                 return None, None
 
-            # Skip if this is a quoted/retweeted content container
-            if any(key in obj for key in avoid_keys):
+            # CRITICAL: Skip quoted/retweeted content to avoid wrong author
+            # Don't descend into these keys as they contain OTHER users' data
+            avoid_keys = {
+                "quoted_status_result", "retweeted_status_result",
+                "quoted_tweet", "retweeted_tweet",
+                "retweeted_status", "quoted_status"
+            }
+
+            if parent_key in avoid_keys:
                 return None, None
 
-            # Check if this object has user info
+            # Check if this object directly contains screen_name
             if "screen_name" in obj and obj.get("screen_name"):
-                return obj.get("name"), obj.get("screen_name")
+                # Validate it looks like a real handle (not a query term)
+                handle = obj.get("screen_name")
+                if isinstance(handle, str) and handle and " " not in handle:
+                    return obj.get("name"), handle
 
-            # Check common user containers (in priority order)
-            for key in ["core", "user", "legacy"]:
+            # Priority search paths
+            for key in ["user_results", "core", "user", "legacy"]:
                 if key in obj and isinstance(obj[key], dict):
-                    user_n, user_h = search_for_user(obj[key], depth + 1, max_depth, avoid_keys)
-                    if user_h:
-                        return user_n, user_h
+                    result = search_for_user(obj[key], depth + 1, max_depth, key)
+                    if result[1]:  # Found a handle
+                        return result
+
+            # Search other dict values (but skip avoid_keys)
+            for key, val in obj.items():
+                if key in avoid_keys:
+                    continue
+                if isinstance(val, dict):
+                    result = search_for_user(val, depth + 1, max_depth, key)
+                    if result[1]:
+                        return result
+                elif isinstance(val, list):
+                    # Search in lists but be more cautious
+                    for item in val:
+                        if isinstance(item, dict):
+                            result = search_for_user(item, depth + 1, max_depth, key)
+                            if result[1]:
+                                return result
 
             return None, None
 
-        # Try targeted search if all else failed
+        # Try recursive search as last resort
         deep_name, deep_handle = search_for_user(tweet_res)
         if deep_handle:
-            # print(f"DEBUG: Found user through deep search: {deep_name} / @{deep_handle}")
             return deep_name, deep_handle
 
-        # If we get here, we really couldn't find the user info
-        # print(f"DEBUG: Could not find user info in tweet_res")
+        # If we get here, extraction completely failed
+        # Uncomment for debugging:
+        # print(f"WARNING: Could not extract user data. Keys available: {list(tweet_res.keys())}")
         return user_name, user_handle
 
     def get(d, *path, default=None):
@@ -364,25 +454,35 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         dbg("no_tid", resp=resp)
                         continue
 
-                    # Get the username and handle from the data first
-                    # This will be more accurate than relying on the URL handle
-                    user_name, user_handle = extract_user_data(node)
+                    # If scraping from a user timeline, use the handle from the URL parameter
+                    # Only extract handle from tweet data if it's from a search query
+                    if handle:
+                        # This is from a user timeline - use the known handle directly
+                        user_handle = handle
+                        # Extract the username (display name) from the tweet data
+                        user_name, _ = extract_user_data(node)
+                        if not user_name:
+                            # If we couldn't get the name, derive it from the handle
+                            user_name = handle.replace("_", " ")
+                    else:
+                        # This is from a search query - extract both from tweet data
+                        user_name, user_handle = extract_user_data(node)
 
-                    # If we couldn't extract the handle, try additional methods
-                    if not user_handle:
-                        # Try to extract handle using the older extract_handle method
-                        extracted_handle = extract_handle(node, data)
-                        if extracted_handle:
-                            print(f"DEBUG: Got handle from extract_handle: {extracted_handle}")
-                            user_handle = extracted_handle
-                        elif handle:  # Fall back to URL handle if provided
-                            print(f"DEBUG: Falling back to URL handle: {handle}")
-                            user_handle = handle
+                        # If extraction failed, try additional methods
+                        if not user_handle:
+                            # Try to extract handle using the older extract_handle method
+                            extracted_handle = extract_handle(node, data)
+                            if extracted_handle:
+                                user_handle = extracted_handle
 
-                    # If we have the handle but no username, set a default display name based on the handle
-                    if user_handle and not user_name:
-                        user_name = user_handle.replace("_", " ")
-                        # print(f"DEBUG: Setting default user_name: {user_name} from handle: {user_handle}")
+                        # If we still don't have a handle, we can't create a valid tweet entry
+                        if not user_handle:
+                            dbg("no_handle_extracted", tid, resp=resp)
+                            continue
+
+                        # If we have the handle but no username, derive from handle
+                        if user_handle and not user_name:
+                            user_name = user_handle.replace("_", " ")
 
                     tweets[tid] = {
                         "id": tid,

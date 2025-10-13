@@ -11,6 +11,7 @@ interface UserSettingsModalProps {
     username: string;
     follower_count: number;
   };
+  onLogout: () => void;
 }
 
 interface EditableTextProps {
@@ -64,7 +65,7 @@ function SectionTitle({text} : {text: string}) {
 }
 
 
-export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserSettingsModalProps) {
+export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogout }: UserSettingsModalProps) {
   const [settings, setSettings] = useState<UserSettings>({
     queries: [],
     relevant_accounts: {},
@@ -344,20 +345,28 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
         )}
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-neutral-900 border-t border-neutral-800 p-6 flex justify-end gap-3">
+        <div className="sticky bottom-0 bg-neutral-900 border-t border-neutral-800 p-6 flex justify-between items-center">
           <button
-            onClick={onClose}
-            className="px-6 py-2 rounded-lg bg-neutral-800 text-white hover:bg-neutral-700 transition"
+            onClick={onLogout}
+            className="px-6 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition"
           >
-            Cancel
+            Logout
           </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || loading}
-            className="px-6 py-2 rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={onClose}
+              className="px-6 py-2 rounded-lg bg-neutral-800 text-white hover:bg-neutral-700 transition"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving || loading}
+              className="px-6 py-2 rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

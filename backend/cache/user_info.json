@@ -26,9 +26,10 @@
     "relevant_accounts": {
       "jaltma": true,
       "Garrytan": true,
-      "jia_seed" : true,
-      "visakanv" : true,
-      "thedulab" : true
+      "jia_seed": true,
+      "visakanv": true,
+      "thedulab": true,
+      "GabrielPeterss4": true
     },
     "queries": [
       "retrieval augmented generation -filter:links -filter:replies -is:retweet lang:en",

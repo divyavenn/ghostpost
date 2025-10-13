@@ -25,7 +25,7 @@ USERNAME = "proudlurker"
 
 PASSWORD = r"JXJ-pfd3bdv*myu0whb"
 
-see_browser = True  # set to True to see the browser in action (for debugging)
+see_browser = False  # set to True to see the browser in action (for debugging)
 
 QUERIES = [
     "multimodal ai -filter:links -filter:replies -is:retweet lang:en",
@@ -177,7 +177,7 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
         else:
             tweets = await read_tweets(
                 username=username,
-                usernames=payload.usernames,
+                relevant_accounts=payload.usernames,
                 queries=payload.queries,
                 max_scrolls=payload.max_scrolls,
                 max_tweets=payload.max_tweets
@@ -188,10 +188,11 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
             "tweets": tweets
         }
     except Exception as e:
-        raise HTTPException from Exception(
+        print(str(e))
+        raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error scraping tweets: {str(e)}"
-        )
+        ) from e
 
 
 if __name__ == "__main__":

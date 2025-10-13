@@ -13,7 +13,7 @@ import dotenv
 from backend.user import get_user_info
 from backend.utils import error, notify
 
-dotenv.load_dotenv()
+dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 client_id = os.getenv("TWITTER_CLIENT_ID")
 client_secret = os.getenv("TWITTER_CLIENT_SECRET")

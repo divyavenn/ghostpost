@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, type UserSettings } from '../api/client';
+import { AnimatedText } from './AnimatedText';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -12,27 +13,47 @@ interface UserSettingsModalProps {
   };
 }
 
-function EditableText({text, index, handleEdit} : {text: string, index : number, handleEdit: (index : number, newText: string) => void}) {
-  const [editingQueryValue, setEditingQueryValue] = useState<string>('');
+interface EditableTextProps {
+  text: string;
+  onSave: (newText: string) => void;
+}
+
+function EditableText({ text, onSave }: EditableTextProps) {
+  const [value, setValue] = useState(text);
+
+  const handleSave = () => {
+    if (value.trim() && value !== text) {
+      onSave(value);
+    }
+  };
+
   return (
     <input
       type="text"
-      value={editingQueryValue || text}
-      onChange={(e) => {
-              handleEdit(index, editingQueryValue);
-              setEditingQueryValue(e.target.value);
-    
-      }}
+      value={value}
+      onChange={(e) => setValue(e.target.value)}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') handleEdit(index, editingQueryValue);
-        else if (e.key === 'Escape') setEditingQueryValue('');
+        if (e.key === 'Enter') handleSave();
+        else if (e.key === 'Escape') setValue(text);
       }}
-      onFocus={() => handleEdit(index, editingQueryValue)}
-      style={{ width: `${Math.max((editingQueryValue ? editingQueryValue : text).length * 6.8, 0)}px` }}
+      onBlur={handleSave}
+      style={{ width: `${Math.max(value.length * 6.8, 60)}px` }}
       className="bg-transparent text-white text-sm outline-none cursor-text"
-    />)
+    />
+  );
 }
 
+interface BubbleProps {
+  children: React.ReactNode;
+}
+
+function Bubble({ children }: BubbleProps) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-full transition bg-neutral-800">
+      {children}
+    </div>
+  );
+}
 
 function SectionTitle({text} : {text: string}) {
   return (
@@ -46,7 +67,7 @@ function SectionTitle({text} : {text: string}) {
 export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserSettingsModalProps) {
   const [settings, setSettings] = useState<UserSettings>({
     queries: [],
-    relevant_accounts: [],
+    relevant_accounts: {},
     max_tweets_retrieve: 30,
   });
   
@@ -55,8 +76,8 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
   const [newAccount, setNewAccount] = useState('');
   const [newQuery, setNewQuery] = useState('');
   const [errorMessage, setErrorMessage] = useState<string>('');
-  const [editingQueryIndex, setEditingQueryIndex] = useState<number | null>(null);
-  const [editingQueryValue, setEditingQueryValue] = useState<string>('');
+  const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
+  const [validating, setValidating] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -85,32 +106,39 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
     if (!newAccount.trim()) return;
     const cleanHandle = newAccount.replace('@', '').trim();
 
-    if (settings.relevant_accounts.includes(cleanHandle)) {
+    // Check if already exists
+    if (cleanHandle in settings.relevant_accounts) {
       setNewAccount('');
       return;
     }
 
-    // Validate the handle first
+    // Add with validated: false, then validate
+    setValidating(true);
+    setValidatingHandle(cleanHandle);
     try {
-      const result = await api.validateTwitterHandle(cleanHandle);
-
-      if (!result.valid) {
-        // Don't add invalid handles
-        showError(`Handle @${cleanHandle} does not exist. Please check the spelling and try again.`);
-        return;
-      }
-
-      // Only add if valid
-      setSettings(prev => ({
-        ...prev,
-        relevant_accounts: [...prev.relevant_accounts, cleanHandle],
-      }));
+      // Add with the validation result using the new endpoint
+      const addResult = await api.addAccount(username, cleanHandle, true);
+      setSettings(addResult.settings);
       setNewAccount('');
-    } catch (error) {
-      console.error('Failed to validate handle:', error);
-      showError(`Could not validate handle @${cleanHandle}. Please try again.`);
+
+      const validation = await api.validateTwitterHandle(username, cleanHandle);
+
+      if (!validation.valid) {
+        showError(`Handle @${cleanHandle} is invalid or does not exist.`);
+        // Update validation to false using the dedicated endpoint
+        const updateResult = await api.updateAccountValidation(username, cleanHandle, false);
+        setSettings(updateResult.settings);
+      }
     }
-  };
+    catch (error) {
+      console.error('Failed to add account:', error);
+      showError((error as Error).message || 'Failed to add account. Please try again.');
+    } finally {
+      setValidating(false);
+      setValidatingHandle(null);
+    }
+  }
+
 
   const handleRemoveAccount = async (account: string) => {
     try {
@@ -146,34 +174,23 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
     }
   };
 
-  const handleEditQuery = (index: number, currentQuery: string) => {
-    setEditingQueryIndex(index);
-    setEditingQueryValue(currentQuery);
-  };
-
-  const handleSaveQueryEdit = async (oldQuery: string) => {
-    if (!editingQueryValue.trim() || editingQueryValue === oldQuery) {
-      setEditingQueryIndex(null);
+  const handleEditQuery = async (oldQuery: string, newQuery: string) => {
+    if (!newQuery.trim() || newQuery === oldQuery) {
       return;
     }
 
     try {
       // Remove old query and add new one
       await api.removeQuery(username, oldQuery);
-      const newQueries = [...settings.queries.filter(q => q !== oldQuery), editingQueryValue.trim()];
+      const newQueries = [...settings.queries.filter(q => q !== oldQuery), newQuery.trim()];
       const result = await api.updateUserSettings(username, { queries: newQueries });
       setSettings(result.settings);
-      setEditingQueryIndex(null);
     } catch (error) {
       console.error('Failed to update query:', error);
       showError('Failed to update query. Please try again.');
     }
   };
 
-  const handleCancelQueryEdit = () => {
-    setEditingQueryIndex(null);
-    setEditingQueryValue('');
-  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -188,7 +205,9 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
     }
   };
 
+
   if (!isOpen) return null;
+  
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
@@ -223,7 +242,15 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
           <div className="p-6 space-y-6">
             {/* Relevant Accounts */}
             <div>
-              <SectionTitle text="Relevant Accounts" />
+              <div className="flex items-center justify-between mb-3">
+                <SectionTitle text="Relevant Accounts" />
+                {validating && (
+                  <span className="text-neutral-400 text-xs flex items-center gap-2">
+                    <div className="animate-spin h-3 w-3 border-2 border-sky-500 border-t-transparent rounded-full"></div>
+                    Validating...
+                  </span>
+                )}
+              </div>
               <input
                 type="text"
                 value={newAccount}
@@ -237,21 +264,35 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
                   {errorMessage}
                 </div>
               )}
-              <div className="flex flex-wrap gap-2 ">
-                {settings.relevant_accounts.map((account) => (
-                  <div
-                    key={account}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-full transition bg-neutral-800" 
-                  >
-                    <span className="text-white text-sm" >@{account}</span>
-                    <button
-                      onClick={() => handleRemoveAccount(account)}
-                      className="text-neutral-400 hover:text-white transition"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(settings.relevant_accounts).map(([handle, validated]) => {
+                  const isValidating = validatingHandle === handle;
+                  const isInvalid = validated === false;
+
+                  return (
+                    <Bubble key={handle}>
+                      {isValidating ? (
+                        <AnimatedText
+                          text={`@${handle}`}
+                          className="text-sky-400 text-sm"
+                        />
+                      ) : (
+                        <span className={`text-sm ${isInvalid ? 'text-neutral-500' : 'text-white'}`}>
+                          @{handle}
+                        </span>
+                      )}
+                      {isInvalid && !isValidating && (
+                        <span className="text-red-400 text-xs" title="This account is invalid">⚠</span>
+                      )}
+                      <button
+                        onClick={() => handleRemoveAccount(handle)}
+                        className="text-neutral-400 hover:text-white transition"
+                      >
+                        ×
+                      </button>
+                    </Bubble>
+                  );
+                })}
               </div>
             </div>
 
@@ -268,18 +309,18 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo }: UserS
               />
               <div className="flex flex-wrap gap-2">
                 {settings.queries.map((query, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center gap-2 px-3 py-1.5 rounded-full transition bg-neutral-800"
-                  >
-                  <EditableText text={query} index={index} handleEdit={handleEditQuery} />
+                  <Bubble key={index}>
+                    <EditableText
+                      text={query}
+                      onSave={(newText) => handleEditQuery(query, newText)}
+                    />
                     <button
                       onClick={() => handleRemoveQuery(query)}
                       className="text-neutral-400 hover:text-white transition"
                     >
                       ×
                     </button>
-                  </div>
+                  </Bubble>
                 ))}
               </div>
             </div>

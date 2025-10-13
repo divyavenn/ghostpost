@@ -19,6 +19,7 @@ function App() {
   const [activeTab, setActiveTab] = useState<'generated' | 'posted'>('generated');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
+  const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -55,6 +56,11 @@ function App() {
     try {
       const info = await api.getUserInfo(user);
       setUserInfo(info);
+
+      // Check for invalid accounts
+      const settings = await api.getUserSettings(user);
+      const hasInvalid = Object.values(settings.relevant_accounts).some(validated => validated === false);
+      setHasInvalidAccounts(hasInvalid);
     } catch (error) {
       console.error('Failed to load user info:', error);
     }
@@ -318,9 +324,15 @@ function App() {
       <div className="absolute top-6 right-6 z-10 flex gap-3">
         <button
           onClick={() => setIsSettingsOpen(true)}
-          className="rounded-full bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
+          className="relative rounded-full bg-neutral-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-neutral-700"
         >
           Settings
+          {hasInvalidAccounts && (
+            <span className="absolute -top-1 -right-1 flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+            </span>
+          )}
         </button>
         <button
           onClick={handleRefresh}
@@ -339,7 +351,11 @@ function App() {
       {userInfo && (
         <UserSettingsModal
           isOpen={isSettingsOpen}
-          onClose={() => setIsSettingsOpen(false)}
+          onClose={() => {
+            setIsSettingsOpen(false);
+            // Reload user info to check for invalid accounts after closing settings
+            loadUserInfo(username!);
+          }}
           username={username!}
           userInfo={{
             profile_pic_url: userInfo.profile_pic_url,

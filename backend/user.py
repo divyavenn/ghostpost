@@ -2,8 +2,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.tweets_cache import remove_user_cache
-from backend.utils import remove_entry_from_map, _cache_key, ARCHIVE_DIR, BROWSER_STATE_FILE, TOKEN_FILE, notify
+from backend.utils import remove_entry_from_map, _cache_key, BROWSER_STATE_FILE, TOKEN_FILE, notify
 from backend.utils import _archive_interactions_log, write_user_info
+
+
+def get_validation_delay() -> int:
+    return 310  # Free tier: 3 requests per 15 minutes
+
+
 def get_user_info(access_token: str) -> dict[str, Any]:
     """Fetch the authenticated user's metadata and persist it locally."""
     import requests
@@ -86,15 +92,18 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     stored_queries = user_info.get("queries", [])
     topics = [query_to_topic(q) for q in stored_queries]
 
+    # relevant_accounts is a dict: {handle: validated}
+    relevant_accounts = user_info.get("relevant_accounts", {})
+
     return {
         "queries": topics,  # Return topics, not full queries
-        "relevant_accounts": user_info.get("relevant_accounts", []),
+        "relevant_accounts": relevant_accounts,
         "max_tweets_retrieve": user_info.get("max_tweets_retrieve", 30)
     }
 
 
 def write_user_settings(handle: str, queries: list[str] | None = None,
-                       relevant_accounts: list[str] | None = None,
+                       relevant_accounts: dict[str, bool] | None = None,
                        max_tweets_retrieve: int | None = None) -> None:
     """Update scraping settings for a user in user_info.json."""
     from backend.utils import read_user_info, write_user_info
@@ -110,6 +119,7 @@ def write_user_settings(handle: str, queries: list[str] | None = None,
         full_queries = [topic_to_query(q) for q in queries]
         user_info["queries"] = full_queries
     if relevant_accounts is not None:
+        # Store as dict {handle: validated}
         user_info["relevant_accounts"] = relevant_accounts
     if max_tweets_retrieve is not None:
         user_info["max_tweets_retrieve"] = max_tweets_retrieve
@@ -122,9 +132,13 @@ def write_user_settings(handle: str, queries: list[str] | None = None,
 router = APIRouter(prefix="/user", tags=["user"])
 
 
+class RelevantAccountModel(BaseModel):
+    handle: str
+    validated: bool
+
 class UpdateSettingsRequest(BaseModel):
     queries: list[str] | None = None
-    relevant_accounts: list[str] | None = None
+    relevant_accounts: dict[str, bool] | None = None
     max_tweets_retrieve: int | None = None
 
 
@@ -148,9 +162,21 @@ async def get_settings_endpoint(handle: str) -> dict:
     return settings
 
 
+@router.get("/config/validation-delay")
+async def get_validation_delay_endpoint() -> dict:
+    """Get the validation delay configuration for Twitter API free tier."""
+    delay = get_validation_delay()
+    return {
+        "delay_seconds": delay,
+        "delay_ms": delay * 1000,
+        "tier": "free"
+    }
+
+
 @router.put("/{handle}/settings")
 async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) -> dict:
     """Update scraping settings for a user."""
+    print(payload)
     try:
         write_user_settings(
             handle=handle,
@@ -166,6 +192,71 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
         raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}") from e
 
 
+@router.post("/{handle}/settings/account")
+async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> dict:
+    """Add a new account to relevant_accounts."""
+    from backend.utils import read_user_info, write_user_info
+
+    try:
+        user_info = read_user_info(handle)
+        if not user_info:
+            raise HTTPException(status_code=404, detail=f"User {handle} not found")
+
+        relevant_accounts = user_info.get("relevant_accounts", {})
+
+        # Check if account already exists
+        if account.handle in relevant_accounts:
+            return {
+                "message": "Account already added",
+                "settings": read_user_settings(handle)
+            }
+
+        # Add new account
+        relevant_accounts[account.handle] = account.validated
+        user_info["relevant_accounts"] = relevant_accounts
+        write_user_info(user_info)
+
+        return {
+            "message": "Account added successfully",
+            "settings": read_user_settings(handle)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding account: {str(e)}") from e
+
+
+@router.patch("/{handle}/settings/account/{account}/validation")
+async def update_account_validation_endpoint(handle: str, account: str, validated: bool) -> dict:
+    """Update the validation status of a specific account."""
+    from backend.utils import read_user_info, write_user_info
+
+    try:
+        user_info = read_user_info(handle)
+        if not user_info:
+            raise HTTPException(status_code=404, detail=f"User {handle} not found")
+
+        relevant_accounts = user_info.get("relevant_accounts", {})
+
+        # Check if account exists
+        if account not in relevant_accounts:
+            raise HTTPException(status_code=404, detail=f"Account @{account} not found")
+
+        # Update validation status
+        relevant_accounts[account] = validated
+        user_info["relevant_accounts"] = relevant_accounts
+        write_user_info(user_info)
+
+        return {
+            "message": f"Validation status for @{account} updated to {validated}",
+            "settings": read_user_settings(handle)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating account validation: {str(e)}") from e
+
+
 @router.delete("/{handle}/settings/account/{account}")
 async def remove_account_endpoint(handle: str, account: str) -> dict:
     """Remove a specific account from relevant_accounts."""
@@ -176,9 +267,11 @@ async def remove_account_endpoint(handle: str, account: str) -> dict:
         if not user_info:
             raise HTTPException(status_code=404, detail=f"User {handle} not found")
 
-        relevant_accounts = user_info.get("relevant_accounts", [])
+        relevant_accounts = user_info.get("relevant_accounts", {})
+
+        # Remove account if it exists
         if account in relevant_accounts:
-            relevant_accounts.remove(account)
+            del relevant_accounts[account]
             user_info["relevant_accounts"] = relevant_accounts
             write_user_info(user_info)
 
@@ -225,69 +318,53 @@ async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dic
         raise HTTPException(status_code=500, detail=f"Error removing query: {str(e)}") from e
 
 
-@router.get("/validate/{twitter_handle}")
-async def validate_twitter_handle(twitter_handle: str) -> dict:
-    """Validate if a Twitter handle exists by checking Twitter's API."""
+
+@router.get("/{username}/validate/{twitter_handle}")
+async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
+    """Validate if a Twitter handle exists by checking Twitter's API with rate limit retry."""
+    import asyncio
     import requests
-    from backend.oauth import refresh_access_token
-    from backend.utils import read_tokens
+    from backend.oauth import ensure_access_token
+    from time import sleep
 
     try:
         # Remove @ if present
         handle = twitter_handle.lstrip('@')
 
-        # Get refresh token from any authenticated user to make the API call
-        tokens = read_tokens()
-        if not tokens:
-            raise HTTPException(status_code=503, 
-                                detail="No authenticated users available to validate handle")
-
-        # Use the first available token
-        refresh_token = next(iter(tokens.values()))
-
-        # Get access token
-        token_response = refresh_access_token(refresh_token)
-        access_token = token_response.get("access_token")
+        # Get user access token
+        access_token = await ensure_access_token(username)
 
         if not access_token:
-            raise HTTPException(status_code=503, 
-                                detail="Failed to get access token")
+            raise HTTPException(status_code=403, detail="User not authenticated")
 
-        # Check if user exists
+        # Check if user exists with retry logic for rate limiting
         url = f"https://api.twitter.com/2/users/by/username/{handle}"
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        response = requests.get(url, 
-                                headers=headers,
-                                timeout=10)
+        response = requests.get(url,
+                                    headers=headers,
+                                    timeout=10)
 
         if response.status_code == 200:
-            data = response.json()
-            user_data = data.get("data")
-            # Check if we got valid user data
-            if user_data:
-                return {"valid": True, 
-                        "handle": handle, 
-                        "data": user_data}
-            else:
-                return {"valid": False, 
-                        "handle": handle, 
-                        "error": "User not found"}
-        elif response.status_code == 404:
-            return {"valid": False, 
-                    "handle": handle, 
-                    "error": "User not found"}
-        else:
-            # For any other error, still return valid=False instead of raising
-            return {"valid": False, 
-                    "handle": handle, 
-                    "error": f"Could not validate handle (status {response.status_code})"}
+                data = response.json()
+                user_data = data.get("data")
+                # Check if we got valid user data
+                if user_data:
+                    return {"valid": True,
+                            "handle": handle,
+                            "data": user_data}
+                else:
+                    return {"valid": False,
+                            "handle": handle,
+                            "error": "User not found"}
+        elif response.status_code == 429:
+                sleep(get_validation_delay())
+                return await validate_twitter_handle(username, twitter_handle)
 
-    except HTTPException:
-        raise
-    except requests.RequestException as e:
-        # Return invalid instead of raising error
-        return {"valid": False, "handle": handle, "error": f"Network error: {str(e)}"}
+        return {"valid": False,
+                "handle": handle,
+                "error": f"{response.text} (status {response.status_code})"}
     except Exception as e:
-        # Return invalid instead of raising error
-        return {"valid": False, "handle": handle, "error": f"Error: {str(e)}"}
+        return {"valid": False,
+                "handle": handle,
+                "error": f"Unknown error occurred: {str(e)}"}

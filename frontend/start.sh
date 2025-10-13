@@ -1,8 +1,3 @@
-#!/bin/bash
-
-# Install backend dependencies
-echo "Setting up backend..."
-uv sync
 
 # Install frontend dependencies
 echo "Setting up frontend..."
@@ -10,7 +5,7 @@ cd frontend && npm install && cd ..
 
 # Start backend in background
 echo "Starting backend on http://localhost:8000..."
-cd ../backend && uv run uvicorn main:app --reload &
+uv run uvicorn backend.main:app --reload &
 BACKEND_PID=$!
 
 # Start frontend in background

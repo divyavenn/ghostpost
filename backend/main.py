@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.auth_routes import router as auth_router
 from backend.generate_replies import router as generate_router
-from backend.logging import router as logging_router
+from backend.log_interactions import router as logging_router
 from backend.post_takes import router as post_router
 from backend.read_tweets import router as read_router
 from backend.tweets_cache import router as tweets_router

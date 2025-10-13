@@ -28,7 +28,7 @@ def get_user_tweet_cache(username=USERNAME) -> Path:
 
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
     import uuid
-    from backend.logging import TweetAction, log_tweet_action
+    from backend.log_interactions import TweetAction, log_tweet_action
 
     # Add cache_id to each tweet if not present
     for tweet in tweets:
@@ -82,7 +82,7 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
         tweet_id: The ID of the tweet to delete
         log_deletion: Whether to log this deletion (False when deleting after posting)
     """
-    from backend.logging import TweetAction, log_tweet_action
+    from backend.log_interactions import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)
 
@@ -126,7 +126,7 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
 
 async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool:
     """Edit the reply text for a specific tweet in the cache."""
-    from backend.logging import TweetAction, log_tweet_action
+    from backend.log_interactions import TweetAction, log_tweet_action
     import difflib
 
     tweets = await read_from_cache(username)

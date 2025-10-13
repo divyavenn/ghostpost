@@ -42,7 +42,7 @@ class ReplyTweet(BaseModel):
 
 
 async def post(username, payload: dict, cache_id: str | None = None) -> dict:
-    from backend.logging import TweetAction, log_tweet_action
+    from backend.log_interactions import TweetAction, log_tweet_action
 
     access_token = await _get_access_token_for_user(username)
 

@@ -216,23 +216,49 @@ def read_tokens() -> dict[str, Any]:
 def read_user_token(username: str) -> str | None:
     """Return the refresh token for the given user, or None if not found."""
     tokens = read_tokens()
-    token = tokens.get(username)
-    if isinstance(token, str):
-        return token
+    token_data = tokens.get(username)
+
+    # Handle legacy format (string) and new format (dict)
+    if isinstance(token_data, str):
+        return token_data
+    elif isinstance(token_data, dict):
+        return token_data.get("refresh_token")
     else:
         error(f"No token found for user {username}")
         return None
 
 
-def store_token(username: str, refresh_token: str):
-    """Persist the refresh token to a shared JSON map keyed by user identifier."""
+def read_user_access_token(username: str) -> tuple[str | None, float | None]:
+    """Return the cached access token and expiration timestamp for the user."""
+    tokens = read_tokens()
+    token_data = tokens.get(username)
+
+    if isinstance(token_data, dict):
+        access_token = token_data.get("access_token")
+        expires_at = token_data.get("expires_at")
+        return access_token, expires_at
+
+    return None, None
+
+
+def store_token(username: str, refresh_token: str, access_token: str | None = None, expires_in: int | None = None):
+    """Persist the refresh token and optionally access token with expiration to a shared JSON map."""
     tokens = read_tokens()
     path = TOKEN_FILE
 
-    tokens[username] = refresh_token
+    # Calculate expiration timestamp (with 60 second buffer)
+    expires_at = None
+    if access_token and expires_in:
+        expires_at = time.time() + expires_in - 60
+
+    tokens[username] = {
+        "refresh_token": refresh_token,
+        "access_token": access_token,
+        "expires_at": expires_at
+    }
 
     atomic_file_update(path, tokens, ".json.tmp")
-    notify(f"💾 Stored OAuth refresh token for {username}")
+    notify(f"💾 Stored OAuth tokens for {username}")
 
 
 def _cache_key(username: str | None) -> str:

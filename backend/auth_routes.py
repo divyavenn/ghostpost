@@ -79,6 +79,7 @@ async def twitter_callback(
         token_response = exchange_code_for_token(code, code_verifier)
         access_token = token_response.get("access_token")
         refresh_token = token_response.get("refresh_token")
+        expires_in = token_response.get("expires_in", 7200)  # Default 2 hours
 
         if not access_token or not refresh_token:
             return RedirectResponse(
@@ -96,8 +97,8 @@ async def twitter_callback(
                 status_code=303
             )
 
-        # Store the refresh token for this user
-        store_token(twitter_handle, refresh_token)
+        # Store the tokens (both refresh and access) for this user
+        store_token(twitter_handle, refresh_token, access_token, expires_in)
 
         # Check if user has a trained model
         cached_user = read_user_info(twitter_handle)

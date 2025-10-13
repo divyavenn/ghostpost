@@ -84,7 +84,8 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     if (isOpen) {
       loadSettings();
     }
-  }, [isOpen, username]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
 
   const loadSettings = async () => {
     setLoading(true);

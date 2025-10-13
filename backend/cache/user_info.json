@@ -29,7 +29,9 @@
       "jia_seed": true,
       "visakanv": true,
       "thedulab": true,
-      "GabrielPeterss4": true
+      "GabrielPeterss4": true,
+      "pk_iv": true,
+      "retirementkeys": true
     },
     "queries": [
       "retrieval augmented generation -filter:links -filter:replies -is:retweet lang:en",

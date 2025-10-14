@@ -304,7 +304,8 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify tweets display correctly with all information
 
 **Prerequisites:**
-- Tweets with replies loaded
+- Tweets with replies loaded in [user]_tweets.json
+- This file can be filled with mock data if scrping and generating is not functional.
 
 **Steps:**
 1. Observe main tweet grid (2 columns)
@@ -336,7 +337,8 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify users can edit generated replies
 
 **Prerequisites:**
-- Tweets with replies loaded
+- Tweets with replies loaded in [user]_tweets.json
+- This file can be filled with mock data if scrping and generating is not functional.
 
 **Steps:**
 1. Locate any tweet card
@@ -367,8 +369,9 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify replies can be posted to Twitter
 
 **Prerequisites:**
-- Tweets with replies loaded
 - Valid OAuth token for posting
+- Tweets with replies loaded in [user]_tweets.json
+- This file can be filled with mock data if scrping and generating is not functional.
 
 **Steps:**
 1. Select a tweet with a reply you want to post
@@ -408,7 +411,8 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify users can skip/delete tweets they don't want to reply to
 
 **Prerequisites:**
-- Tweets with replies loaded
+- Tweets with replies loaded in [user]_tweets.json
+- This file can be filled with mock data if scrping and generating is not functional.
 
 **Steps:**
 1. Select a tweet you want to skip
@@ -439,7 +443,8 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify users can switch between Generated and Posted views
 
 **Prerequisites:**
-- Some tweets in Generated tab
+- Tweets with replies loaded in [user]_tweets.json
+- This file can be filled with mock data if scrping and generating is not functional.
 - At least one tweet posted (in Posted tab)
 
 **Steps:**
@@ -473,7 +478,7 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify settings modal opens and displays user info
 
 **Prerequisites:**
-- Authenticated user
+- Authenticated user with info in user_info.json
 
 **Steps:**
 1. Click settings icon (gear) in top-right corner
@@ -505,6 +510,7 @@ cd frontend && npm install && npm run dev
 
 **Prerequisites:**
 - Settings modal open
+- authenticated user has entry in user_info.json
 
 **Steps:**
 1. Navigate to "Accounts" section in settings
@@ -543,6 +549,7 @@ cd frontend && npm install && npm run dev
 
 **Prerequisites:**
 - Settings modal open
+- authenticated user has entry in user_info.json
 
 **Steps:**
 1. Navigate to "Queries" section in settings
@@ -575,6 +582,7 @@ cd frontend && npm install && npm run dev
 
 **Prerequisites:**
 - Settings modal with ability to add accounts
+- authenticated user has entry in user_info.json
 
 **Steps:**
 1. Add a non-existent Twitter handle (e.g., "thisisnotarealhandle999999")
@@ -606,7 +614,8 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify tweets persist in cache across sessions
 
 **Prerequisites:**
-- Tweets scraped and cached
+- Tweets scraped and cached in [handle]_tweets.json
+- This file can be filled with mock data if scrping and generating is not functional.
 
 **Steps:**
 1. Note current number of tweets in cache
@@ -638,7 +647,8 @@ cd frontend && npm install && npm run dev
 **Objective:** Verify new tweets appended to cache, not replacing existing
 
 **Prerequisites:**
-- Some tweets already in cache
+- At least one tweet scraped and cached in [handle]_tweets.json
+- This file can be filled with mock data if scrping and generating is not functional.
 
 **Steps:**
 1. Note current tweet count (e.g., 10 tweets)
@@ -736,7 +746,7 @@ cd frontend && npm install && npm run dev
 
 ### Test Case 22: Training Data Export
 
-**Objective:** Verify training data can be exported for AI model training
+**Objective:** Verify training data can be exported for AI model training. This is not part of core program/web interface but is a key functionality for onboarding. 
 
 **Prerequisites:**
 - Backend access

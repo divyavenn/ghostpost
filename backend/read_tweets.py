@@ -51,7 +51,7 @@ async def log_in(username: str, password: str, browser=None):
     await page.press('input[name="text"]', "Enter")
     await page.fill('input[name="password"]', password)
     await page.press('input[name="password"]', "Enter")
-    await page.wait_for_url("https://x.com/home", timeout=30_000)
+    await page.wait_for_url("https://x.com/home", timeout=60_000)
 
     await store_browser_state(username, ctx)
     return browser, ctx

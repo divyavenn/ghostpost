@@ -30,13 +30,36 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
     import uuid
     from backend.log_interactions import TweetAction, log_tweet_action
 
-    # Add cache_id to each tweet if not present
+    # Read existing cache
+    existing_tweets = await read_from_cache(username)
+
+    # Create a map of existing tweets by ID for quick lookup
+    existing_map = {}
+    for t in existing_tweets:
+        tweet_id = t.get("id") or t.get("tweet_id")
+        if tweet_id:
+            existing_map[str(tweet_id)] = t
+
+    # Add cache_id to each tweet if not present and merge with existing
     for tweet in tweets:
-        if "cache_id" not in tweet:
-            tweet["cache_id"] = str(uuid.uuid4())
+        tweet_id = tweet.get("id") or tweet.get("tweet_id")
+
+        # If tweet exists, update it; otherwise add cache_id
+        if tweet_id and str(tweet_id) in existing_map:
+            # Update existing tweet
+            existing_map[str(tweet_id)].update(tweet)
+        else:
+            # New tweet - add cache_id if not present
+            if "cache_id" not in tweet:
+                tweet["cache_id"] = str(uuid.uuid4())
+            if tweet_id:
+                existing_map[str(tweet_id)] = tweet
+
+    # Convert back to list
+    all_tweets = list(existing_map.values())
 
     path = get_user_tweet_cache(username)
-    atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+    atomic_file_update(path, all_tweets, ".tmp", ensure_ascii=False)
     notify(f"💾{description} and wrote to cache")
 
     # Log each tweet being written

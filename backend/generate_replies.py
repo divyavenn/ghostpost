@@ -2,6 +2,7 @@ import asyncio
 import os
 
 import requests
+from dotenv import load_dotenv
 
 from .read_tweets import USERNAME
 from .utils import error, notify
@@ -12,6 +13,9 @@ except ModuleNotFoundError:  # Running from inside backend/
     from resolve_imports import ensure_standalone_imports
 
 ensure_standalone_imports(globals())
+
+# Load environment variables from .env file
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 
 # Put your OBELISK_KEY in an environment variable for safety
 OBELISK_KEY = os.getenv("OBELISK_KEY")
@@ -55,31 +59,69 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     import time
     from backend.tweets_cache import read_from_cache, write_to_cache
 
+    # Check if API key is configured
+    if not OBELISK_KEY:
+        notify("❌ OBELISK_KEY environment variable is not set")
+        raise RuntimeError("OBELISK_KEY environment variable is not set")
+
     tweets = await read_from_cache(username=username)
+
+    if not tweets:
+        notify("⚠️ No tweets found in cache")
+        return []
+
+    notify(f"📝 Processing {len(tweets)} tweets for user {username}...")
     count = 0
+    skipped = 0
+    errors = 0
+
     for tweet in tweets:
+        tweet_id = tweet.get('id') or tweet.get('tweet_id')
+
         # Skip if reply already exists and we're not overwriting
         if "reply" in tweet and tweet["reply"] and not overwrite:
+            skipped += 1
             continue
 
-        prompt = str(tweet.get('thread', []))
-        tweet.get('handle', 'unknown')
+        # Get thread content for prompt
+        thread = tweet.get('thread', [])
+        if not thread:
+            notify(f"⚠️ Tweet {tweet_id} has no thread content, skipping")
+            skipped += 1
+            continue
+
+        prompt = str(thread)
+
         # Get model's reply with appropriate delay for rate limiting
         try:
+            notify(f"🤖 Generating reply for tweet {tweet_id}...")
             response = ask_model(prompt=prompt)
+
+            # Check for errors in response
+            if "error" in response:
+                notify(f"❌ API error for tweet {tweet_id}: {response['error']}")
+                errors += 1
+                continue
+
             reply = response.get('message', '')
-            count += 1
-            # Add the reply to the tweet object
-            tweet['reply'] = reply
+            if reply:
+                tweet['reply'] = reply
+                count += 1
+                notify(f"✅ Generated reply for tweet {tweet_id}")
+            else:
+                notify(f"⚠️ Empty reply received for tweet {tweet_id}")
+                errors += 1
 
             time.sleep(delay_seconds)
 
         except Exception as e:
-            error(f"Error generating reply for tweet {tweet.get('id')}: {e}")
-            tweet['reply'] = "Error generating reply"
+            notify(f"❌ Exception generating reply for tweet {tweet_id}: {e}")
+            errors += 1
 
     # Save the updated tweets back to the file
     await write_to_cache(tweets, f"Generated replies for {count} tweets", username=username)
+
+    notify(f"✅ Done! Generated: {count}, Skipped: {skipped}, Errors: {errors}")
 
     return tweets
 

@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from .read_tweets import USERNAME
 from .utils import error, notify
+from backend.utils import read_user_info
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -65,6 +66,10 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
         raise RuntimeError("OBELISK_KEY environment variable is not set")
 
     tweets = await read_from_cache(username=username)
+    
+    user_info = read_user_info(username)
+    user_model = user_info.get('model', 'divya-2-bon') if user_info else 'divya-2-bon'
+    notify(f"🤖 Using model: {user_model} for user {username}")
 
     if not tweets:
         notify("⚠️ No tweets found in cache")
@@ -95,7 +100,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
         # Get model's reply with appropriate delay for rate limiting
         try:
             notify(f"🤖 Generating reply for tweet {tweet_id}...")
-            response = ask_model(prompt=prompt)
+            response = ask_model(prompt=prompt, model=user_model)
 
             # Check for errors in response
             if "error" in response:

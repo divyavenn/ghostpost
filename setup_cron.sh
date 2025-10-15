@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # Setup cron job for FloodMe worker
-# Automatically detects project path and sets up daily scraping
+# Automatically detects project path and sets up scheduled scraping
 
 set -e
 
@@ -11,73 +11,68 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-# Detect project root (script is in scripts/, so go up one level)
+# Detect project root
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+PROJECT_ROOT="$SCRIPT_DIR"
 
 echo -e "${GREEN}FloodMe Worker Cron Setup${NC}"
 echo "================================"
-echo "Project root: $PROJECT_ROOT"
-echo ""
 
-# Detect Python/uv path
-if command -v uv &> /dev/null; then
-    UV_CMD="uv"
-    echo -e "${GREEN}✓${NC} Found uv package manager"
-else
+# Verify dependencies
+if ! command -v uv &> /dev/null; then
     echo -e "${RED}✗${NC} uv not found. Please install: https://docs.astral.sh/uv/"
     exit 1
 fi
 
-# Verify worker.py exists
 WORKER_PATH="$PROJECT_ROOT/backend/worker.py"
 if [ ! -f "$WORKER_PATH" ]; then
     echo -e "${RED}✗${NC} worker.py not found at: $WORKER_PATH"
     exit 1
 fi
-echo -e "${GREEN}✓${NC} Found worker.py"
 
 # Create log directory
 LOG_DIR="$PROJECT_ROOT/backend/cache/worker_logs"
 mkdir -p "$LOG_DIR"
-echo -e "${GREEN}✓${NC} Created log directory: $LOG_DIR"
 
 # Define cron job
-# Run daily at 2 AM, redirect stdout and stderr to log file
-CRON_TIME="0 2 * * *"  # 2 AM daily
+CRON_TIME="*/10 * * * *"  # Every 10 minutes
 CRON_LOG="$LOG_DIR/cron_output.log"
+UV_CMD="$(which uv)"
 CRON_CMD="cd $PROJECT_ROOT && $UV_CMD run python backend/worker.py >> $CRON_LOG 2>&1"
 CRON_ENTRY="$CRON_TIME $CRON_CMD"
 
-echo ""
-echo "Cron job configuration:"
-echo "  Schedule: Daily at 2:00 AM"
-echo "  Command: $CRON_CMD"
-echo "  Log file: $CRON_LOG"
-echo ""
+# Stop any running worker processes
+echo "Stopping existing worker processes..."
+pkill -f "backend/worker.py" 2>/dev/null || true
 
-# Check if cron job already exists
-if crontab -l 2>/dev/null | grep -q "backend/worker.py"; then
-    echo -e "${YELLOW}⚠${NC}  Cron job already exists. Updating..."
-    # Remove existing FloodMe worker cron jobs
-    crontab -l 2>/dev/null | grep -v "backend/worker.py" | crontab -
-fi
+# Stop cron service to ensure clean state
+echo "Stopping cron service..."
+sudo systemctl stop cron 2>/dev/null || true
 
-# Add new cron job
-(crontab -l 2>/dev/null; echo "$CRON_ENTRY") | crontab -
+# Remove existing cron jobs
+echo "Removing existing cron jobs..."
+crontab -l 2>/dev/null | grep -v "backend/worker.py" | crontab - 2>/dev/null || true
 
-echo -e "${GREEN}✓${NC} Cron job installed successfully!"
+# Start cron service
+echo "Starting cron service..."
+sudo systemctl start cron || { echo -e "${RED}✗${NC} Failed to start cron service"; exit 1; }
+
+# Enable cron service to start on boot
+sudo systemctl enable cron >/dev/null 2>&1
+
+# Install new cron job
+echo "Installing new cron job..."
+TEMP_CRONTAB=$(mktemp)
+crontab -l 2>/dev/null > "$TEMP_CRONTAB"
+echo "$CRON_ENTRY" >> "$TEMP_CRONTAB"
+crontab "$TEMP_CRONTAB"
+rm "$TEMP_CRONTAB"
+
+echo -e "${GREEN}✓${NC} Setup complete!"
 echo ""
-echo "To verify installation, run:"
-echo "  crontab -l"
+echo "Log file: $CRON_LOG"
 echo ""
-echo "To view cron output:"
-echo "  tail -f $CRON_LOG"
-echo ""
-echo "To test worker manually:"
-echo "  cd $PROJECT_ROOT && uv run python backend/worker.py"
-echo ""
-echo "To test with specific user:"
-echo "  cd $PROJECT_ROOT && uv run python backend/worker.py --user proudlurker"
-echo ""
-echo -e "${GREEN}Setup complete!${NC}"
+echo "Commands:"
+echo "  View logs: tail -f $CRON_LOG"
+echo "  Test run: cd $PROJECT_ROOT && uv run python backend/worker.py"
+echo "  Check cron: crontab -l"

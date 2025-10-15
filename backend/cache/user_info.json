@@ -105,5 +105,23 @@
     "queries": [
       "tech recruiting -filter:links -filter:replies -is:retweet lang:en"
     ]
+  },
+  {
+    "uid": 3,
+    "handle": "_AyushGharat",
+    "email": "your-email@example.com",
+    "model": "ken-1-base",
+    "username": "Ayush Gharat",
+    "profile_pic_url": "https://pbs.twimg.com/profile_images/1602765921394872321/lif8JnGE_normal.jpg",
+    "follower_count": 129,
+    "relevant_accounts": {
+      "divya_venn": true,
+      "proudlurker": true
+    },
+    "queries": [
+      "AI automation -filter:links -filter:replies -is:retweet lang:en",
+      "productivity tools -filter:links -filter:replies -is:retweet lang:en"
+    ],
+    "max_tweets_retrieve": 30
   }
 ]

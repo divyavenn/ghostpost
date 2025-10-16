@@ -250,6 +250,163 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
         except Exception:
             return "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
 
+    def get_media_types(node: dict) -> set[str]:
+        """
+        Extract all media types from a tweet.
+        Returns set of media types: {"photo", "video", "animated_gif"}
+        Empty set if no media.
+        """
+        inner_node = node.get("tweet") or node
+        legacy = inner_node.get("legacy", {})
+        
+        media_types = set()
+        
+        # Check both entities and extended_entities
+        for key in ["entities", "extended_entities"]:
+            entities = legacy.get(key, {})
+            media_list = entities.get("media", [])
+            
+            if media_list and isinstance(media_list, list):
+                for media_item in media_list:
+                    media_type = media_item.get("type")
+                    if media_type:
+                        media_types.add(media_type)
+        
+        return media_types
+
+    def has_external_urls(node: dict) -> bool:
+        """
+        Check if tweet contains external URLs (not media URLs).
+        Returns True if external links present.
+        """
+        inner_node = node.get("tweet") or node
+        legacy = inner_node.get("legacy", {})
+        entities = legacy.get("entities", {})
+        
+        urls = entities.get("urls", [])
+        # Return True if there are any URLs (these are external links, not media)
+        return bool(urls and len(urls) > 0)
+
+    def has_unsupported_content(node: dict) -> bool:
+        """
+        Returns True if tweet contains content the AI VLM cannot process:
+        - Videos (type: "video")
+        - Animated GIFs (type: "animated_gif")  
+        - External URLs (articles, links)
+        - Quoted tweets containing any of the above (recursive)
+        
+        Returns False for:
+        - Pure text-only tweets
+        - Tweets with static images (type: "photo")
+        - Text/images quoting text/images
+        """
+        inner_node = node.get("tweet") or node
+        
+        # Check for videos or animated GIFs (NOT photos)
+        media_types = get_media_types(inner_node)
+        unsupported_media = {"video", "animated_gif"}
+        
+        if media_types & unsupported_media:  # Intersection - has video or GIF
+            return True
+        
+        # Check for external URLs
+        if has_external_urls(inner_node):
+            return True
+        
+        # Recursively check quoted tweet
+        quoted_result = inner_node.get("quoted_status_result", {})
+        if quoted_result:
+            quoted_tweet = quoted_result.get("result", {})
+            if quoted_tweet and isinstance(quoted_tweet, dict):
+                # Recursive call - check if quoted tweet has unsupported content
+                if has_unsupported_content(quoted_tweet):
+                    return True
+        
+        return False
+
+    def extract_media_urls(node: dict) -> list[dict]:
+        """
+        Extract image URLs and metadata from tweet media.
+        Returns list of dicts with structure:
+        [
+            {
+                "type": "photo",
+                "url": "https://pbs.twimg.com/media/...",
+                "alt_text": "Optional alt text for accessibility"
+            }
+        ]
+        """
+        inner_node = node.get("tweet") or node
+        legacy = inner_node.get("legacy", {})
+        
+        media_items = []
+        
+        # Prefer extended_entities over entities (has full resolution)
+        extended = legacy.get("extended_entities", {})
+        entities = legacy.get("entities", {})
+        
+        media_list = extended.get("media") or entities.get("media") or []
+        
+        for media_item in media_list:
+            media_type = media_item.get("type")
+            
+            # Only extract photos (we filter videos/GIFs already)
+            if media_type == "photo":
+                # Get highest quality image URL
+                media_url = media_item.get("media_url_https") or media_item.get("media_url")
+                
+                # Get alt text if available
+                alt_text = media_item.get("ext_alt_text", "")
+                
+                if media_url:
+                    media_items.append({
+                        "type": "photo",
+                        "url": media_url,
+                        "alt_text": alt_text
+                    })
+        
+        return media_items
+
+    def extract_quoted_tweet(node: dict) -> dict | None:
+        """
+        Extract quoted tweet data if present.
+        Returns None if no quoted tweet.
+        """
+        inner_node = node.get("tweet") or node
+        quoted_result = inner_node.get("quoted_status_result", {})
+        
+        if not quoted_result:
+            return None
+        
+        quoted_node = quoted_result.get("result", {})
+        if not quoted_node or not isinstance(quoted_node, dict):
+            return None
+        
+        # Unwrap if needed
+        quoted_inner = quoted_node.get("tweet") or quoted_node
+        quoted_legacy = quoted_inner.get("legacy", {})
+        
+        if not quoted_legacy:
+            return None
+        
+        # Extract quoted tweet data using existing helper functions
+        quoted_text = get_tweet_text(quoted_inner)
+        quoted_name, quoted_handle = extract_user_data(quoted_inner)
+        quoted_tid = quoted_legacy.get("id_str")
+        
+        if not quoted_text or not quoted_handle:
+            return None
+        
+        return {
+            "text": quoted_text,
+            "author_name": quoted_name or quoted_handle,
+            "author_handle": quoted_handle,
+            "author_profile_pic_url": extract_author_profile_pic(quoted_inner),
+            "media": extract_media_urls(quoted_inner),
+            "created_at": quoted_legacy.get("created_at", ""),
+            "url": f"https://x.com/{quoted_handle}/status/{quoted_tid}" if quoted_tid else ""
+        }
+
     def extract_user_data(tweet_res: dict) -> tuple:
         """Extract username and handle from tweet data - for the ACTUAL POSTER, not quoted/retweeted users"""
         user_handle = None
@@ -421,18 +578,6 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
             instr.extend(stl.get("instructions", []) or [])
         return instr
 
-    # --- debug helper: print why we dropped an entry ---
-    def dbg(reason, tid=None, resp=None):
-        return
-        op = "n/a"
-        try:
-            if resp and "/graphql/" in resp.url:
-                op = resp.url.split("/graphql/")[1].split("?")[0]
-            else:
-                op = resp.url
-        except Exception:
-            pass
-        print(f"[drop:{reason}] tid={tid or 'n/a'} op={op}")
 
     async def grab(resp):
         if not (TWEET_API_RE.search(resp.url)):
@@ -482,30 +627,26 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         # sometimes legacy only appears under quoted result
                         qleg = get(node, "quoted_status_result", "result", "legacy")
                         if not qleg:
-                            dbg(
-                                "no_legacy",
-                                (raw.get("rest_id") if isinstance(raw, dict) else None),
-                                resp=resp,
-                            )
                             continue
                         legacy = qleg
 
                     created_at = legacy.get("created_at")
                     if not created_at:
-                        dbg("no_created_at", legacy.get("id_str"), resp=resp)
                         continue
                     if not within_hours(created_at, hours=48):  # keep your current 27h test window
-                        dbg("too_old", legacy.get("id_str"), resp=resp)
                         continue
 
                     # optional: re-enable filters once debugged
                     if (not is_original_post(legacy)) or (int(legacy.get("favorite_count", 0)) < min_likes):
-                        dbg("filter_original_or_likes", legacy.get("id_str"), resp=resp)
+                        continue
+
+                    # Filter tweets with videos, GIFs, URLs, or quoted tweets containing them
+                    # (Photos are OK - VLM can process them)
+                    if has_unsupported_content(node):
                         continue
 
                     tid = legacy.get("id_str") or str(node.get("rest_id") or "")
                     if not tid:
-                        dbg("no_tid", resp=resp)
                         continue
 
                     # If scraping from a user timeline, use the handle from the URL parameter
@@ -531,7 +672,6 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
 
                         # If we still don't have a handle, we can't create a valid tweet entry
                         if not user_handle:
-                            dbg("no_handle_extracted", tid, resp=resp)
                             continue
 
                         # If we have the handle but no username, derive from handle
@@ -552,11 +692,10 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         "username": user_name,
                         "handle": user_handle,
                         "author_profile_pic_url": extract_author_profile_pic(node),
+                        "media": extract_media_urls(node),
+                        "quoted_tweet": extract_quoted_tweet(node),
                     }
                     found_any = True
-
-                if not found_any:
-                    dbg("no_raw", resp=resp)
 
     def event_handler(resp):
         t = asyncio.create_task(grab(resp))

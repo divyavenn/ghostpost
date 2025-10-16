@@ -21,10 +21,40 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 OBELISK_KEY = os.getenv("OBELISK_KEY")
 
 
-def ask_model(prompt: str, model: str = "divya-2-bon"):
+def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-bon"):
+    """
+    Generate a reply using the VLM.
+    
+    Args:
+        prompt: Text content (thread text)
+        image_urls: List of image URLs to include in the prompt (for VLM)
+        model: Model name
+    """
     url = "https://obelisk.dread.technology/api/chat/completions"
 
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
+
+    # Build user message content
+    if image_urls and len(image_urls) > 0:
+        # Multimodal message with images
+        user_content = [
+            {
+                "type": "text",
+                "text": prompt
+            }
+        ]
+        
+        # Add each image
+        for img_url in image_urls:
+            user_content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": img_url
+                }
+            })
+    else:
+        # Text-only message
+        user_content = prompt
 
     payload = {
         "model": model,
@@ -33,7 +63,7 @@ def ask_model(prompt: str, model: str = "divya-2-bon"):
             "content": "you are scrolling twitter. Casually respond to this thread in two to three lines as a stranger"
         }, {
             "role": "user",
-            "content": prompt
+            "content": user_content
         }]
     }
 
@@ -90,12 +120,25 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
             skipped += 1
             continue
 
-        prompt = str(thread)
+        # Build text prompt
+        text_prompt = str(thread)
+
+        # Get media URLs if available
+        media = tweet.get('media', [])
+        image_urls = [item['url'] for item in media if item.get('type') == 'photo']
+
+        # Add alt text context if available
+        alt_texts = [item.get('alt_text', '') for item in media if item.get('alt_text')]
+        if alt_texts:
+            text_prompt += f"\n\n[Image descriptions: {'; '.join(alt_texts)}]"
 
         # Get model's reply with appropriate delay for rate limiting
         try:
-            notify(f"🤖 Generating reply for tweet {tweet_id}...")
-            response = ask_model(prompt=prompt)
+            if image_urls:
+                notify(f"🤖 Generating reply for tweet {tweet_id} with {len(image_urls)} image(s)...")
+            else:
+                notify(f"🤖 Generating reply for tweet {tweet_id}...")
+            response = ask_model(prompt=text_prompt, image_urls=image_urls)
 
             # Check for errors in response
             if "error" in response:

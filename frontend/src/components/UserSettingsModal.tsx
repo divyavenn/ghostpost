@@ -12,6 +12,7 @@ interface UserSettingsModalProps {
     follower_count: number;
   };
   onLogout: () => void;
+  isFirstTimeSetup?: boolean;
 }
 
 interface EditableTextProps {
@@ -65,7 +66,7 @@ function SectionTitle({text} : {text: string}) {
 }
 
 
-export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogout }: UserSettingsModalProps) {
+export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogout, isFirstTimeSetup = false }: UserSettingsModalProps) {
   const [settings, setSettings] = useState<UserSettings>({
     queries: [],
     relevant_accounts: {},
@@ -79,6 +80,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
+  const [maxTweetsInput, setMaxTweetsInput] = useState<string>('30');
 
   useEffect(() => {
     if (isOpen) {
@@ -92,6 +94,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     try {
       const userSettings = await api.getUserSettings(username);
       setSettings(userSettings);
+      setMaxTweetsInput(userSettings.max_tweets_retrieve.toString());
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
@@ -207,6 +210,18 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     }
   };
 
+  const handleClose = () => {
+    // Prevent closing during first-time setup if no settings configured
+    if (isFirstTimeSetup) {
+      const hasSettings = settings.queries.length > 0 || Object.keys(settings.relevant_accounts).length > 0;
+      if (!hasSettings) {
+        showError('Please add at least one account or topic to continue');
+        return;
+      }
+    }
+    onClose();
+  };
+
 
   if (!isOpen) return null;
   
@@ -218,7 +233,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
         <div className="sticky top-0 bg-neutral-900 border-b border-neutral-800 p-6">
           <div className="flex justify-end mb-4">
             <button
-              onClick={onClose}
+              onClick={handleClose}
               className="text-neutral-400 hover:text-white transition text-2xl"
             >
               ×
@@ -242,6 +257,19 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
           <div className="p-6 text-center text-neutral-400">Loading settings...</div>
         ) : (
           <div className="p-6 space-y-6">
+            {/* Welcome banner for first-time setup */}
+            {isFirstTimeSetup && (
+              <div className="bg-sky-900/30 border border-sky-500/50 rounded-lg p-4">
+                <h4 className="text-white font-semibold mb-2 flex items-center gap-2">
+                  <span>👋</span>
+                  <span>Welcome to GhostPoster</span>
+                </h4>
+                <p className="text-neutral-300 text-sm">
+                  To get started, please add Twitter accounts and topics you want to engage with.
+                  You need at least one account or topic to get started.
+                </p>
+              </div>
+            )}
             {/* Relevant Accounts */}
             <div>
               <div className="flex items-center justify-between mb-3">
@@ -332,11 +360,17 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
               <SectionTitle text="Max Tweets to Retrieve" />
               <input
                 type="number"
-                value={settings.max_tweets_retrieve}
-                onChange={(e) => setSettings(prev => ({
-                  ...prev,
-                  max_tweets_retrieve: parseInt(e.target.value) || 30,
-                }))}
+                value={maxTweetsInput}
+                onChange={(e) => setMaxTweetsInput(e.target.value)}
+                onBlur={() => {
+                  const parsed = parseInt(maxTweetsInput);
+                  const validated = isNaN(parsed) ? 30 : Math.min(Math.max(parsed, 1), 100);
+                  setMaxTweetsInput(validated.toString());
+                  setSettings(prev => ({
+                    ...prev,
+                    max_tweets_retrieve: validated,
+                  }));
+                }}
                 min="1"
                 max="100"
                 className="w-full bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition"
@@ -354,19 +388,31 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
             Logout
           </button>
           <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 rounded-lg bg-neutral-800 text-white hover:bg-neutral-700 transition"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleSave}
-              disabled={saving || loading}
-              className="px-6 py-2 rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? 'Saving...' : 'Save Changes'}
-            </button>
+            {isFirstTimeSetup ? (
+              <button
+                onClick={handleSave}
+                disabled={saving || loading || (settings.queries.length === 0 && Object.keys(settings.relevant_accounts).length === 0)}
+                className="px-6 py-2 rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving...' : 'Get Started'}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={handleClose}
+                  className="px-6 py-2 rounded-lg bg-neutral-800 text-white hover:bg-neutral-700 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || loading}
+                  className="px-6 py-2 rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

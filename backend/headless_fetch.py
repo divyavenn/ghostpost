@@ -196,6 +196,60 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
         except Exception:
             return 0
 
+    def extract_author_profile_pic(tweet_res: dict) -> str:
+        """Extract the author's profile picture URL from tweet data."""
+        try:
+            # Strategy 1: Check for avatar object (newer Twitter API structure)
+            user_result = tweet_res.get("core", {}).get("user_results", {}).get("result", {})
+            if user_result and isinstance(user_result, dict):
+                # Check avatar.image_url (new Twitter API structure)
+                avatar = user_result.get("avatar", {})
+                if avatar and isinstance(avatar, dict):
+                    profile_pic = avatar.get("image_url")
+                    if profile_pic:
+                        # Replace _normal with _400x400 for higher resolution
+                        return profile_pic.replace("_normal", "_400x400")
+                
+                # Fallback: Check legacy.profile_image_url_https (older structure)
+                legacy = user_result.get("legacy", {})
+                if legacy:
+                    profile_pic = legacy.get("profile_image_url_https")
+                    if profile_pic:
+                        return profile_pic.replace("_normal.", "_400x400.")
+            
+            # Strategy 2: Check if there's a 'tweet' wrapper
+            if "tweet" in tweet_res and isinstance(tweet_res["tweet"], dict):
+                inner_tweet = tweet_res["tweet"]
+                user_result = inner_tweet.get("core", {}).get("user_results", {}).get("result", {})
+                if user_result and isinstance(user_result, dict):
+                    # Check avatar first
+                    avatar = user_result.get("avatar", {})
+                    if avatar and isinstance(avatar, dict):
+                        profile_pic = avatar.get("image_url")
+                        if profile_pic:
+                            return profile_pic.replace("_normal", "_400x400")
+                    # Fallback to legacy
+                    profile_pic = user_result.get("legacy", {}).get("profile_image_url_https")
+                    if profile_pic:
+                        return profile_pic.replace("_normal.", "_400x400.")
+            
+            # Strategy 3: Legacy structure
+            if tweet_res.get("legacy", {}).get("user", {}):
+                user = tweet_res["legacy"]["user"]
+                # Check for avatar first
+                if user.get("avatar", {}).get("image_url"):
+                    profile_pic = user["avatar"]["image_url"]
+                    return profile_pic.replace("_normal", "_400x400")
+                # Fallback to profile_image_url_https
+                if user.get("profile_image_url_https"):
+                    profile_pic = user["profile_image_url_https"]
+                    return profile_pic.replace("_normal.", "_400x400.")
+            
+            # Default Twitter avatar if not found
+            return "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
+        except Exception:
+            return "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
+
     def extract_user_data(tweet_res: dict) -> tuple:
         """Extract username and handle from tweet data - for the ACTUAL POSTER, not quoted/retweeted users"""
         user_handle = None
@@ -497,6 +551,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         "url": (f"https://x.com/{user_handle}/status/{tid}" if (user_handle) else f"https://x.com/i/web/status/{tid}"),
                         "username": user_name,
                         "handle": user_handle,
+                        "author_profile_pic_url": extract_author_profile_pic(node),
                     }
                     found_any = True
 

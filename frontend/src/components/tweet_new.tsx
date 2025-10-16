@@ -18,6 +18,7 @@ export interface TweetData {
   created_at: string;
   url: string;
   thread?: string[];
+  author_profile_pic_url?: string;
   scraped_from?: {
     type: 'account' | 'query';
     value: string;
@@ -27,6 +28,7 @@ export interface TweetData {
 interface TweetDisplayProps {
   tweet: TweetData;
   replyText: string;
+  myProfilePicUrl: string;
   onPublish: (text: string) => void;
   onSkip: () => void;
   onEditReply?: (newReply: string) => void;
@@ -35,7 +37,7 @@ interface TweetDisplayProps {
   readOnly?: boolean;
 }
 
-export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false }: TweetDisplayProps) {
+export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false }: TweetDisplayProps) {
   const [editedText, setEditedText] = useState(tweet.reply || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
@@ -44,8 +46,8 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
 
   const displayName = tweet.username;
   const handle = tweet.handle;
-  const userAvatar = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_200x200.png';
-  const myAvatar = 'https://pbs.twimg.com/profile_images/1803721062133211138/s3Zbrfw__normal.jpg';
+  const userAvatar = tweet.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
+  const myAvatar = myProfilePicUrl;
 
   const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
 

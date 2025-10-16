@@ -449,6 +449,7 @@ function App() {
                   key={tweet.id}
                   tweet={tweet}
                   replyText={tweet.reply || ''}
+                  myProfilePicUrl={userInfo!.profile_pic_url}
                   onPublish={(text) => handlePublish(tweet.id, text)}
                   onSkip={() => handleDelete(tweet.id)}
                   onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
@@ -468,6 +469,7 @@ function App() {
                   key={tweet.id}
                   tweet={tweet}
                   replyText={tweet.reply || ''}
+                  myProfilePicUrl={userInfo!.profile_pic_url}
                   onPublish={() => {}}
                   onSkip={() => {}}
                   isDeleting={false}

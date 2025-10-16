@@ -23,6 +23,20 @@ export interface TweetData {
     type: 'account' | 'query';
     value: string;
   };
+  media?: Array<{
+    type: 'photo';
+    url: string;
+    alt_text?: string;
+  }>;
+  quoted_tweet?: {
+    text: string;
+    author_name: string;
+    author_handle: string;
+    author_profile_pic_url?: string;
+    media?: Array<{type: 'photo'; url: string; alt_text?: string}>;
+    created_at: string;
+    url: string;
+  };
 }
 
 interface TweetDisplayProps {
@@ -202,9 +216,81 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
                         </span>
                       </div>
                     )}
+                    {tweet.media && tweet.media.length > 0 && (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-900/30 text-xs text-blue-400">
+                        <i className="fa-solid fa-image" />
+                        <span>{tweet.media.length} image{tweet.media.length > 1 ? 's' : ''}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>
+                
+                {/* Display quoted tweet if present */}
+                {index === 0 && tweet.quoted_tweet && (
+                  <a 
+                    href={tweet.quoted_tweet.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 block rounded-2xl border border-neutral-700 p-3 hover:bg-neutral-900 transition no-underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-start gap-2 mb-2">
+                      <img 
+                        src={tweet.quoted_tweet.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'} 
+                        alt={tweet.quoted_tweet.author_name}
+                        className="h-5 w-5 rounded-full"
+                      />
+                      <div className="flex items-center gap-1 text-sm">
+                        <span className="font-semibold text-neutral-300">{tweet.quoted_tweet.author_name}</span>
+                        <span className="text-neutral-500">@{tweet.quoted_tweet.author_handle}</span>
+                      </div>
+                    </div>
+                    
+                    <p className="whitespace-pre-wrap text-sm text-neutral-300 mb-2">
+                      {tweet.quoted_tweet.text}
+                    </p>
+                    
+                    {/* Quoted tweet images */}
+                    {tweet.quoted_tweet.media && tweet.quoted_tweet.media.length > 0 && (
+                      <div className="rounded-xl overflow-hidden mt-2">
+                        {tweet.quoted_tweet.media.map((media, idx) => (
+                          <img 
+                            key={idx}
+                            src={media.url}
+                            alt={media.alt_text || ''}
+                            className="w-full max-h-48 object-cover"
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </a>
+                )}
+                
+                {/* Display images for first message only */}
+                {index === 0 && tweet.media && tweet.media.length > 0 && (
+                  <div className={`mt-3 rounded-2xl overflow-hidden border border-neutral-800 ${
+                    (tweet.media?.length ?? 0) === 1 ? 'max-w-2xl' : 
+                    (tweet.media?.length ?? 0) === 2 ? 'grid grid-cols-2 gap-0.5' :
+                    (tweet.media?.length ?? 0) === 3 ? 'grid grid-cols-2 gap-0.5' :
+                    'grid grid-cols-2 gap-0.5'
+                  }`}>
+                    {tweet.media.map((media, mediaIndex) => (
+                      <img
+                        key={mediaIndex}
+                        src={media.url}
+                        alt={media.alt_text || `Image ${mediaIndex + 1}`}
+                        className={`w-full ${
+                          (tweet.media?.length ?? 0) === 1 ? 'object-contain max-h-[600px]' :
+                          (tweet.media?.length ?? 0) === 3 && mediaIndex === 0 ? 'row-span-2 h-full object-cover' :
+                          'h-48 object-cover'
+                        }`}
+                        loading="lazy"
+                      />
+                    ))}
+                  </div>
+                )}
+                
                 {index < threadMessages.length - 1 && (
                   <div className="absolute inset-x-14 bottom-0 border-t border-neutral-800" aria-hidden="true" />
                 )}

@@ -30,6 +30,9 @@ RUN apt-get update && apt-get install -y \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
+# Create user and group
+RUN groupadd -g 1000 ayush && useradd -u 1000 -g ayush -m ayush
+
 # Set working directory
 WORKDIR /app
 
@@ -48,12 +51,25 @@ COPY . .
 RUN mkdir -p backend
 RUN mv *.py backend/
 
-# Install Playwright browsers
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+
+# Create the directory
+RUN mkdir -p /opt/playwright
+
+# Install browsers (they'll go to the path specified by the env var)
 RUN uv run playwright install --with-deps chromium
 
-# Set environment variables
+# Make it accessible to all users
+RUN chmod -R 755 /opt/playwright
 ENV PYTHONPATH=/app
-ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+# Use a directory that's NOT mounted as a volume
+ENV UV_CACHE_DIR=/tmp/uv-cache
+
+# # Create cache directory with proper permissions
+# RUN mkdir -p /app/.cache/uv && chmod 777 /app/.cache/uv
+
+# RUN chmod -R 755 /app
 
 # Expose port
 EXPOSE 8000

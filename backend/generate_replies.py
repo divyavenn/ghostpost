@@ -30,7 +30,7 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-b
         image_urls: List of image URLs to include in the prompt (for VLM)
         model: Model name
     """
-    url = "https://obelisk.dread.technology/api/chat/completions"
+    url = "https://ultra.dread.technology/v1/chat/completions"
 
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
 

@@ -12,7 +12,8 @@ services:
   backend:
     build: ./backend
     # Not exposed publicly - only accessible via nginx
+    user: "1000:1000"
     volumes:
-      - ./backend/cache:/app/cache
+      - ./backend/cache:/app/backend/cache
     env_file:
       - ./backend/.env

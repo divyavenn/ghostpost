@@ -1,0 +1,27 @@
+version: '3.9'
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_APP_BACKEND_ADDRESS=http://backend:8000
+
+  backend:
+    build: ./backend
+    # Not exposed publicly - only accessible via nginx
+    environment:
+      - OBELISK_KEY=${OBELISK_KEY}
+      - TWITTER_BEARER=${TWITTER_BEARER}
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
+      - BACKEND_URL=http://localhost/api
+      - TWITTER_CLIENT_ID=${TWITTER_CLIENT_ID}
+      - TWITTER_CLIENT_SECRET=${TWITTER_CLIENT_SECRET}
+    volumes:
+      - ./backend/cache:/app/cache
+    env_file:
+      - ./backend/.env

@@ -8,14 +8,13 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     procps \
     libxss1 \
-    libgconf-2-4 \
     libxrandr2 \
     libasound2 \
     libpangocairo-1.0-0 \
     libatk1.0-0 \
     libcairo-gobject2 \
     libgtk-3-0 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-2.0-0 \
     libxcomposite1 \
     libxcursor1 \
     libxdamage1 \
@@ -26,29 +25,31 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     libnss3 \
     libcups2 \
-    libxss1 \
-    libgconf-2-4 \
-    libxrandr2 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libatk1.0-0 \
-    libcairo-gobject2 \
-    libgtk-3-0 \
-    libgdk-pixbuf2.0-0 \
     && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY environment.yaml .
-RUN conda env create -f environment.yaml
+# Copy dependency files first for better caching
+COPY pyproject.toml ./
+# Copy uv.lock if it exists, otherwise create it
+COPY uv.lock* ./
+
+# Install dependencies using uv (will create uv.lock if it doesn't exist)
+RUN uv sync --no-dev
 
 # Copy application code
 COPY . .
 
+# create backend directory to match import statements in main.py, Need to verify if this follows best practices
+RUN mkdir -p backend
+RUN mv *.py backend/
+
 # Install Playwright browsers
-RUN playwright install --with-deps chromium
+RUN uv run playwright install --with-deps chromium
 
 # Set environment variables
 ENV PYTHONPATH=/app
@@ -57,5 +58,5 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # Expose port
 EXPOSE 8000
 
-# Activate conda environment and run the application
-CMD ["conda", "run", "-n", "floodme-backend", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application using uv
+CMD ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

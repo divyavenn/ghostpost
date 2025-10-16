@@ -21,7 +21,7 @@ export function NoModelError() {
           </div>
           <h1 className="text-3xl font-bold text-white mb-4">Great Things Await</h1>
             <p className="text-lg text-neutral-300 mb-6">
-            Your custom modal hasn't been baked yet! To get started with GhostPost, email us at{' '}
+            Your custom model hasn't been baked yet! To get started with GhostPost, email us at{' '}
             <a
               href="mailto:divya@aibread.com"
               className="text-sky-400 hover:text-sky-300 font-semibold text-lg transition"

@@ -44,14 +44,35 @@ function App() {
       localStorage.setItem('username', callbackUsername);
       loadUserInfo(callbackUsername);
       loadTweets(callbackUsername);
+      loadPostedTweets(callbackUsername);
 
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (username) {
       loadUserInfo(username);
       loadTweets(username);
+      loadPostedTweets(username);
     }
   }, []);
+
+  // Load posted tweets from localStorage
+  const loadPostedTweets = (user: string) => {
+    const saved = localStorage.getItem(`postedTweets_${user}`);
+    if (saved) {
+      try {
+        setPostedTweets(JSON.parse(saved));
+      } catch (error) {
+        console.error('Failed to load posted tweets from localStorage:', error);
+      }
+    }
+  };
+
+  // Save posted tweets to localStorage whenever they change
+  useEffect(() => {
+    if (username && postedTweets.length > 0) {
+      localStorage.setItem(`postedTweets_${username}`, JSON.stringify(postedTweets));
+    }
+  }, [postedTweets, username]);
 
   const loadUserInfo = async (user: string) => {
     try {
@@ -187,12 +208,18 @@ function App() {
       if (!tweet) return;
 
       try {
-        await api.postReply(username, text, tweet.id, tweet.cache_id);
+        const postResult = await api.postReply(username, text, tweet.id, tweet.cache_id);
+        const postedTweetId = postResult.posted_tweet_id || postResult.data?.id;
+        
         // Remove tweet from cache backend without logging (since we already logged the post)
         await api.deleteTweet(username, tweet.id, false);
 
-        // Add to posted tweets list
-        setPostedTweets(prev => [{...tweet, reply: text}, ...prev]);
+        // Add to posted tweets list WITH posted_tweet_id
+        setPostedTweets(prev => [{
+          ...tweet, 
+          reply: text,
+          posted_tweet_id: postedTweetId  // Store Twitter's ID for later deletion
+        }, ...prev]);
 
         // Remove from local state
         const updatedTweets = tweets.filter(t => t.id !== tweetId);
@@ -259,6 +286,46 @@ function App() {
         });
       }
     }, 300); // Match animation duration
+  };
+
+  const handleDeletePosted = async (tweetId: string, postedTweetId?: string) => {
+    if (!username || !postedTweetId) {
+      alert('Cannot delete: tweet ID not found. This tweet may have been posted before delete tracking was implemented.');
+      return;
+    }
+
+    if (!confirm('Delete this tweet from Twitter? This cannot be undone.')) {
+      return;
+    }
+
+    // Mark as deleting for animation
+    setDeletingTweetIds(prev => new Set(prev).add(tweetId));
+
+    setTimeout(async () => {
+      try {
+        await api.deletePostedTweet(username, postedTweetId);
+
+        // Remove from postedTweets state
+        setPostedTweets(prev => prev.filter(t => t.id !== tweetId));
+
+        // Clear deleting state
+        setDeletingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+      } catch (error) {
+        console.error('Failed to delete posted tweet:', error);
+        alert(`Failed to delete tweet: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        
+        // Clear deleting state on error
+        setDeletingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+      }
+    }, 300);
   };
 
 
@@ -471,10 +538,11 @@ function App() {
                   replyText={tweet.reply || ''}
                   myProfilePicUrl={userInfo!.profile_pic_url}
                   onPublish={() => {}}
-                  onSkip={() => {}}
-                  isDeleting={false}
+                  onSkip={() => handleDeletePosted(tweet.id, tweet.posted_tweet_id)}
+                  isDeleting={deletingTweetIds.has(tweet.id)}
                   isPosting={false}
                   readOnly={true}
+                  showDeleteButton={true}
                 />
               ))
             )

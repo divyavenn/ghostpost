@@ -5,6 +5,7 @@ import xLottie from '../assets/x.lottie';
 export interface TweetData {
   id: string;
   cache_id?: string;
+  posted_tweet_id?: string;  // Twitter's ID for posted tweets (for deletion)
   text: string;
   likes: number;
   retweets: number;
@@ -49,9 +50,10 @@ interface TweetDisplayProps {
   isDeleting?: boolean;
   isPosting?: boolean;
   readOnly?: boolean;
+  showDeleteButton?: boolean;  // Explicit control over delete button visibility
 }
 
-export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false }: TweetDisplayProps) {
+export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
   const [editedText, setEditedText] = useState(tweet.reply || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
@@ -157,25 +159,37 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
       }`}
     >
       <div className="flex items-center justify-between ml-[-20px] mb-2">
-        {!readOnly && (
+        {showDeleteButton && (
           <button
             type="button"
             onClick={onSkip}
             onMouseEnter={() => setIsDeleteHovered(true)}
             onMouseLeave={() => setIsDeleteHovered(false)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors"
-            aria-label="Delete"
+            className={`relative flex items-center gap-2 rounded-full transition-colors ${
+              readOnly 
+                ? 'px-3 h-10 hover:bg-red-600/20' 
+                : 'h-10 w-10 justify-center hover:bg-neutral-800'
+            }`}
+            aria-label={readOnly ? "Delete tweet from Twitter" : "Delete"}
+            title={readOnly ? "Delete tweet from Twitter" : "Delete"}
           >
-            {isDeleteHovered ? (
-              <div className="w-8 h-8">
-                <DotLottieReact
-                  src={xLottie}
-                  loop
-                  autoplay
-                />
-              </div>
+            {readOnly ? (
+              <>
+                <i className="fa-solid fa-trash text-red-400 text-base flex-shrink-0" />
+                <span className="text-sm font-semibold text-red-400 uppercase tracking-wide whitespace-nowrap">Delete Tweet</span>
+              </>
             ) : (
-              <span className="text-xl text-white">×</span>
+              isDeleteHovered ? (
+                <div className="w-8 h-8 flex items-center justify-center">
+                  <DotLottieReact
+                    src={xLottie}
+                    loop
+                    autoplay
+                  />
+                </div>
+              ) : (
+                <span className="text-xl text-white">×</span>
+              )
             )}
           </button>
         )}

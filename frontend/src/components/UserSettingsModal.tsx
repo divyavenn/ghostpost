@@ -80,6 +80,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
+  const [maxTweetsInput, setMaxTweetsInput] = useState<string>('30');
 
   useEffect(() => {
     if (isOpen) {
@@ -93,6 +94,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     try {
       const userSettings = await api.getUserSettings(username);
       setSettings(userSettings);
+      setMaxTweetsInput(userSettings.max_tweets_retrieve.toString());
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
@@ -358,11 +360,17 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
               <SectionTitle text="Max Tweets to Retrieve" />
               <input
                 type="number"
-                value={settings.max_tweets_retrieve}
-                onChange={(e) => setSettings(prev => ({
-                  ...prev,
-                  max_tweets_retrieve: parseInt(e.target.value) || 30,
-                }))}
+                value={maxTweetsInput}
+                onChange={(e) => setMaxTweetsInput(e.target.value)}
+                onBlur={() => {
+                  const parsed = parseInt(maxTweetsInput);
+                  const validated = isNaN(parsed) ? 30 : Math.min(Math.max(parsed, 1), 100);
+                  setMaxTweetsInput(validated.toString());
+                  setSettings(prev => ({
+                    ...prev,
+                    max_tweets_retrieve: validated,
+                  }));
+                }}
                 min="1"
                 max="100"
                 className="w-full bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition"

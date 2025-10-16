@@ -20,6 +20,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
+  const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -61,6 +62,18 @@ function App() {
       const settings = await api.getUserSettings(user);
       const hasInvalid = Object.values(settings.relevant_accounts).some(validated => validated === false);
       setHasInvalidAccounts(hasInvalid);
+
+      // Check if first-time setup is needed (both queries and accounts are empty)
+      const hasNoQueries = !settings.queries || settings.queries.length === 0;
+      const hasNoAccounts = !settings.relevant_accounts || Object.keys(settings.relevant_accounts).length === 0;
+      const needsSetup = hasNoQueries && hasNoAccounts;
+      
+      setIsFirstTimeSetup(needsSetup);
+      
+      // Auto-open settings modal for first-time users
+      if (needsSetup) {
+        setIsSettingsOpen(true);
+      }
     } catch (error) {
       console.error('Failed to load user info:', error);
     }
@@ -315,6 +328,35 @@ function App() {
             </button>
           </div>
         </div>
+
+        {/* Settings modal for first-time setup */}
+        {userInfo && (
+          <UserSettingsModal
+            isOpen={isSettingsOpen}
+            onClose={async () => {
+              const wasFirstTimeSetup = isFirstTimeSetup;
+              setIsSettingsOpen(false);
+              
+              // Reload user info to update settings state
+              await loadUserInfo(username!);
+              
+              // If we just completed first-time setup, auto-trigger refresh
+              if (wasFirstTimeSetup) {
+                setTimeout(() => {
+                  handleRefresh();
+                }, 100);
+              }
+            }}
+            username={username!}
+            userInfo={{
+              profile_pic_url: userInfo.profile_pic_url,
+              username: userInfo.username,
+              follower_count: userInfo.follower_count,
+            }}
+            onLogout={handleLogout}
+            isFirstTimeSetup={isFirstTimeSetup}
+          />
+        )}
       </div>
     );
   }
@@ -365,6 +407,7 @@ function App() {
             follower_count: userInfo.follower_count,
           }}
           onLogout={handleLogout}
+          isFirstTimeSetup={isFirstTimeSetup}
         />
       )}
 

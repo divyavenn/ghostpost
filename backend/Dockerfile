@@ -1,7 +1,7 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright
+# Install system dependencies for Playwright, Xvfb, and VNC
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -25,6 +25,11 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     libnss3 \
     libcups2 \
+    xvfb \
+    x11vnc \
+    novnc \
+    websockify \
+    fluxbox \
     && rm -rf /var/lib/apt/lists/*
 
 # Install uv
@@ -74,5 +79,19 @@ ENV UV_CACHE_DIR=/tmp/uv-cache
 # Expose port
 EXPOSE 8000
 
-# Run the application using uv
-CMD ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Create startup script for Xvfb and VNC
+RUN echo '#!/bin/bash\n\
+# Start Xvfb in background\n\
+Xvfb :99 -screen 0 1280x720x24 -ac +extension GLX +render -noreset &\n\
+export DISPLAY=:99\n\
+# Start window manager\n\
+fluxbox &\n\
+# Start VNC server\n\
+x11vnc -display :99 -nopw -listen 0.0.0.0 -xkb &\n\
+# Start NoVNC web server\n\
+websockify -D --web=/usr/share/novnc/ 6080 localhost:5900 &\n\
+# Start the application\n\
+exec "$@"' > /startup.sh && chmod +x /startup.sh
+
+# Run the application using uv with Xvfb
+CMD ["/startup.sh", "uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

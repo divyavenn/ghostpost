@@ -120,21 +120,5 @@
     "queries": [
       "tech recruiting -filter:links -filter:replies -is:retweet lang:en"
     ]
-  },
-  {
-    "handle": "_AyushGharat",
-    "username": "Ayush Gharat",
-    "profile_pic_url": "https://pbs.twimg.com/profile_images/1602765921394872321/lif8JnGE_normal.jpg",
-    "follower_count": 128,
-    "model": "divya-2-bon",
-    "relevant_accounts": {
-      "garrytan": true,
-      "sama": true,
-      "paulg": true
-    },
-    "queries": [
-      "applied AI enginering -filter:links -filter:replies -is:retweet lang:en"
-    ],
-    "max_tweets_retrieve": 5
   }
 ]

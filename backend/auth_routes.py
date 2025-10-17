@@ -45,11 +45,19 @@ async def start_oauth(payload: StartOAuthRequest | None = None) -> dict[str, str
     # Generate OAuth URL with state
     auth_url, code_verifier = get_authorization_url(state)
 
-    # Launch browser session
+    # Launch browser session with Xvfb support (visible in VNC)
     playwright = await async_playwright().start()
     browser = await playwright.chromium.launch(
-        headless=False,
-        args=['--disable-blink-features=AutomationControlled']
+        headless=False,  # Make browser visible in VNC
+        args=[
+            '--disable-blink-features=AutomationControlled',
+            '--no-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--display=:99'  # Use the VNC display
+        ]
     )
     context = await browser.new_context(
         viewport={'width': 1280, 'height': 720},

@@ -12,6 +12,8 @@ services:
   backend:
     build: ./backend
     # Not exposed publicly - only accessible via nginx
+    ports:
+      - "6080:6080"  # NoVNC web port
     user: "1000:1000"
     volumes:
       - ./backend/cache:/app/backend/cache

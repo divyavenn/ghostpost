@@ -32,7 +32,7 @@ export default defineConfig(({ command, mode }) => {
     },
     
     server: {
-      port: 3000,
+      port: 5173,
       host: true,
       watch: {
         usePolling: true,

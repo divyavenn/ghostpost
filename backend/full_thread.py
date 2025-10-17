@@ -81,20 +81,16 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
                             # No explicit root tweet id provided; infer from first seen item
                             root_author_id = uid
 
-                    # Keep only tweets by the root author that reply **only** to the root author
+                    # Keep only tweets by the root author
                     if root_author_id:
                         allow = False
                         # Always allow the focal/root tweet if provided
                         if root_id and tid == str(root_id):
                             allow = True
-                        else:
-                            reply_to_uid = legacy.get("in_reply_to_user_id_str")
-                            mentions = (legacy.get("entities") or {}).get("user_mentions") or []
-                            mention_ids = [m.get("id_str") for m in mentions if isinstance(m, dict) and m.get("id_str")]
-                            # Only the root author may be mentioned (or none mentioned)
-                            only_author_mentioned = (len(mention_ids) == 0) or (len(mention_ids) == 1 and mention_ids[0] == root_author_id)
-                            if (uid == root_author_id and reply_to_uid == root_author_id and only_author_mentioned):
-                                allow = True
+                        # Allow any tweet by the root author (self-thread)
+                        elif uid == root_author_id:
+                            allow = True
+
                         if allow:
                             text = extract_text(node)
                             if text:

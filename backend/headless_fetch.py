@@ -726,11 +726,21 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
 
     await page.close()
 
-    for t in tweets.values():
+    # Collect threads for all tweets
+    tweets_to_remove = []
+    for tid, t in tweets.items():
         t["thread"] = await get_thread(ctx, t["url"], root_id=t["id"])
 
+        # Mark tweets without threads for removal
+        if not t["thread"] or len(t["thread"]) == 0:
+            tweets_to_remove.append(tid)
+            continue
+
         # Replace the truncated text with the full text from the thread (first element)
-        if t["thread"] and len(t["thread"]) > 0:
-            t["text"] = t["thread"][0]
+        t["text"] = t["thread"][0]
+
+    # Remove tweets that don't have threads
+    for tid in tweets_to_remove:
+        del tweets[tid]
 
     return tweets

@@ -56,11 +56,7 @@ interface TweetDisplayProps {
   showDeleteButton?: boolean;  // Explicit control over delete button visibility
 }
 
-<<<<<<< HEAD
-export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, isRegenerating = false, readOnly = false }: TweetDisplayProps) {
-=======
-export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
->>>>>>> e900d01bf0312a31e1ba744884c16312e100051e
+export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
   const [editedText, setEditedText] = useState(tweet.reply || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
@@ -165,13 +161,8 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
           : 'duration-300 scale-100 opacity-100 translate-x-0'
       }`}
     >
-<<<<<<< HEAD
       <div className="flex items-center justify-between p-5 ml-[-20px] mb-2">
-        {!readOnly && (
-=======
-      <div className="flex items-center justify-between ml-[-20px] mb-2">
         {showDeleteButton && (
->>>>>>> e900d01bf0312a31e1ba744884c16312e100051e
           <button
             type="button"
             onClick={onSkip}

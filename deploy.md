@@ -13,7 +13,7 @@
 1) Add the IP address of your server to CORS and to the Twitter Developer Portal. If you don't know it you can find it using `ip addr show`
     - Go to the X Developer Portal https://developer.x.com/en/portal/dashboard
     - Go to user authentication settings
-    - Make sure [IP Address]/auth/callback is in the Callback URI in App Info in the X developer portal for the account you will be using
+    - Make sure [IP Address]/api/auth/callback is in the Callback URI in App Info in the X developer portal for the account you will be using
 
 
 2) If the repo does not exist on the machine, pull it 

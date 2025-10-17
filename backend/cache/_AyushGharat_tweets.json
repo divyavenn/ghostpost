@@ -1,0 +1,106 @@
+[
+  {
+    "id": "1978782257910329711",
+    "text": "Wow, tariffs have increased prices dramatically, for domestic goods as well as imported. Obviously, because domestic goods use imported materials and components. But apparently that wasn't obvious to the people who cooked up this policy... https://t.co/oKFcdOANaI",
+    "likes": 5880,
+    "retweets": 1415,
+    "quotes": 116,
+    "replies": 367,
+    "score": 9425,
+    "followers": 2086716,
+    "created_at": "Thu Oct 16 11:17:08 +0000 2025",
+    "url": "https://x.com/paulg/status/1978782257910329711",
+    "username": "Paul Graham",
+    "handle": "paulg",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1824002576/pg-railsconf_400x400.jpg",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/G3YLipAWgAAHGa0.jpg",
+        "alt_text": ""
+      }
+    ],
+    "quoted_tweet": null,
+    "thread": [
+      "Wow, tariffs have increased prices dramatically, for domestic goods as well as imported. Obviously, because domestic goods use imported materials and components. But apparently that wasn't obvious to the people who cooked up this policy... https://t.co/oKFcdOANaI"
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "paulg"
+    },
+    "cache_id": "7e306f67-6d3b-4984-936a-ee1e14251979",
+    "reply": "every time there’s a new tariff the brainworms on here start acting like it's some galaxy brain “gotcha\" that prices go up for everyone, as if the whole economy isn’t interconnected lmao  \nbut yeah unfortunately the classic move is to act surprised when reality acts like reality"
+  },
+  {
+    "id": "1978300655069450611",
+    "text": "Things have come a long way since the delivery of the DGX-1 9 years ago; amazing to see...",
+    "likes": 4092,
+    "retweets": 272,
+    "quotes": 23,
+    "replies": 406,
+    "score": 5111,
+    "followers": 4051993,
+    "created_at": "Wed Oct 15 03:23:25 +0000 2025",
+    "url": "https://x.com/sama/status/1978300655069450611",
+    "username": "Sam Altman",
+    "handle": "sama",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1904933748015255552/k43GMz63_400x400.jpg",
+    "media": [],
+    "quoted_tweet": {
+      "text": "Thanks Jensen for the hand delivery of DGX Spark. Best delivery service ever.\n\nAmazing to see so much compute (1 petaflop!) in such a tiny form factor. https://t.co/cnm4cBx13I",
+      "author_name": "Greg Brockman",
+      "author_handle": "gdb",
+      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1347621377503711233/bHg3ipfD_400x400.jpg",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/G3Q87NmacAA57hY.jpg",
+          "alt_text": ""
+        }
+      ],
+      "created_at": "Wed Oct 15 01:34:06 +0000 2025",
+      "url": "https://x.com/gdb/status/1978273142695977391"
+    },
+    "thread": [
+      "Things have come a long way since the delivery of the DGX-1 9 years ago; amazing to see..."
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "sama"
+    },
+    "cache_id": "b71264dc-97a3-4d88-bded-b5ee3d9f0694",
+    "reply": "wild that 9 years ago feels like ancient history already. the pace of change is actually insane, blink and you’re obsolete"
+  },
+  {
+    "id": "1978296222873014304",
+    "text": "New sauna but the haters are not invited https://t.co/3pCbmukIMl",
+    "likes": 2615,
+    "retweets": 29,
+    "quotes": 43,
+    "replies": 411,
+    "score": 3213,
+    "followers": 613072,
+    "created_at": "Wed Oct 15 03:05:49 +0000 2025",
+    "url": "https://x.com/garrytan/status/1978296222873014304",
+    "username": "Garry Tan",
+    "handle": "garrytan",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1922894268403941377/-dGWAt3N_400x400.jpg",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/G3RR7cQaoAApvjb.jpg",
+        "alt_text": ""
+      }
+    ],
+    "quoted_tweet": null,
+    "thread": [
+      "New sauna but the haters are not invited https://t.co/3pCbmukIMl"
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "garrytan"
+    },
+    "cache_id": "4e3277fd-7334-4d3b-9a67-345a201d5345",
+    "reply": "vibe check passed, sir 🫡  \nhonestly the lighting in here is immaculate, haters could never"
+  }
+]

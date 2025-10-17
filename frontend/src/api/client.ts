@@ -88,7 +88,7 @@ export const api = {
     if (!response.ok) throw new Error('Failed to delete tweet');
   },
 
-  postReply: async (username: string, text: string, tweetId: string, cacheId?: string): Promise<{ data: { id: string } }> => {
+  postReply: async (username: string, text: string, tweetId: string, cacheId?: string): Promise<{ data: { id: string }; posted_tweet_id?: string }> => {
     const response = await fetch(`${API_BASE_URL}/post/reply?username=${encodeURIComponent(username)}`, {
       method: 'POST',
       headers: {
@@ -101,6 +101,17 @@ export const api = {
       }),
     });
     if (!response.ok) throw new Error('Failed to post reply');
+    return response.json();
+  },
+
+  deletePostedTweet: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; deleted: boolean }> => {
+    const response = await fetch(`${API_BASE_URL}/post/tweet/${tweetId}?username=${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to delete tweet' }));
+      throw new Error(error.detail || 'Failed to delete tweet');
+    }
     return response.json();
   },
 

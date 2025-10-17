@@ -6,6 +6,7 @@ import xLottie from '../assets/x.lottie';
 export interface TweetData {
   id: string;
   cache_id?: string;
+  posted_tweet_id?: string;  // Twitter's ID for posted tweets (for deletion)
   text: string;
   likes: number;
   retweets: number;
@@ -19,15 +20,31 @@ export interface TweetData {
   created_at: string;
   url: string;
   thread?: string[];
+  author_profile_pic_url?: string;
   scraped_from?: {
     type: 'account' | 'query';
     value: string;
+  };
+  media?: Array<{
+    type: 'photo';
+    url: string;
+    alt_text?: string;
+  }>;
+  quoted_tweet?: {
+    text: string;
+    author_name: string;
+    author_handle: string;
+    author_profile_pic_url?: string;
+    media?: Array<{type: 'photo'; url: string; alt_text?: string}>;
+    created_at: string;
+    url: string;
   };
 }
 
 interface TweetDisplayProps {
   tweet: TweetData;
   replyText: string;
+  myProfilePicUrl: string;
   onPublish: (text: string) => void;
   onSkip: () => void;
   onEditReply?: (newReply: string) => void;
@@ -36,9 +53,14 @@ interface TweetDisplayProps {
   isPosting?: boolean;
   isRegenerating?: boolean;
   readOnly?: boolean;
+  showDeleteButton?: boolean;  // Explicit control over delete button visibility
 }
 
+<<<<<<< HEAD
 export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, isRegenerating = false, readOnly = false }: TweetDisplayProps) {
+=======
+export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
+>>>>>>> e900d01bf0312a31e1ba744884c16312e100051e
   const [editedText, setEditedText] = useState(tweet.reply || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
@@ -47,8 +69,8 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, onRegenera
 
   const displayName = tweet.username;
   const handle = tweet.handle;
-  const userAvatar = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_200x200.png';
-  const myAvatar = 'https://pbs.twimg.com/profile_images/1803721062133211138/s3Zbrfw__normal.jpg';
+  const userAvatar = tweet.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
+  const myAvatar = myProfilePicUrl;
 
   const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
 
@@ -143,26 +165,43 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, onRegenera
           : 'duration-300 scale-100 opacity-100 translate-x-0'
       }`}
     >
+<<<<<<< HEAD
       <div className="flex items-center justify-between p-5 ml-[-20px] mb-2">
         {!readOnly && (
+=======
+      <div className="flex items-center justify-between ml-[-20px] mb-2">
+        {showDeleteButton && (
+>>>>>>> e900d01bf0312a31e1ba744884c16312e100051e
           <button
             type="button"
             onClick={onSkip}
             onMouseEnter={() => setIsDeleteHovered(true)}
             onMouseLeave={() => setIsDeleteHovered(false)}
-            className="relative flex h-8 w-8 items-center justify-center rounded-full transition-colors"
-            aria-label="Delete"
+            className={`relative flex items-center gap-2 rounded-full transition-colors ${
+              readOnly 
+                ? 'px-3 h-10 hover:bg-red-600/20' 
+                : 'h-10 w-10 justify-center hover:bg-neutral-800'
+            }`}
+            aria-label={readOnly ? "Delete tweet from Twitter" : "Delete"}
+            title={readOnly ? "Delete tweet from Twitter" : "Delete"}
           >
-            {isDeleteHovered ? (
-              <div className="w-8 h-8">
-                <DotLottieReact
-                  src={xLottie}
-                  loop
-                  autoplay
-                />
-              </div>
+            {readOnly ? (
+              <>
+                <i className="fa-solid fa-trash text-red-400 text-base flex-shrink-0" />
+                <span className="text-sm font-semibold text-red-400 uppercase tracking-wide whitespace-nowrap">Delete Tweet</span>
+              </>
             ) : (
-              <span className="text-xl text-white">×</span>
+              isDeleteHovered ? (
+                <div className="w-8 h-8 flex items-center justify-center">
+                  <DotLottieReact
+                    src={xLottie}
+                    loop
+                    autoplay
+                  />
+                </div>
+              ) : (
+                <span className="text-xl text-white">×</span>
+              )
             )}
           </button>
         )}
@@ -203,9 +242,81 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, onRegenera
                         </span>
                       </div>
                     )}
+                    {tweet.media && tweet.media.length > 0 && (
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-900/30 text-xs text-blue-400">
+                        <i className="fa-solid fa-image" />
+                        <span>{tweet.media.length} image{tweet.media.length > 1 ? 's' : ''}</span>
+                      </div>
+                    )}
                   </div>
                 )}
                 <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>
+                
+                {/* Display quoted tweet if present */}
+                {index === 0 && tweet.quoted_tweet && (
+                  <a 
+                    href={tweet.quoted_tweet.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 block rounded-2xl border border-neutral-700 p-3 hover:bg-neutral-900 transition no-underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div className="flex items-start gap-2 mb-2">
+                      <img 
+                        src={tweet.quoted_tweet.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'} 
+                        alt={tweet.quoted_tweet.author_name}
+                        className="h-5 w-5 rounded-full"
+                      />
+                      <div className="flex items-center gap-1 text-sm">
+                        <span className="font-semibold text-neutral-300">{tweet.quoted_tweet.author_name}</span>
+                        <span className="text-neutral-500">@{tweet.quoted_tweet.author_handle}</span>
+                      </div>
+                    </div>
+                    
+                    <p className="whitespace-pre-wrap text-sm text-neutral-300 mb-2">
+                      {tweet.quoted_tweet.text}
+                    </p>
+                    
+                    {/* Quoted tweet images */}
+                    {tweet.quoted_tweet.media && tweet.quoted_tweet.media.length > 0 && (
+                      <div className="rounded-xl overflow-hidden mt-2">
+                        {tweet.quoted_tweet.media.map((media, idx) => (
+                          <img 
+                            key={idx}
+                            src={media.url}
+                            alt={media.alt_text || ''}
+                            className="w-full max-h-48 object-cover"
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </a>
+                )}
+                
+                {/* Display images for first message only */}
+                {index === 0 && tweet.media && tweet.media.length > 0 && (
+                  <div className={`mt-3 rounded-2xl overflow-hidden border border-neutral-800 ${
+                    (tweet.media?.length ?? 0) === 1 ? 'max-w-2xl' : 
+                    (tweet.media?.length ?? 0) === 2 ? 'grid grid-cols-2 gap-0.5' :
+                    (tweet.media?.length ?? 0) === 3 ? 'grid grid-cols-2 gap-0.5' :
+                    'grid grid-cols-2 gap-0.5'
+                  }`}>
+                    {tweet.media.map((media, mediaIndex) => (
+                      <img
+                        key={mediaIndex}
+                        src={media.url}
+                        alt={media.alt_text || `Image ${mediaIndex + 1}`}
+                        className={`w-full ${
+                          (tweet.media?.length ?? 0) === 1 ? 'object-contain max-h-[600px]' :
+                          (tweet.media?.length ?? 0) === 3 && mediaIndex === 0 ? 'row-span-2 h-full object-cover' :
+                          'h-48 object-cover'
+                        }`}
+                        loading="lazy"
+                      />
+                    ))}
+                  </div>
+                )}
+                
                 {index < threadMessages.length - 1 && (
                   <div className="absolute inset-x-14 bottom-0 border-t border-neutral-800" aria-hidden="true" />
                 )}

@@ -1,0 +1,33 @@
+version: '3.9'
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+    environment:
+      - VITE_APP_BACKEND_ADDRESS=http://backend:8000
+
+  backend:
+    build: ./backend
+    # Not exposed publicly - only accessible via nginx
+    user: "1000:1000"
+    volumes:
+      - ./backend/cache:/app/backend/cache
+    env_file:
+      - ./backend/.env
+    depends_on:
+      - cache-init
+
+  cache-init:
+    image: alpine:latest
+    user: "0:0"  # Run as root to fix permissions
+    volumes:
+      - ./backend/cache:/app/backend/cache
+    command: >
+      sh -c "
+        mkdir -p /app/backend/cache &&
+        chown -R 1000:1000 /app/backend/cache &&
+        chmod -R 755 /app/backend/cache
+      "

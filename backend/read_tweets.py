@@ -14,8 +14,8 @@ except ModuleNotFoundError:  # Running from inside backend/
 ensure_standalone_imports(globals())
 
 try:
-    from .headless_fetch import collect_from_page
-    from .utils import error, notify
+    from backend.headless_fetch import collect_from_page
+    from backend.utils import error, notify
 except ImportError:
     from headless_fetch import collect_from_page
     from utils import error, notify

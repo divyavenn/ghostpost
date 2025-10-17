@@ -20,6 +20,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
+  const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -43,14 +44,40 @@ function App() {
       localStorage.setItem('username', callbackUsername);
       loadUserInfo(callbackUsername);
       loadTweets(callbackUsername);
+      loadPostedTweets(callbackUsername);
 
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (username) {
       loadUserInfo(username);
       loadTweets(username);
+      loadPostedTweets(username);
     }
   }, []);
+
+  // Load posted tweets from localStorage
+  const loadPostedTweets = (user: string) => {
+    const saved = localStorage.getItem(`postedTweets_${user}`);
+    if (saved) {
+      try {
+        setPostedTweets(JSON.parse(saved));
+      } catch (error) {
+        console.error('Failed to load posted tweets from localStorage:', error);
+      }
+    }
+  };
+
+  // Save posted tweets to localStorage whenever they change
+  useEffect(() => {
+    if (username) {
+      if (postedTweets.length > 0) {
+        localStorage.setItem(`postedTweets_${username}`, JSON.stringify(postedTweets));
+      } else {
+        // Clear localStorage when no posted tweets remain
+        localStorage.removeItem(`postedTweets_${username}`);
+      }
+    }
+  }, [postedTweets, username]);
 
   const loadUserInfo = async (user: string) => {
     try {
@@ -61,6 +88,18 @@ function App() {
       const settings = await api.getUserSettings(user);
       const hasInvalid = Object.values(settings.relevant_accounts).some(validated => validated === false);
       setHasInvalidAccounts(hasInvalid);
+
+      // Check if first-time setup is needed (both queries and accounts are empty)
+      const hasNoQueries = !settings.queries || settings.queries.length === 0;
+      const hasNoAccounts = !settings.relevant_accounts || Object.keys(settings.relevant_accounts).length === 0;
+      const needsSetup = hasNoQueries && hasNoAccounts;
+      
+      setIsFirstTimeSetup(needsSetup);
+      
+      // Auto-open settings modal for first-time users
+      if (needsSetup) {
+        setIsSettingsOpen(true);
+      }
     } catch (error) {
       console.error('Failed to load user info:', error);
     }
@@ -174,12 +213,18 @@ function App() {
       if (!tweet) return;
 
       try {
-        await api.postReply(username, text, tweet.id, tweet.cache_id);
+        const postResult = await api.postReply(username, text, tweet.id, tweet.cache_id);
+        const postedTweetId = postResult.posted_tweet_id || postResult.data?.id;
+        
         // Remove tweet from cache backend without logging (since we already logged the post)
         await api.deleteTweet(username, tweet.id, false);
 
-        // Add to posted tweets list
-        setPostedTweets(prev => [{...tweet, reply: text}, ...prev]);
+        // Add to posted tweets list WITH posted_tweet_id
+        setPostedTweets(prev => [{
+          ...tweet, 
+          reply: text,
+          posted_tweet_id: postedTweetId  // Store Twitter's ID for later deletion
+        }, ...prev]);
 
         // Remove from local state
         const updatedTweets = tweets.filter(t => t.id !== tweetId);
@@ -248,12 +293,58 @@ function App() {
     }, 300); // Match animation duration
   };
 
+  const handleDeletePosted = async (tweetId: string, postedTweetId?: string) => {
+    if (!username || !postedTweetId) {
+      alert('Cannot delete: tweet ID not found. This tweet may have been posted before delete tracking was implemented.');
+      return;
+    }
+
+    if (!confirm('Delete this tweet from Twitter? This cannot be undone.')) {
+      return;
+    }
+
+    // Mark as deleting for animation
+    setDeletingTweetIds(prev => new Set(prev).add(tweetId));
+
+    setTimeout(async () => {
+      try {
+        await api.deletePostedTweet(username, postedTweetId);
+
+        // Remove from postedTweets state
+        setPostedTweets(prev => prev.filter(t => t.id !== tweetId));
+
+        // Clear deleting state
+        setDeletingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+      } catch (error) {
+        console.error('Failed to delete posted tweet:', error);
+        alert(`Failed to delete tweet: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        
+        // Clear deleting state on error
+        setDeletingTweetIds(prev => {
+          const next = new Set(prev);
+          next.delete(tweetId);
+          return next;
+        });
+      }
+    }, 300);
+  };
+
 
   if (!username) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-8">GhostPost</h1>
+          <div className="flex justify-center mb-8">
+            <img 
+              src="/GhostPoster.png" 
+              alt="GhostPoster" 
+              className="h-[500px] w-auto object-contain"
+            />
+          </div>
           <button
             onClick={handleLogin}
             className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
@@ -296,6 +387,16 @@ function App() {
   if (tweets.length === 0) {
     return (
       <div className="flex min-h-screen flex-col bg-neutral-950 p-6">
+        {/* Logo - Top Left */}
+        <div className="absolute -top-20 left-28">
+          <img 
+            src="/GhostPoster.png" 
+            alt="GhostPoster" 
+            className="h-[350px] w-auto object-contain"
+          />
+        </div>
+
+        {/* Logout - Top Right */}
         <div className="absolute top-6 right-6">
           <button
             onClick={handleLogout}
@@ -315,12 +416,51 @@ function App() {
             </button>
           </div>
         </div>
+
+        {/* Settings modal for first-time setup */}
+        {userInfo && (
+          <UserSettingsModal
+            isOpen={isSettingsOpen}
+            onClose={async () => {
+              const wasFirstTimeSetup = isFirstTimeSetup;
+              setIsSettingsOpen(false);
+              
+              // Reload user info to update settings state
+              await loadUserInfo(username!);
+              
+              // If we just completed first-time setup, auto-trigger refresh
+              if (wasFirstTimeSetup) {
+                setTimeout(() => {
+                  handleRefresh();
+                }, 100);
+              }
+            }}
+            username={username!}
+            userInfo={{
+              profile_pic_url: userInfo.profile_pic_url,
+              username: userInfo.username,
+              follower_count: userInfo.follower_count,
+            }}
+            onLogout={handleLogout}
+            isFirstTimeSetup={isFirstTimeSetup}
+          />
+        )}
       </div>
     );
   }
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-950 p-20">
+      {/* Logo - Top Left */}
+      <div className="absolute -top-20 left-28 z-10">
+        <img 
+          src="/GhostPoster.png" 
+          alt="GhostPoster" 
+          className="h-[350px] w-auto object-contain"
+        />
+      </div>
+
+      {/* Settings & Refresh - Top Right */}
       <div className="absolute top-6 right-6 z-10 flex gap-3">
         <button
           onClick={() => setIsSettingsOpen(true)}
@@ -365,6 +505,7 @@ function App() {
             follower_count: userInfo.follower_count,
           }}
           onLogout={handleLogout}
+          isFirstTimeSetup={isFirstTimeSetup}
         />
       )}
 
@@ -406,6 +547,7 @@ function App() {
                   key={tweet.id}
                   tweet={tweet}
                   replyText={tweet.reply || ''}
+                  myProfilePicUrl={userInfo!.profile_pic_url}
                   onPublish={(text) => handlePublish(tweet.id, text)}
                   onSkip={() => handleDelete(tweet.id)}
                   onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
@@ -425,11 +567,13 @@ function App() {
                   key={tweet.id}
                   tweet={tweet}
                   replyText={tweet.reply || ''}
+                  myProfilePicUrl={userInfo!.profile_pic_url}
                   onPublish={() => {}}
-                  onSkip={() => {}}
-                  isDeleting={false}
+                  onSkip={() => handleDeletePosted(tweet.id, tweet.posted_tweet_id)}
+                  isDeleting={deletingTweetIds.has(tweet.id)}
                   isPosting={false}
                   readOnly={true}
+                  showDeleteButton={true}
                 />
               ))
             )

@@ -89,6 +89,84 @@ async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
         return []
 
 
+async def cleanup_old_tweets(username: str, hours: int = 48) -> int:
+    """Remove tweets older than the specified hours from cache.
+
+    Args:
+        username: The username whose cache to clean
+        hours: Age threshold in hours (default: 48)
+
+    Returns:
+        Number of tweets removed
+    """
+    from datetime import datetime, timedelta
+    from backend.log_interactions import TweetAction, log_tweet_action
+
+    try:  # Python 3.11+
+        from datetime import UTC  # type: ignore[attr-defined]
+    except ImportError:  # Python <3.11
+        from datetime import timezone
+        UTC = timezone.utc
+
+    def parse_twitter_date(s: str) -> datetime:
+        """Parse Twitter's date format: 'Sat Oct 11 15:07:12 +0000 2025'"""
+        return datetime.strptime(s, "%a %b %d %H:%M:%S %z %Y")
+
+    tweets = await read_from_cache(username)
+
+    if not tweets:
+        return 0
+
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(hours=hours)
+
+    # Separate tweets into kept and removed
+    kept_tweets = []
+    removed_tweets = []
+
+    for tweet in tweets:
+        created_at = tweet.get("created_at")
+        if not created_at:
+            # Keep tweets without a created_at timestamp
+            kept_tweets.append(tweet)
+            continue
+
+        try:
+            tweet_date = parse_twitter_date(created_at)
+            if tweet_date >= cutoff:
+                kept_tweets.append(tweet)
+            else:
+                removed_tweets.append(tweet)
+        except Exception:
+            # If we can't parse the date, keep the tweet
+            kept_tweets.append(tweet)
+
+    removed_count = len(removed_tweets)
+
+    # Write back if any were removed
+    if removed_count > 0:
+        path = get_user_tweet_cache(username)
+        atomic_file_update(path, kept_tweets, ".tmp", ensure_ascii=False)
+        notify(f"🧹 Cleaned {removed_count} tweet(s) older than {hours}h from cache")
+
+        # Log deletion for each removed tweet
+        for tweet in removed_tweets:
+            tweet_id = tweet.get("id") or tweet.get("tweet_id")
+            cache_id = tweet.get("cache_id")
+            if tweet_id:
+                metadata = {"reason": "aged_out", "age_threshold_hours": hours}
+                if cache_id:
+                    metadata["cache_id"] = cache_id
+                log_tweet_action(
+                    username,
+                    TweetAction.DELETED,
+                    str(tweet_id),
+                    metadata=metadata
+                )
+
+    return removed_count
+
+
 def get_tweet_by_id(tweets: list[dict[str, Any]], tweet_id: str) -> dict[str, Any] | None:
     """Find a tweet in the list by its ID."""
     for tweet in tweets:
@@ -286,3 +364,22 @@ async def get_single_tweet_endpoint(username: str, tweet_id: str) -> dict[str, A
             detail=f"Tweet {tweet_id} not found for user {username}",
         )
     return tweet
+
+
+@router.post("/{username}/cleanup")
+async def cleanup_tweets_endpoint(username: str, hours: int = 48) -> dict[str, Any]:
+    """Manually trigger cleanup of tweets older than the specified hours.
+
+    Args:
+        username: The username whose cache to clean
+        hours: Age threshold in hours (default: 48)
+
+    Returns:
+        Cleanup summary with count of removed tweets
+    """
+    removed_count = await cleanup_old_tweets(username, hours)
+    return {
+        "message": f"Cleanup completed for user {username}",
+        "removed_count": removed_count,
+        "age_threshold_hours": hours,
+    }

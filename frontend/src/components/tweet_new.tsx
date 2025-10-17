@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import { AnimatedText } from './AnimatedText';
 import xLottie from '../assets/x.lottie';
 
 export interface TweetData {
@@ -30,12 +31,14 @@ interface TweetDisplayProps {
   onPublish: (text: string) => void;
   onSkip: () => void;
   onEditReply?: (newReply: string) => void;
+  onRegenerate?: () => void;
   isDeleting?: boolean;
   isPosting?: boolean;
+  isRegenerating?: boolean;
   readOnly?: boolean;
 }
 
-export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting = false, isPosting = false, readOnly = false }: TweetDisplayProps) {
+export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, isRegenerating = false, readOnly = false }: TweetDisplayProps) {
   const [editedText, setEditedText] = useState(tweet.reply || '');
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
@@ -140,7 +143,7 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
           : 'duration-300 scale-100 opacity-100 translate-x-0'
       }`}
     >
-      <div className="flex items-center justify-between ml-[-20px] mb-2">
+      <div className="flex items-center justify-between p-5 ml-[-20px] mb-2">
         {!readOnly && (
           <button
             type="button"
@@ -234,13 +237,22 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
             <div className="flex gap-3 pt-6">
               <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
               <div className="flex-1">
-                <textarea
-                  ref={textareaRef}
-                  placeholder="Post your reply"
-                  value={editedText}
-                  onChange={(e) => handleTextChange(e.target.value)}
-                  className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
-                />
+                {isRegenerating ? (
+                  <div className="w-full min-h-[6rem] flex items-start pt-2">
+                    <AnimatedText
+                      text="Regenerating reply"
+                      className="text-lg"
+                    />
+                  </div>
+                ) : (
+                  <textarea
+                    ref={textareaRef}
+                    placeholder="Post your reply"
+                    value={editedText}
+                    onChange={(e) => handleTextChange(e.target.value)}
+                    className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
+                  />
+                )}
               </div>
             </div>
           </>
@@ -263,13 +275,25 @@ export function TweetDisplay({ tweet, onPublish, onSkip, onEditReply, isDeleting
 
       {!readOnly && (
         <div className="flex items-center justify-end gap-3 px-5 pb-8 pt-0">
-          {hasUnsavedChanges && (
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={!hasUnsavedChanges}
+            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
+              hasUnsavedChanges
+                ? 'bg-neutral-700 text-white hover:bg-neutral-600'
+                : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
+            }`}
+          >
+            Save
+          </button>
+          {onRegenerate && (
             <button
               type="button"
-              onClick={handleSave}
-              className="rounded-full bg-neutral-700 px-5 py-2 text-sm font-semibold text-white transition hover:bg-neutral-600"
+              onClick={onRegenerate}
+              className="rounded-full bg-neutral-700 px-5 py-2 text-sm font-semibold text-white transition hover:bg-neutral-600 flex items-center gap-2"
             >
-              Save
+              <i className="fa-solid fa-rotate-right" />
             </button>
           )}
           <button

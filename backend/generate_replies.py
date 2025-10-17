@@ -174,6 +174,91 @@ async def generate_replies_endpoint(username: str, payload: GenerateRepliesReque
         )
 
 
+@router.post("/{username}/replies/{tweet_id}")
+async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict:
+    """Regenerate AI reply for a single tweet."""
+    from backend.tweets_cache import read_from_cache, write_to_cache
+
+    try:
+        # Check if API key is configured
+        if not OBELISK_KEY:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="OBELISK_KEY environment variable is not set"
+            )
+
+        # Read tweets from cache
+        tweets = await read_from_cache(username=username)
+
+        if not tweets:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No tweets found in cache"
+            )
+
+        # Find the specific tweet
+        tweet = None
+        for t in tweets:
+            if t.get('id') == tweet_id or t.get('tweet_id') == tweet_id:
+                tweet = t
+                break
+
+        if not tweet:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tweet {tweet_id} not found in cache"
+            )
+
+        # Get thread content for prompt
+        thread = tweet.get('thread', [])
+        if not thread:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tweet has no thread content"
+            )
+
+        prompt = str(thread)
+
+        # Generate new reply
+        notify(f"🤖 Regenerating reply for tweet {tweet_id}...")
+        response = ask_model(prompt=prompt)
+
+        # Check for errors in response
+        if "error" in response:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"API error: {response['error']}"
+            )
+
+        reply = response.get('message', '')
+        if not reply:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Empty reply received from model"
+            )
+
+        # Update the tweet with the new reply
+        tweet['reply'] = reply
+
+        # Save back to cache
+        await write_to_cache(tweets, f"Regenerated reply for tweet {tweet_id}", username=username)
+
+        notify(f"✅ Regenerated reply for tweet {tweet_id}")
+
+        return {
+            "message": "Reply regenerated successfully",
+            "tweet_id": tweet_id,
+            "new_reply": reply
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error regenerating reply: {str(e)}"
+        )
+
+
 if __name__ == "__main__":
     asyncio.run(run_all())
 

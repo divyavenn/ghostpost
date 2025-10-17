@@ -136,6 +136,17 @@ export const api = {
     return response.json();
   },
 
+  regenerateSingleReply: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; new_reply: string }> => {
+    const response = await fetch(`${API_BASE_URL}/generate/${encodeURIComponent(username)}/replies/${encodeURIComponent(tweetId)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) throw new Error('Failed to regenerate reply');
+    return response.json();
+  },
+
   // User settings endpoints
   getUserInfo: async (handle: string): Promise<UserInfo> => {
     const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/info`);

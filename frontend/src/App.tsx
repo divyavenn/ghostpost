@@ -15,6 +15,7 @@ function App() {
   const [loadingPhase, setLoadingPhase] = useState<'scraping' | 'generating' | null>(null);
   const [deletingTweetIds, setDeletingTweetIds] = useState<Set<string>>(new Set());
   const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
+  const [regeneratingTweetIds, setRegeneratingTweetIds] = useState<Set<string>>(new Set());
   const [postedTweets, setPostedTweets] = useState<TweetData[]>([]);
   const [activeTab, setActiveTab] = useState<'generated' | 'posted'>('generated');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -159,6 +160,31 @@ function App() {
       ));
     } catch (error) {
       console.error('Failed to edit reply:', error);
+    }
+  };
+
+  const handleRegenerate = async (tweetId: string) => {
+    if (!username) return;
+
+    // Mark as regenerating
+    setRegeneratingTweetIds(prev => new Set(prev).add(tweetId));
+
+    try {
+      const result = await api.regenerateSingleReply(username, tweetId);
+      // Update local state with the new reply
+      setTweets(tweets.map(t =>
+        t.id === tweetId ? { ...t, reply: result.new_reply } : t
+      ));
+    } catch (error) {
+      console.error('Failed to regenerate reply:', error);
+      alert('Failed to regenerate reply. Please try again.');
+    } finally {
+      // Remove from regenerating set
+      setRegeneratingTweetIds(prev => {
+        const next = new Set(prev);
+        next.delete(tweetId);
+        return next;
+      });
     }
   };
 
@@ -394,7 +420,7 @@ function App() {
 
       {/* Continuous scroll with hidden scrollbar */}
       <div className="flex-1 overflow-y-auto scrollbar-hide">
-        <div className="grid grid-cols-2 gap-6 py-10 px-6">
+        <div className="grid grid-cols-2 gap-6 py-10 px-6 auto-rows-auto items-start">
           {activeTab === 'generated' ? (
             tweets.length === 0 ? (
               <div className="col-span-2 flex items-center justify-center h-64">
@@ -409,8 +435,10 @@ function App() {
                   onPublish={(text) => handlePublish(tweet.id, text)}
                   onSkip={() => handleDelete(tweet.id)}
                   onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
+                  onRegenerate={() => handleRegenerate(tweet.id)}
                   isDeleting={deletingTweetIds.has(tweet.id)}
                   isPosting={postingTweetIds.has(tweet.id)}
+                  isRegenerating={regeneratingTweetIds.has(tweet.id)}
                 />
               ))
             )

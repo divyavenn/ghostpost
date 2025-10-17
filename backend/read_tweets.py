@@ -128,7 +128,7 @@ async def gather_trending(usernames, queries, max_scrolls=3):
 
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_scrolls=3, max_tweets=None):
-    from backend.tweets_cache import write_to_cache
+    from backend.tweets_cache import write_to_cache, cleanup_old_tweets
     from backend.user import read_user_settings
 
     user_settings = read_user_settings(username)
@@ -140,11 +140,14 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     if relevant_accounts is None:
         # Extract only accounts where validated is True, as a list of handles
         accounts_dict = user_settings.get("relevant_accounts", {})
-        relevant_accounts = [handle for handle, validated in accounts_dict.items() if validated] 
+        relevant_accounts = [handle for handle, validated in accounts_dict.items() if validated]
     if queries is None:
         queries = user_settings.get("queries", [])
     if max_tweets is None:
         max_tweets = user_settings.get("max_tweets_retrieve", MAX_TWEETS_RETRIEVE)
+
+    # Clean up old tweets before retrieving new ones (48 hour threshold)
+    await cleanup_old_tweets(username, hours=48)
 
     sorted_items = []
     # write results to cache file

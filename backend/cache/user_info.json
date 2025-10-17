@@ -110,7 +110,7 @@
     "handle": "_AyushGharat",
     "username": "Ayush Gharat",
     "profile_pic_url": "https://pbs.twimg.com/profile_images/1602765921394872321/lif8JnGE_normal.jpg",
-    "follower_count": 128,
+    "follower_count": 129,
     "model": "divya-2-bon",
     "relevant_accounts": {
       "garrytan": true,
@@ -120,6 +120,25 @@
     "queries": [
       "applied AI enginering -filter:links -filter:replies -is:retweet lang:en"
     ],
-    "max_tweets_retrieve": 5
+    "max_tweets_retrieve": 2
+  },
+  {
+    "handle": "ai_bread",
+    "username": "Bread",
+    "profile_pic_url": "https://pbs.twimg.com/profile_images/1975642117746950145/Zc5NraFH_normal.jpg",
+    "follower_count": 2
+  },
+  {
+    "handle": "witkowski_cam",
+    "username": "Cameron Witkowski",
+    "profile_pic_url": "https://pbs.twimg.com/profile_images/1647125464622804998/BgqwDXjl_normal.jpg",
+    "follower_count": 844,
+    "model": "divya-2-bon"
+  },
+  {
+    "handle": "ABhargava2000",
+    "username": "Aman Bhargava",
+    "profile_pic_url": "https://pbs.twimg.com/profile_images/1942916165161897984/-ar2QeLq_normal.jpg",
+    "follower_count": 950
   }
 ]

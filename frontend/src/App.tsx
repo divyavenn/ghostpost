@@ -338,7 +338,13 @@ function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-white mb-8">GhostPost</h1>
+          <div className="flex justify-center mb-8">
+            <img 
+              src="/GhostPoster.png" 
+              alt="GhostPoster" 
+              className="h-[500px] w-auto object-contain"
+            />
+          </div>
           <button
             onClick={handleLogin}
             className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
@@ -381,6 +387,16 @@ function App() {
   if (tweets.length === 0) {
     return (
       <div className="flex min-h-screen flex-col bg-neutral-950 p-6">
+        {/* Logo - Top Left */}
+        <div className="absolute -top-20 left-28">
+          <img 
+            src="/GhostPoster.png" 
+            alt="GhostPoster" 
+            className="h-[350px] w-auto object-contain"
+          />
+        </div>
+
+        {/* Logout - Top Right */}
         <div className="absolute top-6 right-6">
           <button
             onClick={handleLogout}
@@ -435,6 +451,16 @@ function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-950 p-20">
+      {/* Logo - Top Left */}
+      <div className="absolute -top-20 left-28 z-10">
+        <img 
+          src="/GhostPoster.png" 
+          alt="GhostPoster" 
+          className="h-[350px] w-auto object-contain"
+        />
+      </div>
+
+      {/* Settings & Refresh - Top Right */}
       <div className="absolute top-6 right-6 z-10 flex gap-3">
         <button
           onClick={() => setIsSettingsOpen(true)}

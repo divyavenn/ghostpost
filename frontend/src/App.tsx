@@ -22,6 +22,7 @@ function App() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
+  const [scrapingStatusText, setScrapingStatusText] = useState<string>('Scraping tweets');
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -138,10 +139,25 @@ function App() {
 
     setIsLoading(true);
 
-    // Start polling for new tweets in the background
+    // Start polling for scraping status and tweets in the background
     const pollInterval = setInterval(async () => {
       if (!username) return;
       try {
+        // Poll scraping status
+        const status = await api.getScrapingStatus(username);
+
+        // Update status text based on current scraping phase
+        if (status.type === 'account') {
+          setScrapingStatusText(`Scraping tweets from @${status.value}`);
+        } else if (status.type === 'query') {
+          setScrapingStatusText(`Scraping tweets related to "${status.value}"`);
+        } else if (status.type === 'generating') {
+          setScrapingStatusText(`Generating replies (${status.value})`);
+        } else if (status.type === 'complete') {
+          setScrapingStatusText('Scraping tweets');
+        }
+
+        // Also poll tweets to show them appearing
         const data = await api.getTweetsCache(username);
         const tweetsWithThreads = data.filter(tweet => {
           const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
@@ -159,6 +175,7 @@ function App() {
     try {
       // Step 1: Call the read tweets endpoint to scrape new tweets
       setLoadingPhase('scraping');
+      setScrapingStatusText('Scraping tweets');
       const readResult = await api.readTweets(username);
       console.log(`Scraped ${readResult.count} new tweets`);
 
@@ -170,6 +187,7 @@ function App() {
       // Step 3: Stop polling and do final reload
       clearInterval(pollInterval);
       setLoadingPhase(null);
+      setScrapingStatusText('Scraping tweets'); // Reset
       await loadTweets(username);
     } catch (error) {
       clearInterval(pollInterval);
@@ -177,6 +195,7 @@ function App() {
       alert('Failed to refresh tweets. Please try again.');
       setIsLoading(false);
       setLoadingPhase(null);
+      setScrapingStatusText('Scraping tweets'); // Reset
     }
   };
 
@@ -417,7 +436,7 @@ function App() {
 
   if (!username) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6">
         <div className="text-center">
           <div className="flex justify-center mb-12">
             <img
@@ -462,7 +481,7 @@ function App() {
 
   if (isLoading && !loadingPhase) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
+      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6">
         <div className="text-white text-xl">Loading tweets...</div>
       </div>
     );
@@ -472,7 +491,7 @@ function App() {
 
   if (tweets.length === 0) {
     return (
-      <div className="flex min-h-screen flex-col bg-neutral-950 p-6">
+      <div className="flex min-h-screen flex-col bg-slate-900 p-6">
         {/* Logo - Top Left */}
         <div className="absolute top-6 left-6">
           <img
@@ -510,10 +529,10 @@ function App() {
             onClose={async () => {
               const wasFirstTimeSetup = isFirstTimeSetup;
               setIsSettingsOpen(false);
-              
+
               // Reload user info to update settings state
               await loadUserInfo(username!);
-              
+
               // If we just completed first-time setup, auto-trigger refresh
               if (wasFirstTimeSetup) {
                 setTimeout(() => {
@@ -531,12 +550,31 @@ function App() {
             isFirstTimeSetup={isFirstTimeSetup}
           />
         )}
+
+        {/* Loading overlay with translucent black background */}
+        {loadingPhase && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
+            <div className="flex flex-col items-center gap-6">
+              <div className={loadingPhase === 'scraping' ? 'mt-[-230px] w-[700px] h-[700px]' : 'w-[250px] h-[250px]'}>
+                <DotLottieReact
+                  src={loadingPhase === 'scraping' ? desktopLottie : writingLottie}
+                  loop
+                  autoplay
+                />
+              </div>
+              <AnimatedText
+                text={scrapingStatusText}
+                className={loadingPhase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl text-center"}
+              />
+            </div>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-neutral-950 p-20">
+    <div className="flex min-h-screen flex-col bg-slate-900 p-20">
       {/* Logo - Top Left */}
       <div className="absolute top-6 left-6 z-10">
         <img
@@ -726,7 +764,7 @@ function App() {
               />
             </div>
             <AnimatedText
-              text={loadingPhase === 'scraping' ? 'Scraping tweets' : 'Generating replies'}
+              text={scrapingStatusText}
               className={loadingPhase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl text-center"}
             />
           </div>

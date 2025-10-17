@@ -134,6 +134,12 @@ export const api = {
     return response.json();
   },
 
+  getScrapingStatus: async (username: string): Promise<{ type: string; value: string; phase: string }> => {
+    const response = await fetch(`${API_BASE_URL}/read/${encodeURIComponent(username)}/status`);
+    if (!response.ok) throw new Error('Failed to get scraping status');
+    return response.json();
+  },
+
   generateReplies: async (username: string, payload?: {
     delay_seconds?: number;
     overwrite?: boolean;

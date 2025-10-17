@@ -20,6 +20,12 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 # Put your OBELISK_KEY in an environment variable for safety
 OBELISK_KEY = os.getenv("OBELISK_KEY")
 
+# Import scraping status tracker from read_tweets for status updates
+try:
+    from backend.read_tweets import scraping_status
+except ImportError:
+    from read_tweets import scraping_status
+
 
 def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-bon", has_quoted_tweet: bool = False):
     """
@@ -120,8 +126,9 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     count = 0
     skipped = 0
     errors = 0
+    total_to_process = len([t for t in tweets if not (t.get('reply') and not overwrite) and t.get('thread')])
 
-    for tweet in tweets:
+    for idx, tweet in enumerate(tweets, 1):
         tweet_id = tweet.get('id') or tweet.get('tweet_id')
 
         # Skip if reply already exists and we're not overwriting
@@ -189,14 +196,23 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
         # Get model's reply with appropriate delay for rate limiting
         try:
+            # Update status to show progress
+            processed_count = count + skipped + errors + 1
+            if username:
+                scraping_status[username] = {
+                    "type": "generating",
+                    "value": f"{processed_count}/{len(tweets)}",
+                    "phase": "generating"
+                }
+
             if image_urls:
-                notify(f"🤖 Generating reply for tweet {tweet_id} with {len(image_urls)} image(s)...")
+                notify(f"🤖 Generating reply for tweet {tweet_id} with {len(image_urls)} image(s)... ({processed_count}/{len(tweets)})")
             else:
-                notify(f"🤖 Generating reply for tweet {tweet_id}...")
-            
+                notify(f"🤖 Generating reply for tweet {tweet_id}... ({processed_count}/{len(tweets)})")
+
             # Pass has_quoted_tweet flag to enable appropriate system prompt
             response = ask_model(
-                prompt=text_prompt, 
+                prompt=text_prompt,
                 image_urls=image_urls,
                 has_quoted_tweet=has_quoted_tweet
             )
@@ -226,6 +242,14 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
             errors += 1
 
     # Note: No final write_to_cache needed - already saved incrementally
+
+    # Mark generation as complete
+    if username:
+        scraping_status[username] = {
+            "type": "complete",
+            "value": "",
+            "phase": "complete"
+        }
 
     notify(f"✅ Done! Generated: {count}, Skipped: {skipped}, Errors: {errors}")
 

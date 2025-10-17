@@ -35,6 +35,9 @@ USERNAMES = ["divya_venn"]
 
 MAX_TWEETS_RETRIEVE = 30  # per user or query
 
+# Global status tracker for scraping progress
+scraping_status = {}  # {username: {"type": "account"/"query", "value": "handle/query", "phase": "scraping"/"complete"}}
+
 
 # headless login, legacy code, currently use oAuth instead
 async def log_in(username: str, password: str, browser=None):
@@ -107,6 +110,15 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
         # user timelines
         for u in usernames:
             try:
+                # Update status
+                if username:
+                    scraping_status[username] = {
+                        "type": "account",
+                        "value": u,
+                        "phase": "scraping"
+                    }
+                    notify(f"📍 Status updated: Scraping from @{u}")
+
                 tweets = await fetch_user_tweets(ctx, u, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
@@ -121,6 +133,15 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
         # topic searches
         for q in queries:
             try:
+                # Update status
+                if username:
+                    scraping_status[username] = {
+                        "type": "query",
+                        "value": q,
+                        "phase": "scraping"
+                    }
+                    notify(f"📍 Status updated: Scraping query [{q}]")
+
                 tweets = await fetch_search(ctx, q, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
@@ -131,6 +152,14 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                 results.update(tweets)
             except Exception as e:
                 notify(f"⚠️ error searching [{q}]: {e}")
+
+        # Mark as complete
+        if username:
+            scraping_status[username] = {
+                "type": "complete",
+                "value": "",
+                "phase": "complete"
+            }
 
         await ctx.close()
         await browser.close()
@@ -219,6 +248,17 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error scraping tweets: {str(e)}"
         ) from e
+
+
+@router.get("/{username}/status")
+async def get_scraping_status(username: str) -> dict:
+    """Get the current scraping status for a user."""
+    status = scraping_status.get(username, {
+        "type": "idle",
+        "value": "",
+        "phase": "idle"
+    })
+    return status
 
 
 if __name__ == "__main__":

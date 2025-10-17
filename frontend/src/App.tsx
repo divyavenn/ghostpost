@@ -4,7 +4,6 @@ import { api, type UserInfo } from './api/client';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { AnimatedText } from './components/AnimatedText';
 import { UserSettingsModal } from './components/UserSettingsModal';
-import { RemoteBrowser } from './components/RemoteBrowser';
 import desktopLottie from './assets/desktop.lottie';
 import writingLottie from './assets/writing.lottie';
 

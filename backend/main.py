@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.auth_routes import router as auth_router
+from backend.browser_auth_routes import router as browser_auth_router
 from backend.generate_replies import router as generate_router
 from backend.log_interactions import router as logging_router
 from backend.post_takes import router as post_router
@@ -25,6 +26,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(browser_auth_router)
 app.include_router(tweets_router)
 app.include_router(post_router)
 app.include_router(read_router)

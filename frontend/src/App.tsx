@@ -152,30 +152,55 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      console.log('Starting OAuth flow...');
+      console.log('Starting OAuth flow with browser...');
 
-      // Open popup immediately to avoid popup blocker
-      const popup = window.open('about:blank', '_blank');
+      alert('A browser window will open on the server for login.\n\nPlease complete the Twitter OAuth flow in that browser window.\n\nThis page will automatically update when complete.');
 
-      // Start Twitter OAuth - this will redirect to Twitter
+      // Start Twitter OAuth - this now opens a browser on backend
       const response = await api.startTwitterOAuth(window.location.origin);
       console.log('OAuth response:', response);
+      const sessionId = response.session_id;
 
-      const { auth_url } = response;
-      console.log('Auth URL:', auth_url);
+      // Poll for login completion
+      const checkInterval = setInterval(async () => {
+        try {
+          const statusResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/auth/twitter/status/${sessionId}`);
+          const status = await statusResponse.json();
 
-      if (!auth_url) {
-        popup?.close();
-        throw new Error('No auth URL received from server');
-      }
+          console.log('Login status:', status);
 
-      // Redirect the already-open popup to Twitter OAuth
-      if (popup) {
-        popup.location.href = auth_url;
-      } else {
-        // Fallback if popup was blocked
-        window.location.href = auth_url;
-      }
+          if (status.status === 'complete') {
+            clearInterval(checkInterval);
+            console.log('Login completed for user:', status.username);
+
+            // Set username and load data
+            setUsername(status.username);
+            localStorage.setItem('username', status.username);
+            await loadUserInfo(status.username);
+            await loadTweets(status.username);
+            await loadPostedTweets(status.username);
+          } else if (status.status === 'error') {
+            clearInterval(checkInterval);
+            console.error('Login error:', status.error);
+            alert(`Login failed: ${status.error}`);
+          } else if (status.status === 'not_found') {
+            clearInterval(checkInterval);
+            console.error('Session not found');
+            alert('Login session not found. Please try again.');
+          }
+          // If status is "pending", keep polling
+        } catch (error) {
+          console.error('Error checking login status:', error);
+          // Don't clear interval on network errors, keep polling
+        }
+      }, 2000); // Poll every 2 seconds
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        clearInterval(checkInterval);
+        console.log('Login polling timeout');
+      }, 300000);
+
     } catch (error) {
       console.error('Login failed:', error);
       alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

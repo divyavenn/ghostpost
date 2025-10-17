@@ -113,7 +113,18 @@ async def store_browser_state(username: str, context) -> None:
     notify(f"✅ Browser state saved for {username}")
 
 
-async def read_browser_state(browser, username: str) -> tuple[Any, Any] | None:
+async def read_browser_state(browser, username: str, validate_session: bool = False) -> tuple[Any, Any] | None:
+    """
+    Read and restore browser state for a user.
+
+    Args:
+        browser: Playwright browser instance
+        username: Twitter username/handle
+        validate_session: If True, verify session is still valid by checking Twitter
+
+    Returns:
+        Tuple of (browser, context) if session exists and is valid, None otherwise
+    """
     path = BROWSER_STATE_FILE
     if not path.exists():
         return None
@@ -131,14 +142,47 @@ async def read_browser_state(browser, username: str) -> tuple[Any, Any] | None:
         return None
 
     state = cache.get(username)
+    if not state:
+        notify(f"⚠️ No saved browser state for {username}")
+        return None
+
+    # Check for auth_token cookie validity
     if not cookie_still_valid(state):
         cache.pop(username, None)
         atomic_file_update(path, cache)
         notify(f"🔐 Relogging for {username} (missing/expired cookie)")
         return None
 
+    # Restore browser context with saved state
     ctx = await browser.new_context(storage_state=state)
     notify(f"✅ Retrieved browser state for {username}")
+
+    # Optional: Validate session is still authenticated
+    if validate_session:
+        page = await ctx.new_page()
+        try:
+            await page.goto("https://twitter.com/home", timeout=10000)
+            await page.wait_for_timeout(2000)
+
+            # Check if we're actually logged in (not redirected to login page)
+            current_url = page.url
+            if "login" in current_url.lower() or "oauth" in current_url.lower():
+                notify(f"⚠️ Session expired for {username} (redirected to login)")
+                await ctx.close()
+                cache.pop(username, None)
+                atomic_file_update(path, cache)
+                return None
+
+            notify(f"✅ Session validated for {username}")
+        except Exception as e:
+            notify(f"⚠️ Could not validate session for {username}: {e}")
+            await ctx.close()
+            cache.pop(username, None)
+            atomic_file_update(path, cache)
+            return None
+        finally:
+            await page.close()
+
     return browser, ctx
 
 

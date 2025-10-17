@@ -69,8 +69,13 @@ function App() {
 
   // Save posted tweets to localStorage whenever they change
   useEffect(() => {
-    if (username && postedTweets.length > 0) {
-      localStorage.setItem(`postedTweets_${username}`, JSON.stringify(postedTweets));
+    if (username) {
+      if (postedTweets.length > 0) {
+        localStorage.setItem(`postedTweets_${username}`, JSON.stringify(postedTweets));
+      } else {
+        // Clear localStorage when no posted tweets remain
+        localStorage.removeItem(`postedTweets_${username}`);
+      }
     }
   }, [postedTweets, username]);
 

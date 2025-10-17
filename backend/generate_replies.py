@@ -31,7 +31,7 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-b
         model: Model name
         has_quoted_tweet: Whether the tweet contains a quoted tweet (affects system prompt)
     """
-    url = "https://ultra.dread.technology/v1/chat/completions"
+    url = "https://obelisk.dread.technology/api/chat/completions"
 
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
 

@@ -24,8 +24,10 @@ Before starting, ensure you have:
     `docker compose down`
 
 4) View logs
-    `docker ps` # to find the container id
-    `docker logs <container_id>`
+   ```bash
+    docker ps # to find the container id
+    docker logs <container_id>
+   ```
 
 ## Docker Compose Services
 

@@ -17,3 +17,17 @@ services:
       - ./backend/cache:/app/backend/cache
     env_file:
       - ./backend/.env
+    depends_on:
+      - cache-init
+
+  cache-init:
+    image: alpine:latest
+    user: "0:0"  # Run as root to fix permissions
+    volumes:
+      - ./backend/cache:/app/backend/cache
+    command: >
+      sh -c "
+        mkdir -p /app/backend/cache &&
+        chown -R 1000:1000 /app/backend/cache &&
+        chmod -R 755 /app/backend/cache
+      "

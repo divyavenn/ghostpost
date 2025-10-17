@@ -38,9 +38,10 @@ Before starting, ensure you have:
 ## Environment Setup for Docker
 
 1) Create environment files:
-
-    `cp backend/.env.example backend/.env`
-    `cp frontend/.env.example frontend/.env`
+    ```bash
+    cp backend/.env.example backend/.env
+    cp frontend/.env.example frontend/.env
+    ```
 
 2) Configure your environment variables in both `.env` files
 
@@ -82,10 +83,11 @@ WantedBy=multi-user.target
 ```
 
 3) Enable and start the service:
-
-    `sudo systemctl daemon-reload`
-    `sudo systemctl enable ghostposter-app`
-    `sudo systemctl start ghostposter-app`
+    ```bash
+    sudo systemctl daemon-reload
+    sudo systemctl enable ghostposter-app
+    sudo systemctl start ghostposter-app
+    ```
 
 4) Check service status:
 
@@ -114,15 +116,11 @@ WantedBy=multi-user.target
       `cd /path/to/your/project`
 
 4) Pull the latest changes and rebuild
-
-      `git pull`
-      `docker compose down`
-      `docker compose up --build -d`
-
-5) Verify services are running
-
-      `docker compose ps`
-      `docker compose logs -f`
+    ```bash
+      git pull
+      docker compose down
+      docker compose up --build -d
+    ```
 
 ## Accessing the Application
 

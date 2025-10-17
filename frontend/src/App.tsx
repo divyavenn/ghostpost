@@ -364,11 +364,11 @@ function App() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
         <div className="text-center">
-          <div className="flex justify-center mb-8">
-            <img 
-              src="/GhostPoster.png" 
-              alt="GhostPoster" 
-              className="h-[500px] w-auto object-contain"
+          <div className="flex justify-center mb-12">
+            <img
+              src="/ghostposter_logo.png"
+              alt="GhostPoster"
+              className="h-64 w-auto object-contain animate-flicker"
             />
           </div>
           <button
@@ -378,6 +378,29 @@ function App() {
             Login with Twitter
           </button>
         </div>
+
+        <style>{`
+          @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            2% { opacity: 0.8; }
+            4% { opacity: 1; }
+            8% { opacity: 0.9; }
+            10% { opacity: 1; }
+            12% { opacity: 0.7; }
+            14% { opacity: 1; }
+            18% { opacity: 0.95; }
+            20% { opacity: 1; }
+            70% { opacity: 1; }
+            72% { opacity: 0.85; }
+            74% { opacity: 1; }
+            76% { opacity: 0.9; }
+            78% { opacity: 1; }
+          }
+
+          .animate-flicker {
+            animation: flicker 4s infinite;
+          }
+        `}</style>
       </div>
     );
   }
@@ -414,11 +437,11 @@ function App() {
     return (
       <div className="flex min-h-screen flex-col bg-neutral-950 p-6">
         {/* Logo - Top Left */}
-        <div className="absolute -top-20 left-28">
-          <img 
-            src="/GhostPoster.png" 
-            alt="GhostPoster" 
-            className="h-[350px] w-auto object-contain"
+        <div className="absolute top-6 left-6">
+          <img
+            src="/ghostposter_logo.png"
+            alt="GhostPoster"
+            className="h-12 w-auto object-contain"
           />
         </div>
 
@@ -478,11 +501,11 @@ function App() {
   return (
     <div className="flex min-h-screen flex-col bg-neutral-950 p-20">
       {/* Logo - Top Left */}
-      <div className="absolute -top-20 left-28 z-10">
-        <img 
-          src="/GhostPoster.png" 
-          alt="GhostPoster" 
-          className="h-[350px] w-auto object-contain"
+      <div className="absolute top-6 left-6 z-10">
+        <img
+          src="/ghostposter_logo.png"
+          alt="GhostPoster"
+          className="h-12 w-auto object-contain"
         />
       </div>
 

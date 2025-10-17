@@ -21,7 +21,7 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 OBELISK_KEY = os.getenv("OBELISK_KEY")
 
 
-def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-bon"):
+def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-bon", has_quoted_tweet: bool = False):
     """
     Generate a reply using the VLM.
     
@@ -29,8 +29,9 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-b
         prompt: Text content (thread text)
         image_urls: List of image URLs to include in the prompt (for VLM)
         model: Model name
+        has_quoted_tweet: Whether the tweet contains a quoted tweet (affects system prompt)
     """
-    url = "https://ultra.dread.technology/v1/chat/completions"
+    url = "https://obelisk.dread.technology/api/chat/completions"
 
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
 
@@ -56,11 +57,26 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-b
         # Text-only message
         user_content = prompt
 
+    # Choose system prompt based on whether tweet has a quoted tweet
+    if has_quoted_tweet:
+        system_prompt = (
+            "you are scrolling twitter. the user quote-tweeted someone else's post and added their own response. "
+            "the quoted content is marked [QUOTED TWEET] and the user's response is marked [RESPONSE]. "
+            "they may be agreeing, disagreeing, adding context, or mocking the quote. "
+            "casually respond to the user's perspective in two to three lines as a stranger, "
+            "considering both the quoted content and their take on it."
+        )
+    else:
+        system_prompt = (
+            "you are scrolling twitter. "
+            "casually respond to this thread in two to three lines as a stranger"
+        )
+
     payload = {
         "model": model,
         "messages": [{
             "role": "system",
-            "content": "you are scrolling twitter. Casually respond to this thread in two to three lines as a stranger"
+            "content": system_prompt
         }, {
             "role": "user",
             "content": user_content
@@ -120,15 +136,54 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
             skipped += 1
             continue
 
-        # Build text prompt
-        text_prompt = str(thread)
-
-        # Get media URLs if available
+        # Build structured text prompt with quoted tweet context if present
+        text_prompt = ""
+        image_urls = []
+        
+        # Extract quoted tweet if present
+        quoted_tweet = tweet.get('quoted_tweet')
+        has_quoted_tweet = bool(quoted_tweet and quoted_tweet.get('text'))
+        
+        if has_quoted_tweet:
+            # Add quoted tweet context first
+            qt_author = quoted_tweet.get('author_handle', 'unknown')
+            qt_name = quoted_tweet.get('author_name', qt_author)
+            qt_text = quoted_tweet.get('text', '')
+            
+            # Truncate QT text to 280 chars if needed
+            if len(qt_text) > 280:
+                qt_text = qt_text[:280] + "... [truncated]"
+            
+            text_prompt += f"[QUOTED TWEET by @{qt_author} ({qt_name})]\n"
+            text_prompt += f"{qt_text}\n"
+            
+            # Add QT images first
+            qt_media = quoted_tweet.get('media', [])
+            qt_images = [item['url'] for item in qt_media if item.get('type') == 'photo']
+            if qt_images:
+                image_urls.extend(qt_images)
+                text_prompt += f"[This quoted tweet contains {len(qt_images)} image(s)]\n"
+            
+            text_prompt += "\n---\n\n"
+        
+        # Add main tweet/thread
+        username_display = tweet.get('username', tweet.get('handle', 'User'))
+        if has_quoted_tweet:
+            text_prompt += f"[{username_display}'s RESPONSE]\n"
+        
+        text_prompt += str(thread)
+        
+        # Add main tweet images after QT images
         media = tweet.get('media', [])
-        image_urls = [item['url'] for item in media if item.get('type') == 'photo']
-
-        # Add alt text context if available
-        alt_texts = [item.get('alt_text', '') for item in media if item.get('alt_text')]
+        main_images = [item['url'] for item in media if item.get('type') == 'photo']
+        if main_images:
+            image_urls.extend(main_images)
+            if has_quoted_tweet:
+                text_prompt += f"\n[Response contains {len(main_images)} image(s)]"
+        
+        # Add alt text context if available (for all images)
+        all_media = (quoted_tweet.get('media', []) if quoted_tweet else []) + media
+        alt_texts = [item.get('alt_text', '') for item in all_media if item.get('alt_text')]
         if alt_texts:
             text_prompt += f"\n\n[Image descriptions: {'; '.join(alt_texts)}]"
 
@@ -138,7 +193,13 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
                 notify(f"🤖 Generating reply for tweet {tweet_id} with {len(image_urls)} image(s)...")
             else:
                 notify(f"🤖 Generating reply for tweet {tweet_id}...")
-            response = ask_model(prompt=text_prompt, image_urls=image_urls)
+            
+            # Pass has_quoted_tweet flag to enable appropriate system prompt
+            response = ask_model(
+                prompt=text_prompt, 
+                image_urls=image_urls,
+                has_quoted_tweet=has_quoted_tweet
+            )
 
             # Check for errors in response
             if "error" in response:

@@ -73,21 +73,31 @@ async def get_home(browser=None):
 GRAPHQL_TWEET_RE = re.compile(r"/i/api/graphql/[^/]+/(UserTweets|SearchTimeline|SearchTimelineV2|HomeTimeline|HomeLatestTimeline)")
 
 
-async def fetch_user_tweets(ctx, handle: str, **kwargs):
+async def fetch_user_tweets(ctx, handle: str, username=None, write_callback=None, **kwargs):
     url = f"https://x.com/{handle}"
-    return await collect_from_page(ctx, url, handle=handle, **kwargs)
+    return await collect_from_page(ctx, url, handle=handle, username=username, write_callback=write_callback, **kwargs)
 
 
-async def fetch_search(ctx, query: str, **kwargs):
+async def fetch_search(ctx, query: str, username=None, write_callback=None, **kwargs):
     from urllib.parse import quote_plus
 
     q = quote_plus(query)  # encodes spaces, quotes, parens, etc.
     url = f"https://x.com/search?q={q}&src=typed_query"
-    return await collect_from_page(ctx, url, handle=None, **kwargs)
+    return await collect_from_page(ctx, url, handle=None, username=username, write_callback=write_callback, **kwargs)
 
 
 # -------- Orchestration --------
-async def gather_trending(usernames, queries, max_scrolls=3):
+async def gather_trending(usernames, queries, max_scrolls=3, username=None, write_callback=None):
+    """
+    Gather trending tweets with progressive writing.
+
+    Args:
+        usernames: List of Twitter handles to scrape
+        queries: List of search queries
+        max_scrolls: Number of scrolls per page
+        username: Username for cache writes
+        write_callback: Async function to call for incremental writes
+    """
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=(not see_browser))
         browser, ctx = await get_home(browser=browser)
@@ -97,7 +107,7 @@ async def gather_trending(usernames, queries, max_scrolls=3):
         # user timelines
         for u in usernames:
             try:
-                tweets = await fetch_user_tweets(ctx, u, max_scrolls=max_scrolls)
+                tweets = await fetch_user_tweets(ctx, u, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {
@@ -111,7 +121,7 @@ async def gather_trending(usernames, queries, max_scrolls=3):
         # topic searches
         for q in queries:
             try:
-                tweets = await fetch_search(ctx, q, max_scrolls=max_scrolls)
+                tweets = await fetch_search(ctx, q, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {
@@ -149,14 +159,27 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     # Clean up old tweets before retrieving new ones (48 hour threshold)
     await cleanup_old_tweets(username, hours=48)
 
+    # Define progressive write callback for incremental updates
+    async def progressive_write(tweets_batch, target_username):
+        """Write tweets incrementally as they're discovered"""
+        await write_to_cache(tweets_batch, "Progressive tweet scraping", username=target_username)
+
     sorted_items = []
-    # write results to cache file
-    trending = await gather_trending(relevant_accounts, queries, max_scrolls=max_scrolls)
+    # Gather tweets with progressive writing enabled
+    trending = await gather_trending(
+        relevant_accounts,
+        queries,
+        max_scrolls=max_scrolls,
+        username=username,
+        write_callback=progressive_write
+    )
     # sort by score desc
     sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
     if max_tweets:
         sorted_items = sorted_items[:max_tweets]
-    await write_to_cache(sorted_items, "Scraped relevant tweets", username=username)
+
+    # Final write with sorting/filtering applied
+    await write_to_cache(sorted_items, "Final sorted tweets", username=username)
     return sorted_items
 
 

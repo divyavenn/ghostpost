@@ -110,10 +110,19 @@ function App() {
     setIsLoading(true);
     try {
       const data = await api.getTweetsCache(user);
+
+      // Filter: only display tweets that have threads
+      // (Tweets without threads remain in cache but aren't shown)
+      const tweetsWithThreads = data.filter(tweet => {
+        const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
+        return hasThread;
+      });
+
       // Sort by created_at date (newest first)
-      const sorted = data.sort((a, b) => {
+      const sorted = tweetsWithThreads.sort((a, b) => {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       });
+
       setTweets(sorted);
       setCurrentTweetIndex(0);
     } catch (error) {
@@ -128,6 +137,25 @@ function App() {
     if (!username) return;
 
     setIsLoading(true);
+
+    // Start polling for new tweets in the background
+    const pollInterval = setInterval(async () => {
+      if (!username) return;
+      try {
+        const data = await api.getTweetsCache(username);
+        const tweetsWithThreads = data.filter(tweet => {
+          const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
+          return hasThread;
+        });
+        const sorted = tweetsWithThreads.sort((a, b) => {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        setTweets(sorted);
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 2000); // Poll every 2 seconds
+
     try {
       // Step 1: Call the read tweets endpoint to scrape new tweets
       setLoadingPhase('scraping');
@@ -139,10 +167,12 @@ function App() {
       const generateResult = await api.generateReplies(username);
       console.log(`Generated ${generateResult.replies_generated} replies`);
 
-      // Step 3: Reload the cache to show the new tweets with replies
+      // Step 3: Stop polling and do final reload
+      clearInterval(pollInterval);
       setLoadingPhase(null);
       await loadTweets(username);
     } catch (error) {
+      clearInterval(pollInterval);
       console.error('Failed to refresh tweets:', error);
       alert('Failed to refresh tweets. Please try again.');
       setIsLoading(false);
@@ -438,25 +468,7 @@ function App() {
     );
   }
 
-  if (loadingPhase) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
-        <div className="flex flex-col items-center gap-6">
-          <div className={loadingPhase === 'scraping' ? 'mt-[-230px] w-[700px] h-[700px]' : 'w-[250px] h-[250px]'}>
-            <DotLottieReact
-              src={loadingPhase === 'scraping' ? desktopLottie : writingLottie}
-              loop
-              autoplay
-            />
-          </div>
-          <AnimatedText
-            text={loadingPhase === 'scraping' ? 'Scraping tweets' : 'Generating replies'}
-            className={loadingPhase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl text-center"}
-          />
-        </div>
-      </div>
-    );
-  }
+  // Don't return early if loadingPhase is set - we'll render overlay instead
 
   if (tweets.length === 0) {
     return (
@@ -609,53 +621,117 @@ function App() {
 
       {/* Continuous scroll with hidden scrollbar */}
       <div className="flex-1 overflow-y-auto scrollbar-hide">
-        <div className="grid grid-cols-2 gap-6 py-10 px-6 auto-rows-auto items-start">
+        <div className="flex gap-6 py-10 px-6">
           {activeTab === 'generated' ? (
             tweets.length === 0 ? (
-              <div className="col-span-2 flex items-center justify-center h-64">
+              <div className="w-full flex items-center justify-center h-64">
                 <p className="text-neutral-400 text-lg">No tweets in cache</p>
               </div>
             ) : (
-              tweets.map((tweet) => (
-                <TweetDisplay
-                  key={tweet.id}
-                  tweet={tweet}
-                  replyText={tweet.reply || ''}
-                  myProfilePicUrl={userInfo!.profile_pic_url}
-                  onPublish={(text) => handlePublish(tweet.id, text)}
-                  onSkip={() => handleDelete(tweet.id)}
-                  onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
-                  onRegenerate={() => handleRegenerate(tweet.id)}
-                  isDeleting={deletingTweetIds.has(tweet.id)}
-                  isPosting={postingTweetIds.has(tweet.id)}
-                  isRegenerating={regeneratingTweetIds.has(tweet.id)}
-                />
-              ))
+              <>
+                {/* Left Column */}
+                <div className="flex-1 flex flex-col gap-6">
+                  {tweets.filter((_, index) => index % 2 === 0).map((tweet) => (
+                    <TweetDisplay
+                      key={tweet.id}
+                      tweet={tweet}
+                      replyText={tweet.reply || ''}
+                      myProfilePicUrl={userInfo!.profile_pic_url}
+                      onPublish={(text) => handlePublish(tweet.id, text)}
+                      onSkip={() => handleDelete(tweet.id)}
+                      onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
+                      onRegenerate={() => handleRegenerate(tweet.id)}
+                      isDeleting={deletingTweetIds.has(tweet.id)}
+                      isPosting={postingTweetIds.has(tweet.id)}
+                      isRegenerating={regeneratingTweetIds.has(tweet.id)}
+                    />
+                  ))}
+                </div>
+                {/* Right Column */}
+                <div className="flex-1 flex flex-col gap-6">
+                  {tweets.filter((_, index) => index % 2 === 1).map((tweet) => (
+                    <TweetDisplay
+                      key={tweet.id}
+                      tweet={tweet}
+                      replyText={tweet.reply || ''}
+                      myProfilePicUrl={userInfo!.profile_pic_url}
+                      onPublish={(text) => handlePublish(tweet.id, text)}
+                      onSkip={() => handleDelete(tweet.id)}
+                      onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
+                      onRegenerate={() => handleRegenerate(tweet.id)}
+                      isDeleting={deletingTweetIds.has(tweet.id)}
+                      isPosting={postingTweetIds.has(tweet.id)}
+                      isRegenerating={regeneratingTweetIds.has(tweet.id)}
+                    />
+                  ))}
+                </div>
+              </>
             )
           ) : (
             postedTweets.length === 0 ? (
-              <div className="col-span-2 flex items-center justify-center h-64">
+              <div className="w-full flex items-center justify-center h-64">
                 <p className="text-neutral-400 text-lg">No tweets posted yet</p>
               </div>
             ) : (
-              postedTweets.map((tweet) => (
-                <TweetDisplay
-                  key={tweet.id}
-                  tweet={tweet}
-                  replyText={tweet.reply || ''}
-                  myProfilePicUrl={userInfo!.profile_pic_url}
-                  onPublish={() => {}}
-                  onSkip={() => handleDeletePosted(tweet.id, tweet.posted_tweet_id)}
-                  isDeleting={deletingTweetIds.has(tweet.id)}
-                  isPosting={false}
-                  readOnly={true}
-                  showDeleteButton={true}
-                />
-              ))
+              <>
+                {/* Left Column */}
+                <div className="flex-1 flex flex-col gap-6">
+                  {postedTweets.filter((_, index) => index % 2 === 0).map((tweet) => (
+                    <TweetDisplay
+                      key={tweet.id}
+                      tweet={tweet}
+                      replyText={tweet.reply || ''}
+                      myProfilePicUrl={userInfo!.profile_pic_url}
+                      onPublish={() => {}}
+                      onSkip={() => handleDeletePosted(tweet.id, tweet.posted_tweet_id)}
+                      isDeleting={deletingTweetIds.has(tweet.id)}
+                      isPosting={false}
+                      readOnly={true}
+                      showDeleteButton={true}
+                    />
+                  ))}
+                </div>
+                {/* Right Column */}
+                <div className="flex-1 flex flex-col gap-6">
+                  {postedTweets.filter((_, index) => index % 2 === 1).map((tweet) => (
+                    <TweetDisplay
+                      key={tweet.id}
+                      tweet={tweet}
+                      replyText={tweet.reply || ''}
+                      myProfilePicUrl={userInfo!.profile_pic_url}
+                      onPublish={() => {}}
+                      onSkip={() => handleDeletePosted(tweet.id, tweet.posted_tweet_id)}
+                      isDeleting={deletingTweetIds.has(tweet.id)}
+                      isPosting={false}
+                      readOnly={true}
+                      showDeleteButton={true}
+                    />
+                  ))}
+                </div>
+              </>
             )
           )}
         </div>
       </div>
+
+      {/* Loading overlay with translucent black background */}
+      {loadingPhase && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-70">
+          <div className="flex flex-col items-center gap-6">
+            <div className={loadingPhase === 'scraping' ? 'mt-[-230px] w-[700px] h-[700px]' : 'w-[250px] h-[250px]'}>
+              <DotLottieReact
+                src={loadingPhase === 'scraping' ? desktopLottie : writingLottie}
+                loop
+                autoplay
+              />
+            </div>
+            <AnimatedText
+              text={loadingPhase === 'scraping' ? 'Scraping tweets' : 'Generating replies'}
+              className={loadingPhase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl text-center"}
+            />
+          </div>
+        </div>
+      )}
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {

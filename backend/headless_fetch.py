@@ -152,7 +152,18 @@ def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
     return find_any_screen_name(tweet_res)
 
 
-async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
+async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *, username=None, write_callback=None):
+    """
+    Collect tweets from a page with progressive writing.
+
+    Args:
+        ctx: Browser context
+        url: URL to scrape
+        handle: Twitter handle (if scraping user timeline)
+        max_scrolls: Number of scrolls
+        username: Username for cache writes
+        write_callback: Async function to call when new tweets are found
+    """
     tweets = {}
     page = await ctx.new_page()
     min_likes = 5
@@ -678,7 +689,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         if user_handle and not user_name:
                             user_name = user_handle.replace("_", " ")
 
-                    tweets[tid] = {
+                    tweet_data = {
                         "id": tid,
                         "text": get_tweet_text(node),
                         "likes": int(legacy.get("favorite_count", 0)),
@@ -695,7 +706,12 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
                         "media": extract_media_urls(node),
                         "quoted_tweet": extract_quoted_tweet(node),
                     }
+                    tweets[tid] = tweet_data
                     found_any = True
+
+                    # Progressive write: save tweet immediately if callback provided
+                    if write_callback and username:
+                        await write_callback([tweet_data], username)
 
     def event_handler(resp):
         t = asyncio.create_task(grab(resp))
@@ -726,21 +742,19 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10):
 
     await page.close()
 
-    # Collect threads for all tweets
-    tweets_to_remove = []
+    # Collect threads for all tweets with progressive writing
     for tid, t in tweets.items():
         t["thread"] = await get_thread(ctx, t["url"], root_id=t["id"])
 
-        # Mark tweets without threads for removal
-        if not t["thread"] or len(t["thread"]) == 0:
-            tweets_to_remove.append(tid)
-            continue
-
         # Replace the truncated text with the full text from the thread (first element)
-        t["text"] = t["thread"][0]
+        if t["thread"] and len(t["thread"]) > 0:
+            t["text"] = t["thread"][0]
 
-    # Remove tweets that don't have threads
-    for tid in tweets_to_remove:
-        del tweets[tid]
+            # Progressive write: save thread immediately if callback provided
+            if write_callback and username:
+                await write_callback([t], username)
+
+    # NOTE: We no longer remove tweets without threads - they stay in cache
+    # but frontend will filter them out for display
 
     return tweets

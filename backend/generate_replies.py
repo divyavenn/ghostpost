@@ -212,6 +212,9 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
                 tweet['reply'] = reply
                 count += 1
                 notify(f"✅ Generated reply for tweet {tweet_id}")
+
+                # Progressive write: save immediately after generating each reply
+                await write_to_cache([tweet], f"Generated reply for tweet {tweet_id}", username=username)
             else:
                 notify(f"⚠️ Empty reply received for tweet {tweet_id}")
                 errors += 1
@@ -222,8 +225,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
             notify(f"❌ Exception generating reply for tweet {tweet_id}: {e}")
             errors += 1
 
-    # Save the updated tweets back to the file
-    await write_to_cache(tweets, f"Generated replies for {count} tweets", username=username)
+    # Note: No final write_to_cache needed - already saved incrementally
 
     notify(f"✅ Done! Generated: {count}, Skipped: {skipped}, Errors: {errors}")
 

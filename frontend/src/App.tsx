@@ -4,8 +4,11 @@ import { api, type UserInfo } from './api/client';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { AnimatedText } from './components/AnimatedText';
 import { UserSettingsModal } from './components/UserSettingsModal';
+import { RemoteBrowser } from './components/RemoteBrowser';
 import desktopLottie from './assets/desktop.lottie';
 import writingLottie from './assets/writing.lottie';
+
+const logo = '/ghostposter_logo.png';
 
 function App() {
   const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
@@ -22,6 +25,8 @@ function App() {
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
+  const [showRemoteBrowser, setShowRemoteBrowser] = useState(false);
+  const [remoteBrowserUsername, setRemoteBrowserUsername] = useState<string | null>(null);
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -180,6 +185,25 @@ function App() {
       console.error('Login failed:', error);
       alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
+  };
+
+  const handleLoginRemoteBrowser = async () => {
+    // Alternative login method using remote browser
+    const tempUsername = `temp_${Date.now()}`;
+    setRemoteBrowserUsername(tempUsername);
+    setShowRemoteBrowser(true);
+  };
+
+  const handleAuthComplete = async (storageState: any) => {
+    // Browser authentication complete - save storage state and extract username
+    console.log('Auth complete, storage state:', storageState);
+
+    // Close remote browser
+    setShowRemoteBrowser(false);
+
+    // TODO: Send storage state to backend to save and extract Twitter username
+    // For now, show a message
+    alert('Remote browser authentication is experimental. Please use the standard OAuth login for now.');
   };
 
   const handleLogout = () => {
@@ -362,23 +386,56 @@ function App() {
 
   if (!username) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-neutral-950 p-6">
-        <div className="text-center">
-          <div className="flex justify-center mb-8">
-            <img 
-              src="/GhostPoster.png" 
-              alt="GhostPoster" 
-              className="h-[500px] w-auto object-contain"
+      <>
+        <div className="flex min-h-screen flex-col bg-neutral-950">
+          {/* Logo - Top Left Header */}
+          <div className="absolute top-6 left-6">
+            <img
+              src={logo}
+              alt="GhostPoster"
+              className="h-16 w-auto object-contain"
             />
           </div>
-          <button
-            onClick={handleLogin}
-            className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
-          >
-            Login with Twitter
-          </button>
+
+          {/* Login Content */}
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="text-center">
+              <h1 className="text-5xl font-bold text-white mb-4">Welcome to GhostPoster</h1>
+              <p className="text-neutral-400 text-lg mb-8">AI-powered Twitter engagement automation</p>
+              <div className="flex flex-col gap-4 items-center">
+                <button
+                  onClick={handleLogin}
+                  className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
+                >
+                  Login with Twitter
+                </button>
+                {/* Uncomment to enable remote browser login
+                <button
+                  onClick={handleLoginRemoteBrowser}
+                  className="rounded-full bg-neutral-700 px-8 py-3 text-sm font-semibold text-white transition hover:bg-neutral-600"
+                >
+                  <i className="fa-solid fa-browser mr-2" />
+                  Login with Remote Browser (Experimental)
+                </button>
+                */}
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+
+        {/* Remote Browser Modal */}
+        {showRemoteBrowser && remoteBrowserUsername && (
+          <RemoteBrowser
+            username={remoteBrowserUsername}
+            initialUrl="https://twitter.com/login"
+            onAuthComplete={handleAuthComplete}
+            onClose={() => {
+              setShowRemoteBrowser(false);
+              setRemoteBrowserUsername(null);
+            }}
+          />
+        )}
+      </>
     );
   }
 
@@ -413,12 +470,12 @@ function App() {
   if (tweets.length === 0) {
     return (
       <div className="flex min-h-screen flex-col bg-neutral-950 p-6">
-        {/* Logo - Top Left */}
-        <div className="absolute -top-20 left-28">
-          <img 
-            src="/GhostPoster.png" 
-            alt="GhostPoster" 
-            className="h-[350px] w-auto object-contain"
+        {/* Logo - Top Left Header */}
+        <div className="absolute top-6 left-6">
+          <img
+            src={logo}
+            alt="GhostPoster"
+            className="h-16 w-auto object-contain"
           />
         </div>
 
@@ -477,12 +534,12 @@ function App() {
 
   return (
     <div className="flex min-h-screen flex-col bg-neutral-950 p-20">
-      {/* Logo - Top Left */}
-      <div className="absolute -top-20 left-28 z-10">
-        <img 
-          src="/GhostPoster.png" 
-          alt="GhostPoster" 
-          className="h-[350px] w-auto object-contain"
+      {/* Logo - Top Left Header */}
+      <div className="absolute top-6 left-6 z-10">
+        <img
+          src={logo}
+          alt="GhostPoster"
+          className="h-16 w-auto object-contain"
         />
       </div>
 

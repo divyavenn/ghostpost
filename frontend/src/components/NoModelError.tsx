@@ -1,6 +1,9 @@
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import growthLottie from '../assets/growth.lottie';
 
+
+const logo = '/ghostposter_logo.png';
+
 export function NoModelError() {
   const handleGoBack = () => {
     // Clear any stored username and go back to login
@@ -13,7 +16,7 @@ export function NoModelError() {
       {/* Logo - Top Left */}
       <div className="absolute -top-20 left-28">
         <img 
-          src="/GhostPoster.png" 
+          src={logo} 
           alt="GhostPoster" 
           className="h-[350px] w-auto object-contain"
         />

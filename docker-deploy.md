@@ -109,7 +109,7 @@ The cloudflare tunnel is already set up to point to port 80 (default port). This
 
 ### From Dev Machine
 
-1) Push your code changes to main
+1) Push your code changes to main, or merge your branch into main:
 
       `git push origin main`
 

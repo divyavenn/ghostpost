@@ -112,20 +112,13 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
             try:
                 # Update status
                 if username:
-                    scraping_status[username] = {
-                        "type": "account",
-                        "value": u,
-                        "phase": "scraping"
-                    }
+                    scraping_status[username] = {"type": "account", "value": u, "phase": "scraping"}
                     notify(f"📍 Status updated: Scraping from @{u}")
 
                 tweets = await fetch_user_tweets(ctx, u, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {
-                        "type": "account",
-                        "value": u
-                    }
+                    tweet_data["scraped_from"] = {"type": "account", "value": u}
                 results.update(tweets)
             except Exception as e:
                 notify(f"⚠️ error fetching @{u}: {e}")
@@ -135,31 +128,20 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
             try:
                 # Update status
                 if username:
-                    scraping_status[username] = {
-                        "type": "query",
-                        "value": q,
-                        "phase": "scraping"
-                    }
+                    scraping_status[username] = {"type": "query", "value": q, "phase": "scraping"}
                     notify(f"📍 Status updated: Scraping query [{q}]")
 
                 tweets = await fetch_search(ctx, q, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {
-                        "type": "query",
-                        "value": q
-                    }
+                    tweet_data["scraped_from"] = {"type": "query", "value": q}
                 results.update(tweets)
             except Exception as e:
                 notify(f"⚠️ error searching [{q}]: {e}")
 
         # Mark as complete
         if username:
-            scraping_status[username] = {
-                "type": "complete",
-                "value": "",
-                "phase": "complete"
-            }
+            scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
 
         await ctx.close()
         await browser.close()
@@ -167,7 +149,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
 
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_scrolls=3, max_tweets=None):
-    from backend.tweets_cache import write_to_cache, cleanup_old_tweets
+    from backend.tweets_cache import cleanup_old_tweets, write_to_cache
     from backend.user import read_user_settings
 
     user_settings = read_user_settings(username)
@@ -195,13 +177,7 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
 
     sorted_items = []
     # Gather tweets with progressive writing enabled
-    trending = await gather_trending(
-        relevant_accounts,
-        queries,
-        max_scrolls=max_scrolls,
-        username=username,
-        write_callback=progressive_write
-    )
+    trending = await gather_trending(relevant_accounts, queries, max_scrolls=max_scrolls, username=username, write_callback=progressive_write)
     # sort by score desc
     sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
     if max_tweets:
@@ -230,34 +206,17 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
         if payload is None:
             tweets = await read_tweets(username=username)
         else:
-            tweets = await read_tweets(
-                username=username,
-                relevant_accounts=payload.usernames,
-                queries=payload.queries,
-                max_scrolls=payload.max_scrolls,
-                max_tweets=payload.max_tweets
-            )
-        return {
-            "message": "Tweets scraped and cached successfully",
-            "count": len(tweets),
-            "tweets": tweets
-        }
+            tweets = await read_tweets(username=username, relevant_accounts=payload.usernames, queries=payload.queries, max_scrolls=payload.max_scrolls, max_tweets=payload.max_tweets)
+        return {"message": "Tweets scraped and cached successfully", "count": len(tweets), "tweets": tweets}
     except Exception as e:
         print(str(e))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error scraping tweets: {str(e)}"
-        ) from e
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error scraping tweets: {str(e)}") from e
 
 
 @router.get("/{username}/status")
 async def get_scraping_status(username: str) -> dict:
     """Get the current scraping status for a user."""
-    status = scraping_status.get(username, {
-        "type": "idle",
-        "value": "",
-        "phase": "idle"
-    })
+    status = scraping_status.get(username, {"type": "idle", "value": "", "phase": "idle"})
     return status
 
 
@@ -269,23 +228,18 @@ if __name__ == "__main__":
 
         sorted_items = []
 
-        relevant_accounts = ["jamilball", "sarthakgh", "jaltma", "mamoonha", "villi", "Jasonlk", "Nbt", "Chetanp", "Edsim", "Gokulr", "Km", "Semil", "Mvernal", "Dauber", "Garrytan", "Eladgil", "Pitdesi", "bznotes"]
+        relevant_accounts = [
+            "jamilball", "sarthakgh", "jaltma", "mamoonha", "villi", "Jasonlk", "Nbt", "Chetanp", "Edsim", "Gokulr", "Km", "Semil", "Mvernal", "Dauber", "Garrytan", "Eladgil", "Pitdesi", "bznotes"
+        ]
         relevant_accounts = []
         queries = [
-                "startups -filter:links -filter:replies -is:retweet lang:en",
-                "founders -filter:links -filter:replies -is:retweet lang:en",
-                "entrepreneur -filter:links -filter:replies -is:retweet lang:en",
-                "venture capital -filter:links -filter:replies -is:retweet lang:en",
-                "vc -filter:links -filter:replies -is:retweet lang:en",
-                "funding -filter:links -filter:replies -is:retweet lang:en",
-                "fundraising -filter:links -filter:replies -is:retweet lang:en",
-                "seed round -filter:links -filter:replies -is:retweet lang:en",
-                "GTM for startups filter:links -filter:replies -is:retweet lang",
-                "startup recruiting -filter:links -filter:replies -is:retweet lang:en",
-                "tech recruiting -filter:links -filter:replies -is:retweet lang:en",
-                "immigrant careers -filter:links -filter:replies -is:retweet lang:en",
-                "entreprise software -filter:links -filter:replies -is:retweet lang:en" ]
-    
+            "startups -filter:links -filter:replies -is:retweet lang:en", "founders -filter:links -filter:replies -is:retweet lang:en",
+            "entrepreneur -filter:links -filter:replies -is:retweet lang:en", "venture capital -filter:links -filter:replies -is:retweet lang:en",
+            "vc -filter:links -filter:replies -is:retweet lang:en", "funding -filter:links -filter:replies -is:retweet lang:en", "fundraising -filter:links -filter:replies -is:retweet lang:en",
+            "seed round -filter:links -filter:replies -is:retweet lang:en", "GTM for startups filter:links -filter:replies -is:retweet lang",
+            "startup recruiting -filter:links -filter:replies -is:retweet lang:en", "tech recruiting -filter:links -filter:replies -is:retweet lang:en",
+            "immigrant careers -filter:links -filter:replies -is:retweet lang:en", "entreprise software -filter:links -filter:replies -is:retweet lang:en"
+        ]
 
         trending = await gather_trending(relevant_accounts, queries, max_scrolls=3)
         # sort by score desc

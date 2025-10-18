@@ -30,6 +30,9 @@ dependencies = [
 
   # Data handling
   "pydantic>=2.5.0",
+
+  # Background tasks
+  "apscheduler>=3.10.0",
 ]
 
 [dependency-groups]

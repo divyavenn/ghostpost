@@ -10,12 +10,12 @@ cd frontend && npm install && cd ..
 
 # Start backend in background
 echo "Starting backend on http://localhost:8000..."
-cd ../backend && uv run uvicorn main:app --reload &
+(cd backend && uv run uvicorn backend.main:app --reload) &
 BACKEND_PID=$!
 
 # Start frontend in background
 echo "Starting frontend on http://localhost:5173..."
-cd frontend && npm run dev &
+(cd frontend && npm run dev) &
 FRONTEND_PID=$!
 
 # Wait for both processes

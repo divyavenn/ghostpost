@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 BACKEND_DIR = Path(__file__).resolve().parent
-CACHE_DIR = BACKEND_DIR / "cache"
+# Cache is one level up from backend/backend/ -> backend/cache/
+CACHE_DIR = BACKEND_DIR.parent / "cache"
 ARCHIVE_DIR = CACHE_DIR / "archive"
 AUTH_COOKIE = "auth_token"
 BROWSER_STATE_FILE = CACHE_DIR / "storage_state.json"
@@ -40,8 +41,6 @@ def _cache_key(username: str | None) -> str:
     return sanitized or "default"
 
 
-
-
 def get_user_interactions_log(username=USERNAME) -> Path:
     return CACHE_DIR / f"{_cache_key(username)}_log.json"
 
@@ -59,8 +58,6 @@ def _archive_interactions_log(username: str, key: str) -> Path | None:
 
     log_path.rename(archive_path)
     return archive_path
-
-
 
 
 def atomic_file_update(path: Path, data: Any, tmp_suffix: str = ".tmp", *, ensure_ascii: bool = False) -> None:
@@ -89,10 +86,6 @@ def remove_entry_from_map(path: Path, username: str, tmp_suffix: str) -> bool:
     data.pop(username, None)
     atomic_file_update(path, data, tmp_suffix)
     return True
-
-
-
-
 
 
 async def store_browser_state(username: str, context) -> None:
@@ -295,11 +288,7 @@ def store_token(username: str, refresh_token: str, access_token: str | None = No
     if access_token and expires_in:
         expires_at = time.time() + expires_in - 60
 
-    tokens[username] = {
-        "refresh_token": refresh_token,
-        "access_token": access_token,
-        "expires_at": expires_at
-    }
+    tokens[username] = {"refresh_token": refresh_token, "access_token": access_token, "expires_at": expires_at}
 
     atomic_file_update(path, tokens, ".json.tmp")
     notify(f"💾 Stored OAuth tokens for {username}")

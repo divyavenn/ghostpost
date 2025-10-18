@@ -44,12 +44,8 @@ COPY uv.lock* ./
 # Install dependencies using uv (will create uv.lock if it doesn't exist)
 RUN uv sync --no-dev
 
-# Copy application code
+# Copy application code (includes backend/ package)
 COPY . .
-
-# create backend directory to match import statements in main.py, Need to verify if this follows best practices
-RUN mkdir -p backend
-RUN mv *.py backend/
 
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 
@@ -61,7 +57,7 @@ RUN uv run playwright install --with-deps chromium
 
 # Make it accessible to all users
 RUN chmod -R 755 /opt/playwright
-ENV PYTHONPATH=/app
+
 # ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 # Use a directory that's NOT mounted as a volume
 ENV UV_CACHE_DIR=/tmp/uv-cache

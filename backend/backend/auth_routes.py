@@ -1,14 +1,14 @@
 """Authentication routes for Twitter OAuth without requiring pre-authentication."""
 
 import secrets
-import asyncio
-from fastapi import APIRouter, Query, HTTPException
+
+from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
-from backend.oauth import get_authorization_url, exchange_code_for_token
+from backend.oauth import exchange_code_for_token, get_authorization_url
 from backend.user import get_user_info
-from backend.utils import store_token, read_user_info, store_browser_state
+from backend.utils import store_browser_state, store_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -47,31 +47,17 @@ async def start_oauth(payload: StartOAuthRequest | None = None) -> dict[str, str
 
     # Launch browser session
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(
-        headless=False,
-        args=['--disable-blink-features=AutomationControlled']
-    )
-    context = await browser.new_context(
-        viewport={'width': 1280, 'height': 720},
-        user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-    )
+    browser = await playwright.chromium.launch(headless=False, args=['--disable-blink-features=AutomationControlled'])
+    context = await browser.new_context(viewport={'width': 1280, 'height': 720}, user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
     page = await context.new_page()
 
     # Navigate to OAuth URL in browser
     await page.goto(auth_url)
 
     # Store browser session and OAuth data
-    _oauth_states[state] = {
-        "code_verifier": code_verifier,
-        "redirect_to": payload.redirect_to if payload else None
-    }
+    _oauth_states[state] = {"code_verifier": code_verifier, "redirect_to": payload.redirect_to if payload else None}
 
-    _browser_sessions[state] = {
-        "playwright": playwright,
-        "browser": browser,
-        "context": context,
-        "page": page
-    }
+    _browser_sessions[state] = {"playwright": playwright, "browser": browser, "context": context, "page": page}
 
     # Initialize login status as pending
     _login_status[state] = LoginStatus(status="pending")
@@ -86,10 +72,10 @@ async def start_oauth(payload: StartOAuthRequest | None = None) -> dict[str, str
 
 @router.get("/callback")
 async def twitter_callback(
-    state: str = Query(...),
-    code: str | None = Query(None),
-    error: str | None = Query(None),
-    error_description: str | None = Query(None),
+        state: str = Query(...),
+        code: str | None = Query(None),
+        error: str | None = Query(None),
+        error_description: str | None = Query(None),
 ):
     """Handle Twitter OAuth callback and save browser state."""
     redirect_to = "http://localhost:5173"
@@ -97,10 +83,7 @@ async def twitter_callback(
     if error:
         # Update login status
         if state in _login_status:
-            _login_status[state] = LoginStatus(
-                status="error",
-                error=f"{error}: {error_description or ''}"
-            )
+            _login_status[state] = LoginStatus(status="error", error=f"{error}: {error_description or ''}")
 
         # Clean up browser session if exists
         browser_session = _browser_sessions.pop(state, None)
@@ -108,19 +91,14 @@ async def twitter_callback(
             await _cleanup_browser(browser_session)
 
         # Return HTML response that closes the window
-        return HTMLResponse(
-            content=f"<html><body><h1>Login Error</h1><p>{error}: {error_description or ''}</p><script>window.close();</script></body></html>"
-        )
+        return HTMLResponse(content=f"<html><body><h1>Login Error</h1><p>{error}: {error_description or ''}</p><script>window.close();</script></body></html>")
 
     if not code:
         browser_session = _browser_sessions.pop(state, None)
         if browser_session:
             await _cleanup_browser(browser_session)
 
-        return RedirectResponse(
-            url=f"{redirect_to}?status=error&error=missing_code",
-            status_code=303
-        )
+        return RedirectResponse(url=f"{redirect_to}?status=error&error=missing_code", status_code=303)
 
     # Verify state
     oauth_data = _oauth_states.pop(state, None)
@@ -129,10 +107,7 @@ async def twitter_callback(
     if not oauth_data:
         if browser_session:
             await _cleanup_browser(browser_session)
-        return RedirectResponse(
-            url=f"{redirect_to}?status=error&error=invalid_state",
-            status_code=303
-        )
+        return RedirectResponse(url=f"{redirect_to}?status=error&error=invalid_state", status_code=303)
 
     code_verifier = oauth_data["code_verifier"]
     redirect_to = oauth_data.get("redirect_to") or redirect_to
@@ -147,10 +122,7 @@ async def twitter_callback(
         if not access_token or not refresh_token:
             if browser_session:
                 await _cleanup_browser(browser_session)
-            return RedirectResponse(
-                url=f"{redirect_to}?status=error&error=no_tokens",
-                status_code=303
-            )
+            return RedirectResponse(url=f"{redirect_to}?status=error&error=no_tokens", status_code=303)
 
         # Get user info
         user_info = get_user_info(access_token)
@@ -159,10 +131,7 @@ async def twitter_callback(
         if not twitter_handle:
             if browser_session:
                 await _cleanup_browser(browser_session)
-            return RedirectResponse(
-                url=f"{redirect_to}?status=error&error=no_handle",
-                status_code=303
-            )
+            return RedirectResponse(url=f"{redirect_to}?status=error&error=no_handle", status_code=303)
 
         # Store OAuth tokens
         store_token(twitter_handle, refresh_token, access_token, expires_in)
@@ -189,14 +158,10 @@ async def twitter_callback(
 
         # Update login status to complete
         if state in _login_status:
-            _login_status[state] = LoginStatus(
-                status="complete",
-                username=twitter_handle
-            )
+            _login_status[state] = LoginStatus(status="complete", username=twitter_handle)
 
         # Return HTML that closes the browser window
-        return HTMLResponse(
-            content=f"""
+        return HTMLResponse(content=f"""
             <html>
             <body>
                 <h1>Login Successful!</h1>
@@ -207,16 +172,12 @@ async def twitter_callback(
                 </script>
             </body>
             </html>
-            """
-        )
+            """)
 
     except Exception as e:
         if browser_session:
             await _cleanup_browser(browser_session)
-        return RedirectResponse(
-            url=f"{redirect_to}?status=error&error=exception&error_description={str(e)}",
-            status_code=303
-        )
+        return RedirectResponse(url=f"{redirect_to}?status=error&error=exception&error_description={str(e)}", status_code=303)
 
 
 @router.get("/twitter/status/{session_id}")

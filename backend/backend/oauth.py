@@ -10,10 +10,12 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import dotenv
+
 from backend.user import get_user_info
 from backend.utils import error, notify
 
-dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+# Load .env from backend/ directory (one level up from backend/backend/)
+dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 client_id = os.getenv("TWITTER_CLIENT_ID")
 client_secret = os.getenv("TWITTER_CLIENT_SECRET")
@@ -165,6 +167,7 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTP
 
 async def oauth_login(username: str, state_file: str = "storage_state.json") -> str:
     from playwright.async_api import async_playwright
+
     from backend.utils import store_browser_state, store_token
     notify(f"🔐 Launching OAuth login for {username}")
     state = secrets.token_urlsafe(32)

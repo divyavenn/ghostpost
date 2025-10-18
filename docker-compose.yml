@@ -11,10 +11,11 @@ services:
 
   backend:
     build: ./backend
-    # Not exposed publicly - only accessible via nginx
+    ports:
+      - "8000:8000"  # Expose for local testing
     user: "1000:1000"
     volumes:
-      - ./backend/cache:/app/backend/cache
+      - ./backend/cache:/app/cache
     env_file:
       - ./backend/.env
     depends_on:
@@ -24,10 +25,10 @@ services:
     image: alpine:latest
     user: "0:0"  # Run as root to fix permissions
     volumes:
-      - ./backend/cache:/app/backend/cache
+      - ./backend/cache:/app/cache
     command: >
       sh -c "
-        mkdir -p /app/backend/cache &&
-        chown -R 1000:1000 /app/backend/cache &&
-        chmod -R 755 /app/backend/cache
+        mkdir -p /app/cache &&
+        chown -R 1000:1000 /app/cache &&
+        chmod -R 755 /app/cache
       "

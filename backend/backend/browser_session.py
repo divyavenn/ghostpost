@@ -2,15 +2,14 @@
 Browser session management for frontend-controlled OAuth login.
 Allows users to login via browser on backend while viewing/controlling from frontend.
 """
-import asyncio
 import secrets
 import time
-from typing import Dict, Optional
-from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+
+from playwright.async_api import BrowserContext, Page, async_playwright
 
 # Store active browser sessions
 # Key: session_id, Value: {browser, context, page, username, created_at}
-active_sessions: Dict[str, dict] = {}
+active_sessions: dict[str, dict] = {}
 
 # Session timeout (5 minutes)
 SESSION_TIMEOUT = 300
@@ -19,10 +18,7 @@ SESSION_TIMEOUT = 300
 async def cleanup_expired_sessions():
     """Remove sessions older than SESSION_TIMEOUT"""
     current_time = time.time()
-    expired = [
-        sid for sid, session in active_sessions.items()
-        if current_time - session["created_at"] > SESSION_TIMEOUT
-    ]
+    expired = [sid for sid, session in active_sessions.items() if current_time - session["created_at"] > SESSION_TIMEOUT]
 
     for sid in expired:
         await close_session(sid)
@@ -34,7 +30,6 @@ async def create_browser_session(username: str) -> dict:
     Returns session info including how to connect to it.
     """
     from backend.oauth import get_authorization_url
-    import secrets
 
     # Generate session ID
     session_id = secrets.token_urlsafe(32)
@@ -48,13 +43,9 @@ async def create_browser_session(username: str) -> dict:
         args=[
             '--remote-debugging-port=9222',  # Enable CDP
             '--disable-blink-features=AutomationControlled',  # Hide automation
-        ]
-    )
+        ])
 
-    context = await browser.new_context(
-        viewport={'width': 1280, 'height': 720},
-        user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-    )
+    context = await browser.new_context(viewport={'width': 1280, 'height': 720}, user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
 
     page = await context.new_page()
 
@@ -78,11 +69,7 @@ async def create_browser_session(username: str) -> dict:
     # Get CDP endpoint
     cdp_endpoint = browser._impl_obj._connection.url if hasattr(browser, '_impl_obj') else None
 
-    return {
-        "session_id": session_id,
-        "cdp_endpoint": cdp_endpoint,
-        "message": "Browser session created. User should login via the opened browser window."
-    }
+    return {"session_id": session_id, "cdp_endpoint": cdp_endpoint, "message": "Browser session created. User should login via the opened browser window."}
 
 
 async def get_session_status(session_id: str) -> dict:
@@ -99,25 +86,17 @@ async def get_session_status(session_id: str) -> dict:
 
     # Check if we're on a callback URL or Twitter home (login complete)
     if "callback" in current_url or "home" in current_url or current_url.startswith("https://twitter.com/home"):
-        return {
-            "status": "complete",
-            "complete": True,
-            "url": current_url
-        }
+        return {"status": "complete", "complete": True, "url": current_url}
 
-    return {
-        "status": "waiting",
-        "complete": False,
-        "url": current_url
-    }
+    return {"status": "waiting", "complete": False, "url": current_url}
 
 
 async def save_and_close_session(session_id: str) -> dict:
     """
     Save browser state and close the session after successful login.
     """
-    from backend.utils import store_browser_state
     from backend.oauth import exchange_code_for_token
+    from backend.utils import store_browser_state
 
     session = active_sessions.get(session_id)
     if not session:
@@ -136,7 +115,7 @@ async def save_and_close_session(session_id: str) -> dict:
 
     if "code=" in current_url:
         # Extract code from callback URL
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import parse_qs, urlparse
         parsed = urlparse(current_url)
         params = parse_qs(parsed.query)
         code = params.get("code", [""])[0]
@@ -154,19 +133,12 @@ async def save_and_close_session(session_id: str) -> dict:
 
             if access_token and refresh_token:
                 store_token(username, refresh_token, access_token, expires_in)
-                token_data = {
-                    "access_token": access_token,
-                    "expires_in": expires_in
-                }
+                token_data = {"access_token": access_token, "expires_in": expires_in}
 
     # Close session
     await close_session(session_id)
 
-    return {
-        "status": "saved",
-        "username": username,
-        "tokens": token_data
-    }
+    return {"status": "saved", "username": username, "tokens": token_data}
 
 
 async def close_session(session_id: str):
@@ -185,7 +157,7 @@ async def close_session(session_id: str):
         del active_sessions[session_id]
 
 
-async def get_session_screenshot(session_id: str) -> Optional[bytes]:
+async def get_session_screenshot(session_id: str) -> bytes | None:
     """Get a screenshot of the current browser state"""
     session = active_sessions.get(session_id)
     if not session:

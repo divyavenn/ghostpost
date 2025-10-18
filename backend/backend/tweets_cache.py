@@ -7,10 +7,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from backend.utils import atomic_file_update, _cache_key
+from backend.utils import _cache_key, atomic_file_update
 
 BACKEND_DIR = Path(__file__).resolve().parent
-CACHE_DIR = BACKEND_DIR / "cache"
+# Cache is one level up from backend/backend/ -> backend/cache/
+CACHE_DIR = BACKEND_DIR.parent / "cache"
 USERNAME = "proudlurker"
 
 
@@ -28,6 +29,7 @@ def get_user_tweet_cache(username=USERNAME) -> Path:
 
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
     import uuid
+
     from backend.log_interactions import TweetAction, log_tweet_action
 
     # Read existing cache
@@ -67,12 +69,7 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
         tweet_id = tweet.get("id") or tweet.get("tweet_id")
         cache_id = tweet.get("cache_id")
         if tweet_id and cache_id:
-            log_tweet_action(
-                username,
-                TweetAction.WRITTEN,
-                str(tweet_id),
-                metadata={"cache_id": cache_id}
-            )
+            log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id), metadata={"cache_id": cache_id})
 
     return path
 
@@ -100,13 +97,13 @@ async def cleanup_old_tweets(username: str, hours: int = 48) -> int:
         Number of tweets removed
     """
     from datetime import datetime, timedelta
+
     from backend.log_interactions import TweetAction, log_tweet_action
 
     try:  # Python 3.11+
         from datetime import UTC  # type: ignore[attr-defined]
     except ImportError:  # Python <3.11
-        from datetime import timezone
-        UTC = timezone.utc
+        UTC = UTC
 
     def parse_twitter_date(s: str) -> datetime:
         """Parse Twitter's date format: 'Sat Oct 11 15:07:12 +0000 2025'"""
@@ -157,12 +154,7 @@ async def cleanup_old_tweets(username: str, hours: int = 48) -> int:
                 metadata = {"reason": "aged_out", "age_threshold_hours": hours}
                 if cache_id:
                     metadata["cache_id"] = cache_id
-                log_tweet_action(
-                    username,
-                    TweetAction.DELETED,
-                    str(tweet_id),
-                    metadata=metadata
-                )
+                log_tweet_action(username, TweetAction.DELETED, str(tweet_id), metadata=metadata)
 
     return removed_count
 
@@ -216,19 +208,15 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
         if deleted_reply:
             metadata["deleted_reply"] = deleted_reply
 
-        log_tweet_action(
-            username,
-            TweetAction.DELETED,
-            tweet_id,
-            metadata=metadata if metadata else None
-        )
+        log_tweet_action(username, TweetAction.DELETED, tweet_id, metadata=metadata if metadata else None)
     return True
 
 
 async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool:
     """Edit the reply text for a specific tweet in the cache."""
-    from backend.log_interactions import TweetAction, log_tweet_action
     import difflib
+
+    from backend.log_interactions import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)
 
@@ -241,13 +229,7 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool
     original_tweet_id = tweet.get("id")  # The tweet this reply is responding to
 
     # Generate diff
-    diff = list(difflib.unified_diff(
-        old_reply.splitlines(keepends=True),
-        new_reply.splitlines(keepends=True),
-        lineterm='',
-        fromfile='old_reply',
-        tofile='new_reply'
-    ))
+    diff = list(difflib.unified_diff(old_reply.splitlines(keepends=True), new_reply.splitlines(keepends=True), lineterm='', fromfile='old_reply', tofile='new_reply'))
 
     tweet["reply"] = new_reply
 
@@ -257,12 +239,7 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool
     notify(f"💾 Edited reply for tweet {tweet_id}")
 
     # Log the edit with comprehensive metadata
-    metadata = {
-        "cache_id": cache_id,
-        "new_reply": new_reply,
-        "diff": "".join(diff),
-        "replying_to_tweet_id": original_tweet_id
-    }
+    metadata = {"cache_id": cache_id, "new_reply": new_reply, "diff": "".join(diff), "replying_to_tweet_id": original_tweet_id}
 
     log_tweet_action(username, TweetAction.EDITED, tweet_id, metadata=metadata)
     return True
@@ -286,6 +263,7 @@ async def get_single_tweet(username: str, tweet_id: str) -> dict[str, Any] | Non
     """Get a single tweet from the cache by tweet_id."""
     tweets = await read_from_cache(username)
     return get_tweet_by_id(tweets, tweet_id)
+
 
 def remove_user_cache(username: str, key: str) -> bool:
     cache_removed = False
@@ -341,9 +319,7 @@ async def delete_tweet_endpoint(username: str, tweet_id: str, log_deletion: bool
 
 
 @router.patch("/{username}/{tweet_id}/reply")
-async def edit_reply_endpoint(
-    username: str, tweet_id: str, payload: EditReplyRequest
-) -> dict[str, str]:
+async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRequest) -> dict[str, str]:
     """Edit the reply text for a specific tweet."""
     updated = await edit_tweet_reply(username, tweet_id, payload.new_reply)
     if not updated:

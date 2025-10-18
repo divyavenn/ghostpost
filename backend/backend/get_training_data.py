@@ -18,20 +18,17 @@ except ImportError:
     from user import read_user_settings
     from utils import error, notify
 
-
 # Constants
 BACKEND_DIR = Path(__file__).resolve().parent
 CACHE_DIR = BACKEND_DIR / "cache"
 
 
-async def scrape_tweets_for_training(
-    handle: str,
-    max_scrolls=3,
-    output_filename: str | None = None,
-    limit_accounts: int | None = None,
-    limit_queries: int | None = None,
-    max_tweets: int | None = None
-):
+async def scrape_tweets_for_training(handle: str,
+                                     max_scrolls=3,
+                                     output_filename: str | None = None,
+                                     limit_accounts: int | None = None,
+                                     limit_queries: int | None = None,
+                                     max_tweets: int | None = None):
     """
     Scrape tweets using proudlurker's browser state and user info settings.
 
@@ -126,7 +123,6 @@ async def scrape_tweets_for_training(
 
 async def main():
     """Example usage."""
-    import sys
 
     handle = "nakul"
 
@@ -140,13 +136,7 @@ async def main():
     # Optional: limit total tweets (sorted by engagement score)
     max_tweets = None
 
-    await scrape_tweets_for_training(
-        handle,
-        max_scrolls=max_scrolls,
-        limit_accounts=limit_accounts,
-        limit_queries=limit_queries,
-        max_tweets=max_tweets
-    )
+    await scrape_tweets_for_training(handle, max_scrolls=max_scrolls, limit_accounts=limit_accounts, limit_queries=limit_queries, max_tweets=max_tweets)
 
 
 if __name__ == "__main__":

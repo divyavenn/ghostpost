@@ -7,8 +7,7 @@ from .full_thread import get_thread
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # Python <3.11
-    from datetime import timezone
-    UTC = timezone.utc
+    UTC = UTC
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -89,6 +88,7 @@ def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
 
     # Strategy 3: If we have a user ID and the full data payload, search by matching user ID
     if uid and data:
+
         def walk(obj, depth=0, max_depth=10):
             if depth >= max_depth:
                 return None
@@ -190,14 +190,19 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         return False
 
     def get_tweet_text(tweet_res: dict) -> str:
+        """Extract tweet text, prioritizing note_tweet for long-form content."""
+        # First check for note_tweet (long-form tweets, priority since they're complete)
+        note = (tweet_res.get("note_tweet", {}).get("note_tweet_results", {}).get("result", {}).get("text"))
+        if note:
+            return note
+
+        # Then check legacy fields
         legacy = tweet_res.get("legacy", {}) or {}
         if "full_text" in legacy and legacy["full_text"]:
             return legacy["full_text"]
         if "text" in legacy and legacy["text"]:
             return legacy["text"]
-        note = (tweet_res.get("note_tweet", {}).get("note_tweet_results", {}).get("result", {}).get("text"))
-        if note:
-            return note
+
         return ""
 
     def extract_followers(tweet_res: dict) -> int:
@@ -220,14 +225,14 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
                     if profile_pic:
                         # Replace _normal with _400x400 for higher resolution
                         return profile_pic.replace("_normal", "_400x400")
-                
+
                 # Fallback: Check legacy.profile_image_url_https (older structure)
                 legacy = user_result.get("legacy", {})
                 if legacy:
                     profile_pic = legacy.get("profile_image_url_https")
                     if profile_pic:
                         return profile_pic.replace("_normal.", "_400x400.")
-            
+
             # Strategy 2: Check if there's a 'tweet' wrapper
             if "tweet" in tweet_res and isinstance(tweet_res["tweet"], dict):
                 inner_tweet = tweet_res["tweet"]
@@ -243,7 +248,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
                     profile_pic = user_result.get("legacy", {}).get("profile_image_url_https")
                     if profile_pic:
                         return profile_pic.replace("_normal.", "_400x400.")
-            
+
             # Strategy 3: Legacy structure
             if tweet_res.get("legacy", {}).get("user", {}):
                 user = tweet_res["legacy"]["user"]
@@ -255,7 +260,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
                 if user.get("profile_image_url_https"):
                     profile_pic = user["profile_image_url_https"]
                     return profile_pic.replace("_normal.", "_400x400.")
-            
+
             # Default Twitter avatar if not found
             return "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png"
         except Exception:
@@ -269,20 +274,20 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         """
         inner_node = node.get("tweet") or node
         legacy = inner_node.get("legacy", {})
-        
+
         media_types = set()
-        
+
         # Check both entities and extended_entities
         for key in ["entities", "extended_entities"]:
             entities = legacy.get(key, {})
             media_list = entities.get("media", [])
-            
+
             if media_list and isinstance(media_list, list):
                 for media_item in media_list:
                     media_type = media_item.get("type")
                     if media_type:
                         media_types.add(media_type)
-        
+
         return media_types
 
     def has_external_urls(node: dict) -> bool:
@@ -293,7 +298,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         inner_node = node.get("tweet") or node
         legacy = inner_node.get("legacy", {})
         entities = legacy.get("entities", {})
-        
+
         urls = entities.get("urls", [])
         # Return True if there are any URLs (these are external links, not media)
         return bool(urls and len(urls) > 0)
@@ -312,18 +317,18 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         - Text/images quoting text/images
         """
         inner_node = node.get("tweet") or node
-        
+
         # Check for videos or animated GIFs (NOT photos)
         media_types = get_media_types(inner_node)
         unsupported_media = {"video", "animated_gif"}
-        
+
         if media_types & unsupported_media:  # Intersection - has video or GIF
             return True
-        
+
         # Check for external URLs
         if has_external_urls(inner_node):
             return True
-        
+
         # Recursively check quoted tweet
         quoted_result = inner_node.get("quoted_status_result", {})
         if quoted_result:
@@ -332,7 +337,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
                 # Recursive call - check if quoted tweet has unsupported content
                 if has_unsupported_content(quoted_tweet):
                     return True
-        
+
         return False
 
     def extract_media_urls(node: dict) -> list[dict]:
@@ -349,33 +354,29 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         """
         inner_node = node.get("tweet") or node
         legacy = inner_node.get("legacy", {})
-        
+
         media_items = []
-        
+
         # Prefer extended_entities over entities (has full resolution)
         extended = legacy.get("extended_entities", {})
         entities = legacy.get("entities", {})
-        
+
         media_list = extended.get("media") or entities.get("media") or []
-        
+
         for media_item in media_list:
             media_type = media_item.get("type")
-            
+
             # Only extract photos (we filter videos/GIFs already)
             if media_type == "photo":
                 # Get highest quality image URL
                 media_url = media_item.get("media_url_https") or media_item.get("media_url")
-                
+
                 # Get alt text if available
                 alt_text = media_item.get("ext_alt_text", "")
-                
+
                 if media_url:
-                    media_items.append({
-                        "type": "photo",
-                        "url": media_url,
-                        "alt_text": alt_text
-                    })
-        
+                    media_items.append({"type": "photo", "url": media_url, "alt_text": alt_text})
+
         return media_items
 
     def extract_quoted_tweet(node: dict) -> dict | None:
@@ -385,29 +386,29 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         """
         inner_node = node.get("tweet") or node
         quoted_result = inner_node.get("quoted_status_result", {})
-        
+
         if not quoted_result:
             return None
-        
+
         quoted_node = quoted_result.get("result", {})
         if not quoted_node or not isinstance(quoted_node, dict):
             return None
-        
+
         # Unwrap if needed
         quoted_inner = quoted_node.get("tweet") or quoted_node
         quoted_legacy = quoted_inner.get("legacy", {})
-        
+
         if not quoted_legacy:
             return None
-        
+
         # Extract quoted tweet data using existing helper functions
         quoted_text = get_tweet_text(quoted_inner)
         quoted_name, quoted_handle = extract_user_data(quoted_inner)
         quoted_tid = quoted_legacy.get("id_str")
-        
+
         if not quoted_text or not quoted_handle:
             return None
-        
+
         return {
             "text": quoted_text,
             "author_name": quoted_name or quoted_handle,
@@ -494,11 +495,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
 
             # CRITICAL: Skip quoted/retweeted content to avoid wrong author
             # Don't descend into these keys as they contain OTHER users' data
-            avoid_keys = {
-                "quoted_status_result", "retweeted_status_result",
-                "quoted_tweet", "retweeted_tweet",
-                "retweeted_status", "quoted_status"
-            }
+            avoid_keys = {"quoted_status_result", "retweeted_status_result", "quoted_tweet", "retweeted_tweet", "retweeted_status", "quoted_status"}
 
             if parent_key in avoid_keys:
                 return None, None
@@ -588,7 +585,6 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         if isinstance(stl, dict):
             instr.extend(stl.get("instructions", []) or [])
         return instr
-
 
     async def grab(resp):
         if not (TWEET_API_RE.search(resp.url)):

@@ -17,14 +17,23 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
 
     results: list[str] = []
     root_author_id: str | None = None
+    seen_tweet_ids: set[str] = set()  # Track tweets we've added to avoid duplicates
+    thread_tweet_ids: set[str] = set()  # Track which tweets are part of the actual thread chain
 
     def extract_text(node: dict) -> str:
+        """Extract text from tweet node, prioritizing note_tweet for long-form content."""
+        # First check for note_tweet (long-form tweets)
+        note = ((node.get("note_tweet") or {}).get("note_tweet_results", {}).get("result", {}).get("text"))
+        if note:
+            return note
+
+        # Then check legacy fields
         legacy = node.get("legacy") or {}
         txt = legacy.get("full_text") or legacy.get("text")
         if txt:
             return txt
-        note = ((node.get("note_tweet") or {}).get("note_tweet_results", {}).get("result", {}).get("text"))
-        return note or ""
+
+        return ""
 
     async def on_response(resp):
         nonlocal root_author_id
@@ -73,28 +82,46 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
                     if not tid or not uid:
                         continue
 
+                    # Skip if we've already processed this tweet
+                    if tid in seen_tweet_ids:
+                        continue
+
                     # Resolve root author from the focal tweet if possible
                     if root_author_id is None:
                         if root_id and tid == str(root_id):
                             root_author_id = uid
+                            thread_tweet_ids.add(tid)  # Root tweet is always part of thread
                         elif not root_id:
                             # No explicit root tweet id provided; infer from first seen item
                             root_author_id = uid
+                            thread_tweet_ids.add(tid)
 
-                    # Keep only tweets by the root author
-                    if root_author_id:
+                    # Get reply info to check if this is part of the thread chain
+                    in_reply_to_status_id = legacy.get("in_reply_to_status_id_str")
+
+                    # Keep only tweets by the root author that are part of the thread chain
+                    if root_author_id and uid == root_author_id:
                         allow = False
-                        # Always allow the focal/root tweet if provided
+
+                        # Always allow the focal/root tweet
                         if root_id and tid == str(root_id):
                             allow = True
-                        # Allow any tweet by the root author (self-thread)
-                        elif uid == root_author_id:
+                            thread_tweet_ids.add(tid)
+                        # Allow if it's replying to the root tweet or another tweet in the thread
+                        elif in_reply_to_status_id:
+                            if in_reply_to_status_id == str(root_id) or in_reply_to_status_id in thread_tweet_ids:
+                                allow = True
+                                thread_tweet_ids.add(tid)
+                        # If no reply chain but it's the first tweet we see (likely the root)
+                        elif not root_id and len(thread_tweet_ids) == 0:
                             allow = True
+                            thread_tweet_ids.add(tid)
 
                         if allow:
                             text = extract_text(node)
-                            if text:
+                            if text and tid not in seen_tweet_ids:
                                 results.append(text)
+                                seen_tweet_ids.add(tid)
 
     page.on("response", lambda r: asyncio.create_task(on_response(r)))
 
@@ -109,13 +136,18 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
             )
         except Exception:
             pass
-        # Nudge to load more thread items
-        for _ in range(4):
+
+        # More aggressive scrolling to load entire thread
+        # Scroll down multiple times to ensure all thread content loads
+        for i in range(8):  # Increased from 4 to 8 scrolls
             try:
-                await page.mouse.wheel(0, 2200)
+                await page.mouse.wheel(0, 3000)  # Increased scroll distance
             except Exception:
                 pass
-            await asyncio.sleep(0.6)
+            await asyncio.sleep(0.8)  # Slightly longer wait between scrolls
+
+        # Final wait to let any pending responses complete
+        await asyncio.sleep(1.0)
     finally:
         await page.close()
 

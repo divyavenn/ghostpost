@@ -1,13 +1,47 @@
 from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
 from backend.tweets_cache import remove_user_cache
-from backend.utils import remove_entry_from_map, _cache_key, BROWSER_STATE_FILE, TOKEN_FILE, notify
-from backend.utils import _archive_interactions_log, write_user_info
+from backend.utils import BROWSER_STATE_FILE, TOKEN_FILE, _archive_interactions_log, _cache_key, notify, remove_entry_from_map, write_user_info
 
 
 def get_validation_delay() -> int:
     return 310  # Free tier: 3 requests per 15 minutes
+
+
+def get_all_users() -> list[str]:
+    """
+    Get list of all user handles from user_info.json.
+
+    Returns:
+        list[str]: List of Twitter handles for all users
+    """
+    import json
+    from pathlib import Path
+
+    user_info_path = Path(__file__).parent / "cache" / "user_info.json"
+
+    try:
+        if not user_info_path.exists():
+            return []
+
+        with open(user_info_path) as f:
+            users = json.load(f)
+
+        # Extract handles from user records
+        if isinstance(users, list):
+            handles = [user.get('handle') for user in users if user.get('handle')]
+            return handles
+        else:
+            # Legacy format: single user object
+            handle = users.get('handle')
+            return [handle] if handle else []
+
+    except Exception as e:
+        notify(f"❌ Error reading user_info.json: {e}")
+        return []
 
 
 def get_user_info(access_token: str) -> dict[str, Any]:
@@ -69,12 +103,7 @@ def query_to_topic(query: str) -> str:
     """Extract the topic/keyword from a Twitter search query."""
     # Remove common filters to get the base topic
     topic = query
-    filters_to_remove = [
-        "-filter:links",
-        "-filter:replies",
-        "-is:retweet",
-        "lang:en"
-    ]
+    filters_to_remove = ["-filter:links", "-filter:replies", "-is:retweet", "lang:en"]
     for filter_str in filters_to_remove:
         topic = topic.replace(filter_str, "")
     return topic.strip()
@@ -102,9 +131,7 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     }
 
 
-def write_user_settings(handle: str, queries: list[str] | None = None,
-                       relevant_accounts: dict[str, bool] | None = None,
-                       max_tweets_retrieve: int | None = None) -> None:
+def write_user_settings(handle: str, queries: list[str] | None = None, relevant_accounts: dict[str, bool] | None = None, max_tweets_retrieve: int | None = None) -> None:
     """Update scraping settings for a user in user_info.json."""
     from backend.utils import read_user_info, write_user_info
 
@@ -136,6 +163,7 @@ class RelevantAccountModel(BaseModel):
     handle: str
     validated: bool
 
+
 class UpdateSettingsRequest(BaseModel):
     queries: list[str] | None = None
     relevant_accounts: dict[str, bool] | None = None
@@ -166,11 +194,7 @@ async def get_settings_endpoint(handle: str) -> dict:
 async def get_validation_delay_endpoint() -> dict:
     """Get the validation delay configuration for Twitter API free tier."""
     delay = get_validation_delay()
-    return {
-        "delay_seconds": delay,
-        "delay_ms": delay * 1000,
-        "tier": "free"
-    }
+    return {"delay_seconds": delay, "delay_ms": delay * 1000, "tier": "free"}
 
 
 @router.put("/{handle}/settings")
@@ -178,16 +202,8 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
     """Update scraping settings for a user."""
     print(payload)
     try:
-        write_user_settings(
-            handle=handle,
-            queries=payload.queries,
-            relevant_accounts=payload.relevant_accounts,
-            max_tweets_retrieve=payload.max_tweets_retrieve
-        )
-        return {
-            "message": "Settings updated successfully",
-            "settings": read_user_settings(handle)
-        }
+        write_user_settings(handle=handle, queries=payload.queries, relevant_accounts=payload.relevant_accounts, max_tweets_retrieve=payload.max_tweets_retrieve)
+        return {"message": "Settings updated successfully", "settings": read_user_settings(handle)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}") from e
 
@@ -206,20 +222,14 @@ async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> di
 
         # Check if account already exists
         if account.handle in relevant_accounts:
-            return {
-                "message": "Account already added",
-                "settings": read_user_settings(handle)
-            }
+            return {"message": "Account already added", "settings": read_user_settings(handle)}
 
         # Add new account
         relevant_accounts[account.handle] = account.validated
         user_info["relevant_accounts"] = relevant_accounts
         write_user_info(user_info)
 
-        return {
-            "message": "Account added successfully",
-            "settings": read_user_settings(handle)
-        }
+        return {"message": "Account added successfully", "settings": read_user_settings(handle)}
     except HTTPException:
         raise
     except Exception as e:
@@ -247,10 +257,7 @@ async def update_account_validation_endpoint(handle: str, account: str, validate
         user_info["relevant_accounts"] = relevant_accounts
         write_user_info(user_info)
 
-        return {
-            "message": f"Validation status for @{account} updated to {validated}",
-            "settings": read_user_settings(handle)
-        }
+        return {"message": f"Validation status for @{account} updated to {validated}", "settings": read_user_settings(handle)}
     except HTTPException:
         raise
     except Exception as e:
@@ -275,10 +282,7 @@ async def remove_account_endpoint(handle: str, account: str) -> dict:
             user_info["relevant_accounts"] = relevant_accounts
             write_user_info(user_info)
 
-        return {
-            "message": "Account removed successfully",
-            "settings": read_user_settings(handle)
-        }
+        return {"message": "Account removed successfully", "settings": read_user_settings(handle)}
     except HTTPException:
         raise
     except Exception as e:
@@ -308,24 +312,21 @@ async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dic
             user_info["queries"] = queries
             write_user_info(user_info)
 
-        return {
-            "message": "Query removed successfully",
-            "settings": read_user_settings(handle)
-        }
+        return {"message": "Query removed successfully", "settings": read_user_settings(handle)}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error removing query: {str(e)}") from e
 
 
-
 @router.get("/{username}/validate/{twitter_handle}")
 async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
     """Validate if a Twitter handle exists by checking Twitter's API with rate limit retry."""
-    import asyncio
-    import requests
-    from backend.oauth import ensure_access_token
     from time import sleep
+
+    import requests
+
+    from backend.oauth import ensure_access_token
 
     try:
         # Remove @ if present
@@ -341,30 +342,20 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
         url = f"https://api.twitter.com/2/users/by/username/{handle}"
         headers = {"Authorization": f"Bearer {access_token}"}
 
-        response = requests.get(url,
-                                    headers=headers,
-                                    timeout=10)
+        response = requests.get(url, headers=headers, timeout=10)
 
         if response.status_code == 200:
-                data = response.json()
-                user_data = data.get("data")
-                # Check if we got valid user data
-                if user_data:
-                    return {"valid": True,
-                            "handle": handle,
-                            "data": user_data}
-                else:
-                    return {"valid": False,
-                            "handle": handle,
-                            "error": "User not found"}
+            data = response.json()
+            user_data = data.get("data")
+            # Check if we got valid user data
+            if user_data:
+                return {"valid": True, "handle": handle, "data": user_data}
+            else:
+                return {"valid": False, "handle": handle, "error": "User not found"}
         elif response.status_code == 429:
-                sleep(get_validation_delay())
-                return await validate_twitter_handle(username, twitter_handle)
+            sleep(get_validation_delay())
+            return await validate_twitter_handle(username, twitter_handle)
 
-        return {"valid": False,
-                "handle": handle,
-                "error": f"{response.text} (status {response.status_code})"}
+        return {"valid": False, "handle": handle, "error": f"{response.text} (status {response.status_code})"}
     except Exception as e:
-        return {"valid": False,
-                "handle": handle,
-                "error": f"Unknown error occurred: {str(e)}"}
+        return {"valid": False, "handle": handle, "error": f"Unknown error occurred: {str(e)}"}

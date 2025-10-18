@@ -2,19 +2,13 @@
 API routes for browser-based OAuth authentication.
 Users login through a backend browser that saves state.
 """
+import io
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-import io
 
-from backend.browser_session import (
-    create_browser_session,
-    get_session_status,
-    save_and_close_session,
-    close_session,
-    cleanup_expired_sessions,
-    get_session_screenshot
-)
+from backend.browser_session import cleanup_expired_sessions, close_session, create_browser_session, get_session_screenshot, get_session_status, save_and_close_session
 
 router = APIRouter(prefix="/auth/browser", tags=["browser-auth"])
 
@@ -93,10 +87,7 @@ async def get_browser_screenshot(session_id: str):
         if not screenshot_bytes:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        return StreamingResponse(
-            io.BytesIO(screenshot_bytes),
-            media_type="image/png"
-        )
+        return StreamingResponse(io.BytesIO(screenshot_bytes), media_type="image/png")
     except HTTPException:
         raise
     except Exception as e:

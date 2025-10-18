@@ -125,6 +125,7 @@ The cloudflare tunnel is already set up to point to port 80 (default port). This
 
 4) Pull the latest changes and rebuild
     ```bash
+      git fetch
       git pull # assuming you are on main since that should be our default hosted branch
       docker compose down
       docker compose up --build -d

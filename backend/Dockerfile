@@ -1,7 +1,7 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
-# Install system dependencies for Playwright
+# Install system dependencies for Playwright + Virtual Display + VNC
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -25,7 +25,15 @@ RUN apt-get update && apt-get install -y \
     libxtst6 \
     libnss3 \
     libcups2 \
+    xvfb \
+    x11vnc \
+    git \
+    websockify \
     && rm -rf /var/lib/apt/lists/*
+
+# Install noVNC for web-based VNC access
+RUN git clone https://github.com/novnc/noVNC.git /opt/novnc && \
+    git clone https://github.com/novnc/websockify /opt/novnc/utils/websockify
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
@@ -47,7 +55,12 @@ RUN uv sync --no-dev
 # Copy application code (includes backend/ package)
 COPY . .
 
+# Copy and set up entrypoint script
+COPY docker-entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+ENV DISPLAY=:99
 
 # Create the directory
 RUN mkdir -p /opt/playwright
@@ -67,8 +80,12 @@ ENV UV_CACHE_DIR=/tmp/uv-cache
 
 # RUN chmod -R 755 /app
 
-# Expose port
+# Expose ports
 EXPOSE 8000
+EXPOSE 6080
+
+# Use entrypoint script to start VNC services before the app
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 
 # Run the application using uv
 CMD ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

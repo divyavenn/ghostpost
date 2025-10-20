@@ -12,7 +12,8 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8000:8000"  # Expose for local testing
+      - "8000:8000"  # Backend API
+      - "6080:6080"  # noVNC web interface for OAuth
     user: "1000:1000"
     volumes:
       - ./backend/cache:/app/cache
@@ -20,6 +21,8 @@ services:
       - ./backend/.env
     depends_on:
       - cache-init
+    environment:
+      - DISPLAY=:99
 
   cache-init:
     image: alpine:latest

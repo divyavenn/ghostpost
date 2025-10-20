@@ -1,3 +1,84 @@
+# FloodMe Deployment Guide
+
+## Quick Start with Docker (Recommended)
+
+### Prerequisites
+- Docker and Docker Compose installed
+- Twitter API credentials
+- Obelisk/OpenAI API key
+
+### Deployment Steps
+
+1. **Clone and configure:**
+   ```bash
+   git clone https://github.com/Bread-Technologies/floodme.git
+   cd floodme/backend
+   cp .env.example .env
+   nano .env  # Add your API credentials
+   ```
+
+2. **Important: Set for production:**
+   ```bash
+   HEADLESS_BROWSER=true
+   BACKEND_URL=http://your-server-ip:8000  # Replace with your actual server IP or domain
+   ```
+
+3. Update Twitter Developer Portal**
+
+   Before deploying, add your production callback URL to Twitter:
+
+   ```bash
+   # Run this helper to see your callback URL
+   ./check-callback-url.sh
+   ```
+
+   Then:
+   1. Go to https://developer.x.com/en/portal/dashboard
+   2. Select your app → "User authentication settings" → "Edit"
+   3. Add callback URL: `http://your-server-ip:8000/auth/callback`
+   4. Save changes
+
+   **The URL must EXACTLY match your `BACKEND_URL` + `/auth/callback`**
+
+4. **Deploy:**
+   ```bash
+   cd ..
+   docker-compose up -d
+   ```
+
+### Access Points
+
+- **Frontend:** `http://your-server-ip:80`
+- **Backend API:** `http://your-server-ip:8000`
+- **OAuth Browser (noVNC):** `http://your-server-ip:6080/vnc.html`
+
+### User OAuth Flow
+
+When users need to log in with Twitter:
+1. User opens `http://your-server-ip:6080/vnc.html` in ANY browser (Mac, Windows, iPad, Android - no VNC client needed!)
+2. Complete Twitter OAuth in the web-based browser window
+3. Close tab - session is saved!
+4. Automated scraping runs headlessly every 24 hours ✅
+
+### Management
+
+```bash
+# View logs
+docker-compose logs -f
+
+# Restart
+docker-compose restart
+
+# Stop
+docker-compose down
+
+# Update deployment
+git pull && docker-compose down && docker-compose build && docker-compose up -d
+```
+
+---
+
+## Alternative: Manual systemd Deployment (Legacy)
 
 # SSH-ing into server 
 1) If you're not at Bread HQ, SSH into the local server (Bread49)
@@ -13,7 +94,8 @@
 1) Add the IP address of your server to CORS and to the Twitter Developer Portal. If you don't know it you can find it using `ip addr show`
     - Go to the X Developer Portal https://developer.x.com/en/portal/dashboard
     - Go to user authentication settings
-    - Make sure [IP Address]/api/auth/callback is in the Callback URI in App Info in the X developer portal for the account you will be using
+    - Make sure `http://[IP Address]:8000/auth/callback` is in the Callback URI in App Info
+    - **Important:** Must be exactly `http://YOUR-IP:8000/auth/callback` (not `/api/auth/callback`)
 
 
 2) If the repo does not exist on the machine, pull it 

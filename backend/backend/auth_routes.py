@@ -45,9 +45,12 @@ async def start_oauth(payload: StartOAuthRequest | None = None) -> dict[str, str
     # Generate OAuth URL with state
     auth_url, code_verifier = get_authorization_url(state)
 
-    # Launch browser session
+    # Launch browser session - MUST be visible for user to log in
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(headless=False, args=['--disable-blink-features=AutomationControlled'])
+    browser = await playwright.chromium.launch(
+        headless=False,  # User needs to see browser to complete OAuth
+        args=['--disable-blink-features=AutomationControlled']
+    )
     context = await browser.new_context(viewport={'width': 1280, 'height': 720}, user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
     page = await context.new_page()
 

@@ -37,9 +37,10 @@ async def create_browser_session(username: str) -> dict:
     # Start Playwright
     playwright = await async_playwright().start()
 
+    # OAuth/login sessions MUST be visible so user can interact
     # Launch browser with remote debugging enabled
     browser = await playwright.chromium.launch(
-        headless=False,  # Visible browser for user to see
+        headless=False,  # User needs to see browser to log in
         args=[
             '--remote-debugging-port=9222',  # Enable CDP
             '--disable-blink-features=AutomationControlled',  # Hide automation

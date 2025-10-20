@@ -25,7 +25,19 @@ USERNAME = "proudlurker"
 
 PASSWORD = r"JXJ-pfd3bdv*myu0whb"
 
-see_browser = False  # set to True to see the browser in action (for debugging)
+# Check if headless mode from environment variable (for SCRAPING only)
+import os
+def should_use_headless_for_scraping() -> bool:
+    """
+    Return True if browser should run in headless mode for AUTOMATED SCRAPING.
+    Defaults to True if HEADLESS_BROWSER is not set (safe for production).
+    """
+    headless_env = os.getenv("HEADLESS_BROWSER")
+    if headless_env is None:
+        return True  # Default to headless for scraping (production-safe)
+    return headless_env.lower() in ("true", "1", "yes")
+
+see_browser = not should_use_headless_for_scraping()  # Show browser only if not in headless mode
 
 QUERIES = [
     "multimodal ai -filter:links -filter:replies -is:retweet lang:en",

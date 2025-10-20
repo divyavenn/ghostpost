@@ -22,6 +22,20 @@ client_secret = os.getenv("TWITTER_CLIENT_SECRET")
 redirect_uri = os.getenv("BACKEND_URL") + "/auth/callback"
 BASE_URL = "https://api.x.com/2"
 
+# Check if we should use headless browser for SCRAPING (not OAuth)
+def is_headless_mode_for_scraping() -> bool:
+    """
+    Return True if browser should run in headless mode for AUTOMATED SCRAPING.
+    Defaults to True if HEADLESS_BROWSER is not set (safe for production).
+
+    NOTE: OAuth/login flows should NEVER use headless mode - users need to see
+    the browser to enter credentials and authorize the app!
+    """
+    headless_env = os.getenv("HEADLESS_BROWSER")
+    if headless_env is None:
+        return True  # Default to headless for scraping (production-safe)
+    return headless_env.lower() in ("true", "1", "yes")
+
 
 def generate_code_verifier() -> str:
     """Generate a cryptographically random code verifier (43-128 characters)."""
@@ -104,7 +118,12 @@ def refresh_access_token(refresh_token: str) -> dict[str, Any]:
 
 
 def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTPServer, threading.Event]:
-    """Spin up a local HTTP server to capture the OAuth redirect."""
+    """
+    Spin up a local HTTP server to capture the OAuth redirect.
+
+    NOTE: This is ONLY used by the standalone oauth_login() function.
+    In production, auth_routes.py handles callbacks via FastAPI (no separate server needed).
+    """
     parsed = urlparse(redirect_uri)
     if parsed.scheme != "http":
         error("Redirect URI must use http scheme for local testing.")
@@ -112,6 +131,9 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTP
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 80
     path = parsed.path or "/"
+
+    notify(f"⚠️ Starting standalone callback server on {host}:{port}{path}")
+    notify(f"⚠️ This is for testing only - production uses FastAPI auth routes")
 
     authorization_event = threading.Event()
 
@@ -176,6 +198,7 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
 
     try:
         async with async_playwright() as p:
+            # OAuth MUST be visible so user can log in - never use headless!
             browser = await p.chromium.launch(headless=False)
             context = await browser.new_context()
             page = await context.new_page()

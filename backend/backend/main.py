@@ -49,3 +49,47 @@ app.include_router(generate_router)
 app.include_router(logging_router)
 app.include_router(user_router)
 app.include_router(scheduler_router)
+
+
+@app.get("/health/vnc")
+async def vnc_health_check():
+    """Check if VNC services are ready for OAuth."""
+    import os
+    import socket
+
+    checks = {
+        "display": False,
+        "x11vnc": False,
+        "novnc": False,
+    }
+
+    # Check DISPLAY environment variable
+    checks["display"] = os.getenv("DISPLAY") == ":99"
+
+    # Check if x11vnc is listening on port 5900
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('localhost', 5900))
+        checks["x11vnc"] = result == 0
+        sock.close()
+    except Exception:
+        checks["x11vnc"] = False
+
+    # Check if noVNC is listening on port 6080
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1)
+        result = sock.connect_ex(('localhost', 6080))
+        checks["novnc"] = result == 0
+        sock.close()
+    except Exception:
+        checks["novnc"] = False
+
+    all_ready = all(checks.values())
+
+    return {
+        "ready": all_ready,
+        "checks": checks,
+        "message": "VNC services ready for OAuth" if all_ready else "VNC services not ready yet"
+    }

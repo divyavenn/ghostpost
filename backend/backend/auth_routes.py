@@ -37,7 +37,14 @@ async def start_oauth(payload: StartOAuthRequest | None = None) -> dict[str, str
     Start Twitter OAuth flow with browser session.
     Opens a browser on backend, saves both OAuth tokens AND browser state.
     """
+    import os
     from playwright.async_api import async_playwright
+
+    # Force DISPLAY for headless servers with Xvfb
+    # In Docker, Xvfb runs on :99. Set this so Playwright can find the display.
+    # This works whether DISPLAY is already set or not.
+    os.environ["DISPLAY"] = ":99"
+    print("✅ Set DISPLAY to :99 for virtual display (Xvfb/noVNC)")
 
     # Generate state for CSRF protection
     state = secrets.token_urlsafe(32)
@@ -46,9 +53,10 @@ async def start_oauth(payload: StartOAuthRequest | None = None) -> dict[str, str
     auth_url, code_verifier = get_authorization_url(state)
 
     # Launch browser session - MUST be visible for user to log in
+    # Browser renders to virtual display :99 (viewable via noVNC on port 6080)
     playwright = await async_playwright().start()
     browser = await playwright.chromium.launch(
-        headless=False,  # User needs to see browser to complete OAuth
+        headless=False,  # Connects to DISPLAY=:99 (Xvfb virtual display)
         args=['--disable-blink-features=AutomationControlled']
     )
     context = await browser.new_context(viewport={'width': 1280, 'height': 720}, user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')

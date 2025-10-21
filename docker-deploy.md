@@ -105,40 +105,6 @@ WantedBy=multi-user.target
 
 The cloudflare tunnel is already set up to point to port 80 (default port). This means when the systemctl service is up and running, it will automatically be accessible from the URL x.ghostposter.app
 
-## Pushing Updates and Redeploying
-
-### From Dev Machine
-
-1) Push your code changes to main, or merge your branch into main:
-
-      `git push origin main`
-
-### On Server
-
-2) SSH into the server
-
-      `ssh root@45.63.85.26`
-
-3) Navigate to the project directory
-
-      `cd projects/ghostposter`
-
-4) Pull the latest changes and rebuild
-    ```bash
-      git fetch
-      git pull # assuming you are on main since that should be our default hosted branch
-      docker compose down
-      docker compose up --build -d
-    ```
-
-## Accessing the Application
-
-- **Frontend**: https://x.ghostposter.app
-- **Backend API**: https://x.ghostposter.app/api/
-
-  If for whatever reason the cloudflare tunnel is down, use this
- - **Frontend**: http://45.63.85.26:80 (port 80)
-- **Backend API**: http://45.63.85.26:80/api/
 
 ### Common Issues
 
@@ -146,3 +112,27 @@ The cloudflare tunnel is already set up to point to port 80 (default port). This
 2) **Permission issues**: Check that Docker has proper permissions
 3) **Environment variables**: Verify `.env` files are properly configured
 4) **Build failures**: Check Docker logs for specific error messages
+
+
+## Prequisites
+2. **Important: Set for production:**
+   ```bash
+   HEADLESS_BROWSER=true
+   BACKEND_URL=http://your-server-ip:8000  # Replace with your actual server IP or domain
+   ```
+
+3. Update Twitter Developer Portal**
+
+   Before deploying, add your production callback URL to Twitter:
+
+   ```bash
+   # Run this helper to see your callback URL
+   ./check-callback-url.sh
+
+4. Then:
+   1. Go to https://developer.x.com/en/portal/dashboard
+   2. Select your app → "User authentication settings" → "Edit"
+   3. Add callback URL: `http://your-server-ip:8000/auth/callback`
+   4. Save changes
+
+   **The URL must EXACTLY match your `BACKEND_URL` + `/auth/callback`**

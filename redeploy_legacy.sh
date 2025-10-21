@@ -14,6 +14,17 @@
   # Rebase local commits on top of remote
   git rebase origin/main
 
+  # Backend: Install deps if needed
+  cd backend
+  uv sync
+  cd ..
+
+  # Frontend: Install, build
+  cd frontend
+  npm install
+  npm run build
+  cd ..
+
   # Restart services
   docker compose down
   docker compose up --build -d

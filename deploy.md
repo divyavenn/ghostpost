@@ -1,80 +1,37 @@
 # FloodMe Deployment Guide
 
-## Quick Start with Docker (Recommended)
 
-### Prerequisites
-- Docker and Docker Compose installed
-- Twitter API credentials
-- Obelisk/OpenAI API key
+## Deploying your changes
 
-### Deployment Steps
+1) SSH into server machine (Bread57). Make sure ur ssh key was added on the server. Send Aman a polite request and the output of the following command: `cat ~/.ssh/id_ed25519.pub`
 
-1. **Clone and configure:**
-   ```bash
-   git clone https://github.com/Bread-Technologies/floodme.git
-   cd floodme/backend
-   cp .env.example .env
-   nano .env  # Add your API credentials
-   ```
+    `ssh root@45.63.85.26`
 
-2. **Important: Set for production:**
-   ```bash
-   HEADLESS_BROWSER=true
-   BACKEND_URL=http://your-server-ip:8000  # Replace with your actual server IP or domain
-   ```
+2) Navigate into /projects/ghostposter
+3) Run redeploy.sh 
 
-3. Update Twitter Developer Portal**
+    `./redeploy.sh`
 
-   Before deploying, add your production callback URL to Twitter:
 
-   ```bash
-   # Run this helper to see your callback URL
-   ./check-callback-url.sh
-   ```
+The cloudflare tunnel is already set up to point to port 80 (default port). This means when the systemctl service is up and running, it will automatically be accessible from the URL x.ghostposter.app
 
-   Then:
-   1. Go to https://developer.x.com/en/portal/dashboard
-   2. Select your app → "User authentication settings" → "Edit"
-   3. Add callback URL: `http://your-server-ip:8000/auth/callback`
-   4. Save changes
+### Accessing the Application
 
-   **The URL must EXACTLY match your `BACKEND_URL` + `/auth/callback`**
+- **Frontend**: https://x.ghostposter.app
+- **Backend API**: https://x.ghostposter.app/api/
 
-4. **Deploy:**
-   ```bash
-   cd ..
-   docker-compose up -d
-   ```
+  If for whatever reason the cloudflare tunnel is down, use this
+ - **Frontend**: http://45.63.85.26:80 (port 80)
+- **Backend API**: http://45.63.85.26:80/api/
 
-### Access Points
 
-- **Frontend:** `http://your-server-ip:80`
-- **Backend API:** `http://your-server-ip:8000`
-- **OAuth Browser (noVNC):** `http://your-server-ip:6080/vnc.html`
+## Maintanence
 
-### User OAuth Flow
+Periodically clear old images to free up space on the device:
+   
+   `docker system prune`
 
-When users need to log in with Twitter:
-1. User opens `http://your-server-ip:6080/vnc.html` in ANY browser (Mac, Windows, iPad, Android - no VNC client needed!)
-2. Complete Twitter OAuth in the web-based browser window
-3. Close tab - session is saved!
-4. Automated scraping runs headlessly every 24 hours ✅
 
-### Management
-
-```bash
-# View logs
-docker-compose logs -f
-
-# Restart
-docker-compose restart
-
-# Stop
-docker-compose down
-
-# Update deployment
-git pull && docker-compose down && docker-compose build && docker-compose up -d
-```
 
 ---
 

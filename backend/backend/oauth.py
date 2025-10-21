@@ -132,8 +132,6 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTP
     port = parsed.port or 80
     path = parsed.path or "/"
 
-    notify(f"⚠️ Starting standalone callback server on {host}:{port}{path}")
-    notify(f"⚠️ This is for testing only - production uses FastAPI auth routes")
 
     authorization_event = threading.Event()
 
@@ -191,6 +189,10 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
     from playwright.async_api import async_playwright
 
     from backend.utils import store_browser_state, store_token
+
+    # Force DISPLAY for headless servers with Xvfb (Docker/noVNC setup)
+    os.environ["DISPLAY"] = ":99"
+
     notify(f"🔐 Launching OAuth login for {username}")
     state = secrets.token_urlsafe(32)
     server, auth_event = _start_callback_server(redirect_uri, state)
@@ -199,6 +201,7 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
     try:
         async with async_playwright() as p:
             # OAuth MUST be visible so user can log in - never use headless!
+            # Browser renders to DISPLAY=:99 (Xvfb virtual display, viewable via noVNC)
             browser = await p.chromium.launch(headless=False)
             context = await browser.new_context()
             page = await context.new_page()

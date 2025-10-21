@@ -1,91 +1,100 @@
-# Use Python 3.11 slim image
+# Use Python 3.11 slim base image
 FROM python:3.11-slim
-
-# Install system dependencies for Playwright + Virtual Display + VNC
-RUN apt-get update && apt-get install -y \
-    wget \
-    gnupg \
-    ca-certificates \
-    procps \
-    libxss1 \
-    libxrandr2 \
-    libasound2 \
-    libpangocairo-1.0-0 \
-    libatk1.0-0 \
-    libcairo-gobject2 \
-    libgtk-3-0 \
-    libgdk-pixbuf-2.0-0 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrender1 \
-    libxtst6 \
-    libnss3 \
-    libcups2 \
-    xvfb \
-    x11vnc \
-    git \
-    websockify \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install noVNC for web-based VNC access
-RUN git clone https://github.com/novnc/noVNC.git /opt/novnc && \
-    git clone https://github.com/novnc/websockify /opt/novnc/utils/websockify
-
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
-
-# Create user and group
-RUN groupadd -g 1000 ayush && useradd -u 1000 -g ayush -m ayush
 
 # Set working directory
 WORKDIR /app
 
-# Copy dependency files first for better caching
-COPY pyproject.toml ./
-# Copy uv.lock if it exists, otherwise create it
-COPY uv.lock* ./
+# Prevent Python from writing .pyc files and buffer output
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    DISPLAY=:99
 
-# Install dependencies using uv (will create uv.lock if it doesn't exist)
-RUN uv sync --no-dev
+# Install system dependencies for virtual display, VNC, and browser automation
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    # Virtual display and VNC components
+    xvfb \
+    x11vnc \
+    # noVNC dependencies
+    git \
+    python3-numpy \
+    websockify \
+    # Browser dependencies for Playwright
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libdbus-1-3 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libgtk-3-0 \
+    libasound2 \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf2.0-0 \
+    libatspi2.0-0 \
+    # Additional utilities
+    curl \
+    wget \
+    ca-certificates \
+    fonts-liberation \
+    xdg-utils \
+    # Cleanup to reduce image size
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy application code (includes backend/ package)
-COPY . .
+# Clone and setup noVNC
+RUN git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc && \
+    git clone --depth 1 https://github.com/novnc/websockify /opt/novnc/utils/websockify && \
+    ln -s /opt/novnc/vnc.html /opt/novnc/index.html
 
-# Copy and set up entrypoint script
-COPY docker-entrypoint.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+# Install uv package manager for Python
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:${PATH}"
 
-ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
-ENV DISPLAY=:99
+# Copy project files
+COPY pyproject.toml uv.lock* ./
+COPY backend ./backend
+COPY docker-entrypoint.sh ./
 
-# Create the directory
-RUN mkdir -p /opt/playwright
+# Install Python dependencies using uv
+RUN uv sync --frozen
 
-# Install browsers (they'll go to the path specified by the env var)
-RUN uv run playwright install --with-deps chromium
+# Install Playwright browsers (Chromium for browser automation)
+RUN uv run playwright install chromium && \
+    uv run playwright install-deps chromium
 
-# Make it accessible to all users
-RUN chmod -R 755 /opt/playwright
+# Create cache directory with proper permissions
+RUN mkdir -p /app/cache && \
+    chmod 755 /app/cache
 
-# ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
-# Use a directory that's NOT mounted as a volume
-ENV UV_CACHE_DIR=/tmp/uv-cache
+# Make entrypoint script executable
+RUN chmod +x /app/docker-entrypoint.sh
 
-# # Create cache directory with proper permissions
-# RUN mkdir -p /app/.cache/uv && chmod 777 /app/.cache/uv
+# Create a non-root user for running the application
+RUN useradd -m -u 1000 appuser && \
+    chown -R appuser:appuser /app
 
-# RUN chmod -R 755 /app
+# Switch to non-root user
+USER appuser
 
 # Expose ports
-EXPOSE 8000
-EXPOSE 6080
+# 8000: Backend API
+# 6080: noVNC web interface
+# 5900: VNC server (optional, for direct VNC clients)
+EXPOSE 8000 6080 5900
 
-# Use entrypoint script to start VNC services before the app
-ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+# Health check for the backend API
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
 
-# Run the application using uv
+# Set entrypoint
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
+
+# Default command to start the FastAPI application
 CMD ["uv", "run", "uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

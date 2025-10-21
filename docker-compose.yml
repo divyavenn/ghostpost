@@ -1,4 +1,4 @@
-version: '3.9'
+
 services:
   frontend:
     build: ./frontend
@@ -14,7 +14,8 @@ services:
     ports:
       - "8000:8000"  # Backend API
       - "6080:6080"  # noVNC web interface for OAuth
-    user: "1000:1000"
+    # Removed user restriction - container runs as user defined in Dockerfile
+    # This works on all platforms (Mac/Windows/Linux)
     volumes:
       - ./backend/cache:/app/cache
     env_file:

@@ -51,6 +51,12 @@ app.include_router(user_router)
 app.include_router(scheduler_router)
 
 
+@app.get("/health")
+async def health_check():
+    """Basic health check endpoint for Docker healthcheck."""
+    return {"status": "healthy"}
+
+
 @app.get("/health/vnc")
 async def vnc_health_check():
     """Check if VNC services are ready for OAuth."""

@@ -19,20 +19,33 @@ Before starting, ensure you have:
 
     `docker compose up --build -d`
 
-3) Stop all services
+3) Access the services:
+   - **Frontend**: http://localhost:80
+   - **Backend API**: http://localhost:8000
+   - **noVNC (Browser View)**: http://localhost:6080/vnc.html
+
+4) Stop all services
 
     `docker compose down`
 
-4) View logs
+5) View logs
    ```bash
-    docker ps # to find the container id
-    docker logs <container_id>
+    # View all logs
+    docker compose logs -f
+
+    # View specific service logs
+    docker compose logs -f backend
+    docker compose logs -f frontend
    ```
 
 ## Docker Compose Services
 
 - **Frontend**: React/Vite app served by Nginx on port 80
-- **Backend**: FastAPI app on port 8000 (internal)
+- **Backend**: FastAPI app on port 8000, including:
+  - Virtual display (Xvfb) for headless browser automation
+  - VNC server (x11vnc) on port 5900
+  - noVNC web interface on port 6080 for viewing browser sessions
+  - Playwright with Chromium for browser automation
 - **Cache-init**: Sets up proper permissions for cache directories
 
 ## Environment Setup for Docker
@@ -106,12 +119,45 @@ WantedBy=multi-user.target
 The cloudflare tunnel is already set up to point to port 80 (default port). This means when the systemctl service is up and running, it will automatically be accessible from the URL x.ghostposter.app
 
 
+## Using noVNC for Browser Automation
+
+The backend container includes a web-based VNC client (noVNC) that allows you to view and interact with the headless browser during OAuth flows or debugging.
+
+**Access noVNC**: http://localhost:6080/vnc.html (or use your server IP in production)
+
+This is particularly useful for:
+- Debugging OAuth login flows
+- Monitoring browser automation tasks
+- Troubleshooting browser-related issues
+
+The browser runs in a virtual display (Xvfb) which works on any server, even those without a GUI.
+
+## Automated Deployment with redeploy.sh
+
+The `redeploy.sh` script automates the deployment process:
+
+1) Commits cache files (except user_info.json)
+2) Fetches and rebases latest code from GitHub
+3) Rebuilds and restarts Docker containers
+4) Shows deployment status
+
+**Usage:**
+```bash
+./redeploy.sh
+```
+
+The script includes automatic checks for:
+- Docker installation
+- Docker Compose availability
+- Container status after deployment
+
 ### Common Issues
 
-1) **Port conflicts**: Ensure ports 80 and 8000 are not in use
+1) **Port conflicts**: Ensure ports 80, 8000, 5900, and 6080 are not in use
 2) **Permission issues**: Check that Docker has proper permissions
 3) **Environment variables**: Verify `.env` files are properly configured
 4) **Build failures**: Check Docker logs for specific error messages
+5) **Docker not found**: Install Docker before running redeploy.sh
 
 
 ## Prequisites

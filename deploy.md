@@ -1,28 +1,44 @@
 # FloodMe Deployment Guide
 
+**Note**: This deployment now uses Docker Compose. The `redeploy.sh` script has been updated to work exclusively with Docker. If you're using the old systemd services, see the "Alternative: Manual systemd Deployment (Legacy)" section below.
 
 ## Deploying your changes
 
-1) SSH into server machine (Bread57). Make sure ur ssh key was added on the server. Send Aman a polite request and the output of the following command: `cat ~/.ssh/id_ed25519.pub`
+1) SSH into server machine (Bread57). Make sure your ssh key was added on the server. Send Aman a polite request and the output of the following command: `cat ~/.ssh/id_ed25519.pub`
 
     `ssh root@45.63.85.26`
 
 2) Navigate into /projects/ghostposter
-3) Run redeploy.sh 
+
+    `cd /root/projects/ghostposter`
+
+3) Ensure Docker and Docker Compose are installed. The redeploy script will check this automatically.
+
+4) Run redeploy.sh
 
     `./redeploy.sh`
 
+The script will:
+- Commit cache files (except user_info.json)
+- Pull latest changes from GitHub
+- Rebuild Docker containers with the new Dockerfile (includes noVNC)
+- Restart all services
+- Show deployment status
 
-The cloudflare tunnel is already set up to point to port 80 (default port). This means when the systemctl service is up and running, it will automatically be accessible from the URL x.ghostposter.app
+The Cloudflare tunnel is already set up to point to port 80 (default port). This means when the Docker containers are running, the application will automatically be accessible from the URL x.ghostposter.app
 
 ### Accessing the Application
 
 - **Frontend**: https://x.ghostposter.app
 - **Backend API**: https://x.ghostposter.app/api/
+- **noVNC (Browser View)**: http://45.63.85.26:6080/vnc.html
 
-  If for whatever reason the cloudflare tunnel is down, use this
- - **Frontend**: http://45.63.85.26:80 (port 80)
-- **Backend API**: http://45.63.85.26:80/api/
+If for whatever reason the Cloudflare tunnel is down, use this:
+- **Frontend**: http://45.63.85.26:80 (port 80)
+- **Backend API**: http://45.63.85.26:8000
+- **noVNC (Browser View)**: http://45.63.85.26:6080/vnc.html
+
+**Note**: noVNC provides a web-based view of the browser during OAuth flows and automation tasks. Very useful for debugging!
 
 
 ## Maintanence

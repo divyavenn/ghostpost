@@ -39,6 +39,8 @@ COPY pyproject.toml uv.lock* ./
 COPY backend ./backend
 COPY docker-entrypoint.sh ./
 
+
+RUN uv lock
 # Install Python dependencies using uv
 RUN uv sync --frozen
 

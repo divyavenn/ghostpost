@@ -1,5 +1,5 @@
-# Use Python 3.11 slim base image
-FROM python:3.11-slim
+# Use Python 3.11 slim base image (Debian Bookworm - stable)
+FROM python:3.11-slim-bookworm
 
 # Set working directory
 WORKDIR /app
@@ -9,7 +9,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     DISPLAY=:99
 
-# Install system dependencies for virtual display, VNC, and browser automation
+# Install system dependencies for virtual display, VNC, and basic utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
     # Virtual display and VNC components
     xvfb \
@@ -18,33 +18,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     python3-numpy \
     websockify \
-    # Browser dependencies for Playwright
-    libnss3 \
-    libnspr4 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libcups2 \
-    libdrm2 \
-    libdbus-1-3 \
-    libxkbcommon0 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxfixes3 \
-    libxrandr2 \
-    libgbm1 \
-    libgtk-3-0 \
-    libasound2 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libcairo2 \
-    libgdk-pixbuf2.0-0 \
-    libatspi2.0-0 \
-    # Additional utilities
+    # Basic utilities
     curl \
     wget \
     ca-certificates \
-    fonts-liberation \
-    xdg-utils \
     # Cleanup to reduce image size
     && rm -rf /var/lib/apt/lists/*
 
@@ -65,9 +42,11 @@ COPY docker-entrypoint.sh ./
 # Install Python dependencies using uv
 RUN uv sync --frozen
 
+# Install Playwright system dependencies first (as root before switching to appuser)
+RUN uv run playwright install-deps chromium
+
 # Install Playwright browsers (Chromium for browser automation)
-RUN uv run playwright install chromium && \
-    uv run playwright install-deps chromium
+RUN uv run playwright install chromium
 
 # Create cache directory with proper permissions
 RUN mkdir -p /app/cache && \

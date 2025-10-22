@@ -294,6 +294,29 @@ function App() {
             await loadUserInfo(status.username);
             await loadTweets(status.username);
             await loadPostedTweets(status.username);
+          } else if (status.status === 'extension_required') {
+            clearInterval(pollInterval);
+            console.log('⚠️ Extension not detected');
+
+            // Close the login tab
+            try {
+              loginTab.close();
+            } catch (e) {
+              console.warn('Could not close login tab:', e);
+            }
+
+            // Show extension install prompt
+            const installExtension = confirm(
+              `Browser Extension Required\n\n` +
+              `The GhostPoster browser extension is required to complete login.\n\n` +
+              `Please install the extension and try logging in again.\n\n` +
+              `Click OK to open the Chrome Web Store.`
+            );
+
+            if (installExtension) {
+              // Placeholder URL - replace with actual Chrome Web Store link when published
+              window.open('https://google.com', '_blank');
+            }
           }
         } catch (error) {
           console.error('Polling error:', error);

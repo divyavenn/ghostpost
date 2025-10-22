@@ -405,6 +405,7 @@ async def twitter_callback(
             _cookie_sessions[session_id]["oauth_complete"] = True
             _cookie_sessions[session_id]["username"] = twitter_handle
             _cookie_sessions[session_id]["status"] = "awaiting_cookies"  # Waiting for extension
+            _cookie_sessions[session_id]["oauth_complete_time"] = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
             print(f"⏳ Session {session_id} awaiting browser cookies for @{twitter_handle}")
 
         # Redirect to React success page - extension will detect this page and send cookies
@@ -562,20 +563,51 @@ async def check_cookie_status(session_id: str) -> dict:
     """
     Check if cookies have been imported for this session.
     Frontend polls this endpoint after opening login tab.
+
+    If session is in "awaiting_cookies" state for more than 60 seconds,
+    returns "extension_required" status to prompt user to install extension.
     """
+    import datetime
+
     session = _cookie_sessions.get(session_id)
 
     if not session:
         return {"status": "not_found"}
 
+    # Check if session is waiting too long for cookies (extension not installed)
+    status = session.get("status", "pending")
+    if status == "awaiting_cookies":
+        # Session has completed OAuth and is waiting for extension
+        oauth_complete_time = session.get("oauth_complete_time")
+        if oauth_complete_time:
+            # Parse ISO format timestamp
+            completed_at = datetime.datetime.fromisoformat(oauth_complete_time)
+            now = datetime.datetime.now(datetime.timezone.utc)
+            elapsed_seconds = (now - completed_at).total_seconds()
+
+            # If waiting more than 60 seconds, likely extension is not installed
+            if elapsed_seconds > 60:
+                return {
+                    "status": "extension_required",
+                    "username": session.get("username"),
+                    "verified": False,
+                    "elapsed_seconds": int(elapsed_seconds),
+                    "message": "Browser extension not detected. Please install the GhostPoster extension to continue."
+                }
+
     return {
-        "status": session.get("status", "pending"),
+        "status": status,
         "username": session.get("username"),
         "verified": session.get("verified", False)
     }
 
+
+class CookieData(BaseModel):
+    username: str
+
+
 class CookieImport(BaseModel):
-    data: dict
+    data: CookieData
     cookies: list[dict]  # Array of cookie objects from browser extension
 
 @router.post("/twitter/import-cookies")
@@ -583,8 +615,6 @@ async def import_cookies(payload: CookieImport) -> dict:
     import json
     from playwright.async_api import async_playwright
 
-
-    print(payload)
     # Extract username from new format
     username = payload.data.username
     cookies = payload.cookies
@@ -749,10 +779,26 @@ async def import_cookies(payload: CookieImport) -> dict:
         finally:
             await playwright.stop()
 
-        # Update all active sessions for this username (both pending and awaiting_cookies)
+        # Update ONLY sessions waiting for THIS specific username
+        # Security: Match by username to prevent cross-user session contamination
         sessions_updated = 0
+
+        # Debug: Show all active sessions
+        if _cookie_sessions:
+            print(f"🔍 Checking {len(_cookie_sessions)} active session(s):")
+            for sid, sdata in _cookie_sessions.items():
+                print(f"   Session {sid[:8]}...: status={sdata.get('status')}, username={sdata.get('username')}")
+        else:
+            print(f"🔍 No active sessions in memory")
+
         for session_id, session_data in _cookie_sessions.items():
-            if session_data.get("status") in ["pending", "awaiting_cookies"]:
+            is_waiting = session_data.get("status") in ["pending", "awaiting_cookies"]
+            expected_user = session_data.get("username")  # Set during OAuth callback
+            is_correct_user = expected_user == username
+
+            print(f"   Session {session_id[:8]}...: waiting={is_waiting}, expected_user={expected_user}, match={is_correct_user}")
+
+            if is_waiting and is_correct_user:
                 _cookie_sessions[session_id] = {
                     "status": "success" if verified else "error",
                     "username": username,
@@ -761,9 +807,13 @@ async def import_cookies(payload: CookieImport) -> dict:
                     "error": verification_error if not verified else None
                 }
                 sessions_updated += 1
-                print(f"📢 Updated session {session_id} with username @{username}")
+                print(f"📢 ✅ Updated session {session_id[:8]}... → success for @{username}")
 
-        print(f"✅ Updated {sessions_updated} session(s)")
+        if sessions_updated > 0:
+            print(f"✅ Updated {sessions_updated} session(s) for @{username}")
+        else:
+            print(f"ℹ️  No sessions waiting for @{username} - cookies saved but no matching frontend")
+            print(f"    To test: Start login flow from frontend, not just extension")
 
     except Exception as e:
         error_msg = f"Cookie verification failed for @{username}: {e}"
@@ -772,8 +822,13 @@ async def import_cookies(payload: CookieImport) -> dict:
         verification_error = str(e)
 
         # Still update sessions even if verification failed
+        # But ONLY for the correct username (security)
         for session_id, session_data in _cookie_sessions.items():
-            if session_data.get("status") in ["pending", "awaiting_cookies"]:
+            is_waiting = session_data.get("status") in ["pending", "awaiting_cookies"]
+            expected_user = session_data.get("username")
+            is_correct_user = expected_user == username
+
+            if is_waiting and is_correct_user:
                 _cookie_sessions[session_id] = {
                     "status": "error",
                     "username": username,

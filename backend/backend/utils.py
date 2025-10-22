@@ -100,6 +100,8 @@ async def store_browser_state(username: str, context) -> None:
         except Exception:
             pass
 
+    # Add timestamp to track when the state was last updated
+    state["timestamp"] = datetime.utcnow().isoformat() + "Z"
     cache[username] = state
 
     atomic_file_update(path, cache)

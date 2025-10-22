@@ -7,6 +7,22 @@ export interface AuthResponse {
   state: string;
   session_id: string;
   message: string;
+  debugger_url?: string;  // Browserbase live debugger URL
+}
+
+export interface BrowserLoginResponse {
+  session_id: string;
+  debugger_url: string;
+  login_url: string;
+  message: string;
+}
+
+export interface BrowserLoginStatus {
+  status: 'pending' | 'complete' | 'error';
+  username?: string;
+  error?: string;
+  message?: string;
+  current_url?: string;
 }
 
 export interface TwitterStatus {
@@ -62,6 +78,28 @@ export const api = {
   getTwitterStatus: async (): Promise<TwitterStatus> => {
     const response = await fetch(`${API_BASE_URL}/auth/twitter/status`);
     if (!response.ok) throw new Error('Failed to get Twitter status');
+    return response.json();
+  },
+
+  startBrowserLogin: async (): Promise<BrowserLoginResponse> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/browser-login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) throw new Error('Failed to start browser login');
+    return response.json();
+  },
+
+  checkBrowserLogin: async (sessionId: string): Promise<BrowserLoginStatus> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/browser-login/check/${sessionId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) throw new Error('Failed to check browser login');
     return response.json();
   },
 

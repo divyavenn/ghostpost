@@ -33,6 +33,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Local dev (Vite)
         "http://localhost:3000",  # Local dev
+        "http://localhost",  # Docker frontend (port 80)
         "http://192.168.8.57:3000",  # Production server
     ],
     allow_credentials=True,

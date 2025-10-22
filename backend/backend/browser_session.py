@@ -39,11 +39,14 @@ async def create_browser_session(username: str) -> dict:
 
     # OAuth/login sessions MUST be visible so user can interact
     # Launch browser with remote debugging enabled
+    # Browser will appear on virtual display (DISPLAY=:99) accessible via noVNC
     browser = await playwright.chromium.launch(
-        headless=False,  # User needs to see browser to log in
+        headless=False,  # User needs to see browser via noVNC
         args=[
             '--remote-debugging-port=9222',  # Enable CDP
             '--disable-blink-features=AutomationControlled',  # Hide automation
+            '--no-sandbox',  # Required for Docker
+            '--disable-dev-shm-usage',  # Overcome limited resource problems
         ])
 
     context = await browser.new_context(viewport={'width': 1280, 'height': 720}, user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')

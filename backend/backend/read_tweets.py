@@ -37,6 +37,17 @@ def should_use_headless_for_scraping() -> bool:
         return True  # Default to headless for scraping (production-safe)
     return headless_env.lower() in ("true", "1", "yes")
 
+def should_use_browserbase_for_scraping() -> bool:
+    """
+    Return True if scraping should use Browserbase instead of local browser.
+    Set USE_BROWSERBASE_FOR_SCRAPING=true to always use Browserbase.
+    Defaults to False (use local scraping with Browserbase fallback on bot detection).
+    """
+    browserbase_env = os.getenv("USE_BROWSERBASE_FOR_SCRAPING")
+    if browserbase_env is None:
+        return False  # Default to local with fallback (cost-effective)
+    return browserbase_env.lower() in ("true", "1", "yes")
+
 see_browser = not should_use_headless_for_scraping()  # Show browser only if not in headless mode
 
 QUERIES = [
@@ -102,9 +113,9 @@ async def fetch_search(ctx, query: str, username=None, write_callback=None, **kw
 
 
 # -------- Orchestration --------
-async def gather_trending(usernames, queries, max_scrolls=3, username=None, write_callback=None):
+async def gather_trending(usernames, queries, max_scrolls=3, username=None, write_callback=None, use_browserbase=False):
     """
-    Gather trending tweets with progressive writing.
+    Gather trending tweets with progressive writing and Browserbase fallback.
 
     Args:
         usernames: List of Twitter handles to scrape
@@ -112,12 +123,56 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
         max_scrolls: Number of scrolls per page
         username: Username for cache writes
         write_callback: Async function to call for incremental writes
+        use_browserbase: If True, skip local scraping and use Browserbase directly
+
+    Returns:
+        dict: Scraped tweets
     """
+    from backend.exceptions import BotDetectionError, RateLimitError, CaptchaError
+    from backend.browserbase_scraper import fetch_user_tweets_browserbase, fetch_search_browserbase
+
+    results = {}
+
+    # If explicitly requesting Browserbase, skip local scraping
+    if use_browserbase:
+        notify("🌐 Using Browserbase for scraping (direct mode)")
+
+        # Scrape user timelines
+        for u in usernames:
+            try:
+                if username:
+                    scraping_status[username] = {"type": "account", "value": u, "phase": "scraping_browserbase"}
+                    notify(f"📍 Status: Scraping from @{u} via Browserbase")
+
+                tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback, max_scrolls=max_scrolls)
+                for tweet_data in tweets.values():
+                    tweet_data["scraped_from"] = {"type": "account", "value": u}
+                results.update(tweets)
+            except Exception as e:
+                notify(f"❌ [Browserbase] Error fetching @{u}: {e}")
+
+        # Scrape queries
+        for q in queries:
+            try:
+                if username:
+                    scraping_status[username] = {"type": "query", "value": q, "phase": "scraping_browserbase"}
+                    notify(f"📍 Status: Scraping query [{q}] via Browserbase")
+
+                tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback, max_scrolls=max_scrolls)
+                for tweet_data in tweets.values():
+                    tweet_data["scraped_from"] = {"type": "query", "value": q}
+                results.update(tweets)
+            except Exception as e:
+                notify(f"❌ [Browserbase] Error searching [{q}]: {e}")
+
+        if username:
+            scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
+        return results
+
+    # Try local scraping first (cost-effective)
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=(not see_browser))
         browser, ctx = await get_home(browser=browser)
-
-        results = {}
 
         # user timelines
         for u in usernames:
@@ -132,6 +187,19 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "account", "value": u}
                 results.update(tweets)
+            except (RateLimitError, CaptchaError) as e:
+                # Bot detection! Fall back to Browserbase
+                notify(f"🤖 Bot detection for @{u}: {e}")
+                notify(f"🔄 Falling back to Browserbase for @{u}...")
+
+                try:
+                    tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback, max_scrolls=max_scrolls)
+                    for tweet_data in tweets.values():
+                        tweet_data["scraped_from"] = {"type": "account", "value": u}
+                    results.update(tweets)
+                    notify(f"✅ Successfully scraped @{u} via Browserbase fallback")
+                except Exception as fallback_error:
+                    notify(f"❌ Browserbase fallback also failed for @{u}: {fallback_error}")
             except Exception as e:
                 notify(f"⚠️ error fetching @{u}: {e}")
 
@@ -148,6 +216,19 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "query", "value": q}
                 results.update(tweets)
+            except (RateLimitError, CaptchaError) as e:
+                # Bot detection! Fall back to Browserbase
+                notify(f"🤖 Bot detection for query [{q}]: {e}")
+                notify(f"🔄 Falling back to Browserbase for query [{q}]...")
+
+                try:
+                    tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback, max_scrolls=max_scrolls)
+                    for tweet_data in tweets.values():
+                        tweet_data["scraped_from"] = {"type": "query", "value": q}
+                    results.update(tweets)
+                    notify(f"✅ Successfully scraped query [{q}] via Browserbase fallback")
+                except Exception as fallback_error:
+                    notify(f"❌ Browserbase fallback also failed for query [{q}]: {fallback_error}")
             except Exception as e:
                 notify(f"⚠️ error searching [{q}]: {e}")
 
@@ -188,8 +269,15 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
         await write_to_cache(tweets_batch, "Progressive tweet scraping", username=target_username)
 
     sorted_items = []
+    # Check if we should use Browserbase for all scraping
+    use_browserbase = should_use_browserbase_for_scraping()
+    if use_browserbase:
+        notify("🌐 Environment configured to use Browserbase for all scraping")
+    else:
+        notify("💻 Using local scraping with Browserbase fallback on bot detection")
+
     # Gather tweets with progressive writing enabled
-    trending = await gather_trending(relevant_accounts, queries, max_scrolls=max_scrolls, username=username, write_callback=progressive_write)
+    trending = await gather_trending(relevant_accounts, queries, max_scrolls=max_scrolls, username=username, write_callback=progressive_write, use_browserbase=use_browserbase)
     # sort by score desc
     sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
     if max_tweets:

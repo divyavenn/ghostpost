@@ -201,52 +201,109 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      console.log('Starting OAuth flow with browser...');
+      console.log('Starting Twitter login...');
 
-      alert('A browser window will open on the server for login.\n\nPlease complete the Twitter OAuth flow in that browser window.\n\nThis page will automatically update when complete.');
+      // Step 1: Open loading page IMMEDIATELY (synchronously) to avoid popup blockers
+      const loginTab = window.open('/login-loading', '_blank');
 
-      // Start Twitter OAuth - this now opens a browser on backend
-      const response = await api.startTwitterOAuth(window.location.origin);
-      console.log('OAuth response:', response);
-      const sessionId = response.session_id;
+      if (!loginTab) {
+        alert('Please allow popups to continue with login');
+        return;
+      }
 
-      // Poll for login completion
-      const checkInterval = setInterval(async () => {
+      // Step 2: Get Twitter login URL from backend
+      // VITE_API_BASE_URL already includes /api in production
+      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+      const response = await fetch(`${apiBaseUrl}/auth/twitter/login-url`, {
+        method: 'POST'
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get login URL');
+      }
+
+      const { login_url, session_id } = await response.json();
+      console.log('Got login URL, session:', session_id);
+
+      // Step 3: Wait for login page to be ready, then send login URL
+      let messageSent = false;
+      const sendLoginUrl = () => {
+        if (messageSent) return; // Prevent duplicate sends
+        messageSent = true;
+        console.log('Sending LOGIN_URL to tab:', login_url);
+        loginTab.postMessage({
+          type: 'LOGIN_URL',
+          url: login_url
+        }, window.location.origin);
+      };
+
+      // Listen for ready message from login tab
+      const handleReadyMessage = (event: MessageEvent) => {
+        console.log('Received message from login tab:', event.data);
+        if (event.origin !== window.location.origin) {
+          console.warn('Ignoring message from different origin:', event.origin);
+          return;
+        }
+        if (event.data.type === 'LOGIN_PAGE_READY') {
+          console.log('Login page is ready, sending URL');
+          window.removeEventListener('message', handleReadyMessage);
+          sendLoginUrl();
+        }
+      };
+
+      window.addEventListener('message', handleReadyMessage);
+      console.log('Waiting for LOGIN_PAGE_READY from child window...');
+
+      // Fallback: send after 1000ms if no ready message received
+      setTimeout(() => {
+        console.log('Fallback timeout: sending login URL anyway');
+        window.removeEventListener('message', handleReadyMessage);
+        sendLoginUrl();
+      }, 1000);
+
+      // Step 4: Poll backend for cookie import completion
+      const pollInterval = setInterval(async () => {
         try {
-          const statusResponse = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/auth/twitter/status/${sessionId}`);
+          const statusResponse = await fetch(
+            `${apiBaseUrl}/auth/twitter/cookie-status/${session_id}`
+          );
+
+          if (!statusResponse.ok) return; // Keep polling
+
           const status = await statusResponse.json();
+          console.log('Cookie import status:', status);
 
-          console.log('Login status:', status);
+          if (status.status === 'success' && status.username) {
+            clearInterval(pollInterval);
+            console.log('✅ Login successful for:', status.username);
 
-          if (status.status === 'complete') {
-            clearInterval(checkInterval);
-            console.log('Login completed for user:', status.username);
+            // Close the login tab
+            try {
+              loginTab.close();
+              console.log('Closed login tab');
+            } catch (e) {
+              console.warn('Could not close login tab:', e);
+            }
 
-            // Set username and load data
+            // Bring main window back into focus
+            window.focus();
+
+            // Load user data in main app
             setUsername(status.username);
             localStorage.setItem('username', status.username);
             await loadUserInfo(status.username);
             await loadTweets(status.username);
             await loadPostedTweets(status.username);
-          } else if (status.status === 'error') {
-            clearInterval(checkInterval);
-            console.error('Login error:', status.error);
-            alert(`Login failed: ${status.error}`);
-          } else if (status.status === 'not_found') {
-            clearInterval(checkInterval);
-            console.error('Session not found');
-            alert('Login session not found. Please try again.');
           }
-          // If status is "pending", keep polling
         } catch (error) {
-          console.error('Error checking login status:', error);
-          // Don't clear interval on network errors, keep polling
+          console.error('Polling error:', error);
+          // Keep polling even on errors
         }
       }, 2000); // Poll every 2 seconds
 
       // Timeout after 5 minutes
       setTimeout(() => {
-        clearInterval(checkInterval);
+        clearInterval(pollInterval);
         console.log('Login polling timeout');
       }, 300000);
 

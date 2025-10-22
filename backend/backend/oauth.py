@@ -202,7 +202,13 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
         async with async_playwright() as p:
             # OAuth MUST be visible so user can log in - never use headless!
             # Browser renders to DISPLAY=:99 (Xvfb virtual display, viewable via noVNC)
-            browser = await p.chromium.launch(headless=False)
+            browser = await p.chromium.launch(
+                headless=False,
+                args=[
+                    '--no-sandbox',  # Required for Docker
+                    '--disable-dev-shm-usage',  # Overcome limited resource problems
+                ]
+            )
             context = await browser.new_context()
             page = await context.new_page()
             await page.goto(auth_url)

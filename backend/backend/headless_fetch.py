@@ -3,11 +3,13 @@ import re
 from asyncio import sleep
 
 from .full_thread import get_thread
+from backend.utils import notify
 
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # Python <3.11
-    UTC = UTC
+    from datetime import timezone
+    UTC = timezone.utc
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -718,9 +720,9 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
 
     await page.goto(url, wait_until="domcontentloaded")
     if handle:
-        print(f"Got to @{handle}'s timeline! via {url}")
+        notify(f"Got to @{handle}'s timeline! via {url}")
     else:
-        print(f"Got to search results via {url}")
+        notify(f"Got to search results via {url}")
 
     await page.wait_for_event(
         "response",

@@ -8,8 +8,10 @@ from pydantic import BaseModel
 # Handle imports for both package and standalone execution
 try:
     from backend.resolve_imports import ensure_standalone_imports
+    from backend.config import SHOW_BROWSER
 except ModuleNotFoundError:  # Running from inside backend/
     from resolve_imports import ensure_standalone_imports
+    from config import SHOW_BROWSER
 
 ensure_standalone_imports(globals())
 
@@ -21,42 +23,41 @@ except ImportError:
     from utils import error, notify
 
 # -------- Config --------
-USERNAME = "proudlurker"
-
-PASSWORD = r"JXJ-pfd3bdv*myu0whb"
-
-# Check if headless mode from environment variable (for SCRAPING only)
 import os
+from backend.config import (
+    DEFAULT_MAX_TWEETS_RETRIEVE as MAX_TWEETS_RETRIEVE,
+    DEFAULT_QUERIES as QUERIES,
+    DEFAULT_TWITTER_PASSWORD as PASSWORD,
+    DEFAULT_TWITTER_USERNAME as USERNAME,
+    DEFAULT_USERNAMES as USERNAMES,
+    SHOW_BROWSER,
+    USE_BROWSERBASE_FOR_SCRAPING,
+)
+
 def should_use_headless_for_scraping() -> bool:
     """
     Return True if browser should run in headless mode for AUTOMATED SCRAPING.
-    Defaults to True if HEADLESS_BROWSER is not set (safe for production).
+    Uses SHOW_BROWSER config variable (can be overridden by HEADLESS_BROWSER env var).
     """
     headless_env = os.getenv("HEADLESS_BROWSER")
-    if headless_env is None:
-        return True  # Default to headless for scraping (production-safe)
-    return headless_env.lower() in ("true", "1", "yes")
+    if headless_env is not None:
+        # Environment variable override
+        return headless_env.lower() in ("true", "1", "yes")
+    # Use config value (inverted - SHOW_BROWSER=True means headless=False)
+    return not SHOW_BROWSER
 
 def should_use_browserbase_for_scraping() -> bool:
     """
     Return True if scraping should use Browserbase instead of local browser.
-    Set USE_BROWSERBASE_FOR_SCRAPING=true to always use Browserbase.
-    Defaults to False (use local scraping with Browserbase fallback on bot detection).
+    Uses USE_BROWSERBASE_FOR_SCRAPING config variable (can be overridden by env var).
     """
     browserbase_env = os.getenv("USE_BROWSERBASE_FOR_SCRAPING")
-    if browserbase_env is None:
-        return False  # Default to local with fallback (cost-effective)
-    return browserbase_env.lower() in ("true", "1", "yes")
+    if browserbase_env is not None:
+        return browserbase_env.lower() in ("true", "1", "yes")
+    # Use config value
+    return USE_BROWSERBASE_FOR_SCRAPING
 
 see_browser = not should_use_headless_for_scraping()  # Show browser only if not in headless mode
-
-QUERIES = [
-    "multimodal ai -filter:links -filter:replies -is:retweet lang:en",
-]
-
-USERNAMES = ["divya_venn"]
-
-MAX_TWEETS_RETRIEVE = 30  # per user or query
 
 # Global status tracker for scraping progress
 scraping_status = {}  # {username: {"type": "account"/"query", "value": "handle/query", "phase": "scraping"/"complete"}}

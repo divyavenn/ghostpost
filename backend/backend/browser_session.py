@@ -7,12 +7,11 @@ import time
 
 from playwright.async_api import BrowserContext, Page, async_playwright
 
+from backend.config import SESSION_TIMEOUT
+
 # Store active browser sessions
 # Key: session_id, Value: {browser, context, page, username, created_at}
 active_sessions: dict[str, dict] = {}
-
-# Session timeout (5 minutes)
-SESSION_TIMEOUT = 300
 
 
 async def cleanup_expired_sessions():
@@ -156,7 +155,7 @@ async def close_session(session_id: str):
         await session["browser"].close()
         await session["playwright"].stop()
     except Exception as e:
-        print(f"Error closing session: {e}")
+        notify(f"Error closing session: {e}")
     finally:
         del active_sessions[session_id]
 

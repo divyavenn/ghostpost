@@ -1,4 +1,5 @@
 import { type TweetData } from '../components/tweet_new';
+import { type PostedTweetData } from '../components/posted_tweet';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/';
 
@@ -103,6 +104,26 @@ export const api = {
       },
     });
     if (!response.ok) throw new Error('Failed to check browser login');
+    return response.json();
+  },
+
+  getLoginUrl: async (frontendUrl: string): Promise<{ login_url: string; session_id: string }> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/login-url`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        frontend_url: frontendUrl
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to get login URL');
+    return response.json();
+  },
+
+  checkCookieStatus: async (sessionId: string): Promise<{ status: string; username?: string; verified?: boolean }> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/cookie-status/${sessionId}`);
+    if (!response.ok) throw new Error('Failed to check cookie status');
     return response.json();
   },
 
@@ -311,9 +332,23 @@ export const api = {
   },
 
   // Posted tweets endpoints
-  getPostedTweets: async (username: string, limit: number = 50, offset: number = 0): Promise<{ username: string; count: number; limit: number; offset: number; tweets: TweetData[] }> => {
-    const response = await fetch(`${API_BASE_URL}/posted/${encodeURIComponent(username)}/tweets?limit=${limit}&offset=${offset}`);
+  getPostedTweets: async (username: string, limit: number = 50, offset: number = 0): Promise<{ username: string; total: number; count: number; limit: number; offset: number; tweets: PostedTweetData[] }> => {
+    const response = await fetch(`${API_BASE_URL}/performance/${encodeURIComponent(username)}/posted-tweets?limit=${limit}&offset=${offset}`);
     if (!response.ok) throw new Error('Failed to get posted tweets');
+    return response.json();
+  },
+
+  checkTweetPerformance: async (username: string, tweetIds: string[]): Promise<{ message: string; updated_count: number; metrics: Array<{ id: string; likes: number; retweets: number; quotes: number; replies: number }> }> => {
+    const response = await fetch(`${API_BASE_URL}/performance/${encodeURIComponent(username)}/check-performance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tweet_ids: tweetIds
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to check tweet performance');
     return response.json();
   },
 };

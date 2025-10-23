@@ -1,43 +1,55 @@
 import { type UserInfo } from '../api/client';
+import { AnimatedNumber } from './AnimatedNumber';
 
 interface StatsDashboardProps {
   userInfo: UserInfo;
 }
 
 export function StatsDashboard({ userInfo }: StatsDashboardProps) {
-  // Format time saved to hours and minutes
-  const formatTimeSaved = (seconds: number): string => {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-
-    if (hours > 0 && minutes > 0) {
-      return `${hours}h ${minutes}m`;
-    } else if (hours > 0) {
-      return `${hours}h`;
-    } else {
-      return `${minutes}m`;
-    }
-  };
+  // Calculate minutes saved from seconds
+  const minutesSaved = userInfo.scrolling_time_saved
+    ? Math.round(userInfo.scrolling_time_saved / 60)
+    : 0;
 
   return (
-    <div className="flex justify-center gap-4 py-4 px-6">
-      {/* Lifetime Posts */}
-      <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/20 rounded-lg px-6 py-3 border border-blue-500/30 min-w-[140px]">
-        <div className="text-blue-200 text-xs font-medium mb-1">Lifetime Posts</div>
-        <div className="text-white text-2xl font-bold">{userInfo.lifetime_posts || 0}</div>
-      </div>
+    <div className="flex justify-center py-4">
+      <div className="bg-black/40 backdrop-blur-sm rounded-2xl px-12 py-6 max-w-3xl">
+        <div className="mb-6">
+          <h2 className="text-white text-lg font-[Geisz Mono]">stats</h2>
+        </div>
+        <div className="grid grid-cols-3 gap-12">
+          {/* Lifetime Posts */}
+          <div className="text-center">
+            <div className="text-orange-400 text-5xl font-bold mb-2">
+              <AnimatedNumber
+                value={userInfo.lifetime_posts || 0}
+                className="text-orange-400 text-5xl font-bold"
+              />
+            </div>
+            <div className="text-white text-sm">tweets posted</div>
+          </div>
 
-      {/* Lifetime New Follows */}
-      <div className="bg-gradient-to-br from-green-500/20 to-green-600/20 rounded-lg px-6 py-3 border border-green-500/30 min-w-[140px]">
-        <div className="text-green-200 text-xs font-medium mb-1">New Followers</div>
-        <div className="text-white text-2xl font-bold">{userInfo.lifetime_new_follows || 0}</div>
-      </div>
+          {/* Lifetime New Follows */}
+          <div className="text-center">
+            <div className="text-blue-400 text-5xl font-bold mb-2">
+              <AnimatedNumber
+                value={userInfo.lifetime_new_follows || 0}
+                className="text-blue-400 text-5xl font-bold"
+              />
+            </div>
+            <div className="text-white text-sm">new followers</div>
+          </div>
 
-      {/* Scrolling Time Saved */}
-      <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/20 rounded-lg px-6 py-3 border border-purple-500/30 min-w-[140px]">
-        <div className="text-purple-200 text-xs font-medium mb-1">Time Saved</div>
-        <div className="text-white text-2xl font-bold">
-          {userInfo.scrolling_time_saved ? formatTimeSaved(userInfo.scrolling_time_saved) : '0m'}
+          {/* Scrolling Time Saved */}
+          <div className="text-center">
+            <div className="text-white text-5xl font-bold mb-2">
+              <AnimatedNumber
+                value={minutesSaved}
+                className="text-white text-5xl font-bold"
+              />
+            </div>
+            <div className="text-white text-sm">minutes saved</div>
+          </div>
         </div>
       </div>
     </div>

@@ -198,7 +198,7 @@
     "cookies": [
       {
         "domain": ".x.com",
-        "expirationDate": 1776736800.993624,
+        "expirationDate": 1776755362.972306,
         "hostOnly": false,
         "httpOnly": false,
         "name": "__cuid",
@@ -248,7 +248,7 @@
       },
       {
         "domain": ".x.com",
-        "expirationDate": 1763709349,
+        "expirationDate": 1763834865,
         "hostOnly": false,
         "httpOnly": false,
         "name": "d_prefs",
@@ -325,7 +325,7 @@
       },
       {
         "domain": ".x.com",
-        "expirationDate": 1776736803.069525,
+        "expirationDate": 1776755365.039386,
         "hostOnly": false,
         "httpOnly": false,
         "name": "twid",
@@ -351,7 +351,7 @@
       },
       {
         "domain": ".x.com",
-        "expirationDate": 1776736801.393721,
+        "expirationDate": 1776755363.356809,
         "hostOnly": false,
         "httpOnly": true,
         "name": "auth_multi",
@@ -377,7 +377,7 @@
       },
       {
         "domain": ".x.com",
-        "expirationDate": 1776736800.748067,
+        "expirationDate": 1776755362.736218,
         "hostOnly": false,
         "httpOnly": false,
         "name": "guest_id_ads",
@@ -390,7 +390,7 @@
       },
       {
         "domain": ".x.com",
-        "expirationDate": 1776736800.748225,
+        "expirationDate": 1776755362.736318,
         "hostOnly": false,
         "httpOnly": false,
         "name": "guest_id_marketing",
@@ -416,7 +416,7 @@
       },
       {
         "domain": ".x.com",
-        "expirationDate": 1761789601.31513,
+        "expirationDate": 1761808163.278264,
         "hostOnly": false,
         "httpOnly": false,
         "name": "external_referer",
@@ -428,8 +428,8 @@
         "value": "vC8TI7P7q9UHtLBqrmGBr69ZIZ0kcYBq|0|8e8t2xd8A2w%3D"
       },
       {
-        "domain": "api.x.com",
-        "expirationDate": 1761186609.129292,
+        "domain": "developer.x.com",
+        "expirationDate": 1761203679.071147,
         "hostOnly": true,
         "httpOnly": true,
         "name": "__cf_bm",
@@ -438,11 +438,24 @@
         "secure": true,
         "session": false,
         "storeId": "0",
-        "value": "4BT0iUjxy_feRYUcNEq_pcvxB9HluHA45YoDrVRbW6o-1761184809.1236763-1.0.1.1-2RfgAZuwHWl3UU2FC6R9zx4ZVYzBC5TVo4.KdoqevZt04eAXjzAwA3PpKwKFmXyxCpEtu2vhVVnkXaZpFp7TaVBkkxd8PxhsSo8seZ7T3rKEjuqDPmPHvRMeH8eHsHOO"
+        "value": "8UAU6E2LXe_zUwBmop4mcMjKY7Dnilk1eD0KkHQj.C0-1761201878.751866-1.0.1.1-IigPZf56QHj06pKnI35N0HlT2G7bhwY8HeKeyuZIbHQXMJmzkpaiV9KTuvCDJ5bQUTx2ScpeyhIFsvTSHzZT2zCDmlx599gLJyZ0ogmUdN9q2bISGyt0mefqhn1OMWkW"
+      },
+      {
+        "domain": "api.x.com",
+        "expirationDate": 1761205163.356866,
+        "hostOnly": true,
+        "httpOnly": true,
+        "name": "__cf_bm",
+        "path": "/",
+        "sameSite": "Lax",
+        "secure": true,
+        "session": false,
+        "storeId": "0",
+        "value": "pWD.xE_frrX6lK7Fz4OBVrLVzc65735v4qVWWOHP1K0-1761203363.3007417-1.0.1.1-PhkbE2lRrLFqy6aIQY8zRfSxiKPnmv6sRd9HoECDOxuS_4hPLtPtWX9sjBcnEy3igqbepWpSowbqybOifXJsO1Ecw4Dy3g4D2AhH0E9_fka2oFvNSrhhmvAGKnr4qstB"
       },
       {
         "domain": "x.com",
-        "expirationDate": 1761186611.328398,
+        "expirationDate": 1761205165.039625,
         "hostOnly": true,
         "httpOnly": true,
         "name": "__cf_bm",
@@ -451,7 +464,7 @@
         "secure": true,
         "session": false,
         "storeId": "0",
-        "value": "h0FyaKSHIVCBJNEx7.6C8v7ilRwP5UHIwO13vIL4mvI-1761184811.0523877-1.0.1.1-VXxVLkVDf2qLv0NeYqdAYPJtzJD0yOW6tEYlOGuqlozLbvhvfjA1X_ZApU.4Ie94T99T20ks3a9d_Xk5t..DaSGyM5djRio_GX26SEm7Ax7Wwk9QA1sio4R6zWpdALxr"
+        "value": "p4e414wzTb3PadnVGfxxKh27djThxiP5Ph8gq2KhFS4-1761203364.9911172-1.0.1.1-jQfF89I4aK5cH8e0oHTyi72X4RI8qOz3ziAvDIE1HYesCbN4j8471hxU1QV2UjDHMsqkmm_VHMtgSr6lKLmjc3UxveNiNdAkxP7CR4fQAOyZJbLXwt2yd5pVNl1HaJ6K"
       },
       {
         "domain": ".twitter.com",
@@ -512,6 +525,6 @@
         "localStorage": []
       }
     ],
-    "timestamp": "2025-10-23T02:00:13.398032+00:00"
+    "timestamp": "2025-10-23T07:09:26.989072+00:00"
   }
 }

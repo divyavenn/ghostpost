@@ -1,8 +1,14 @@
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+try:  # Python 3.11+
+    from datetime import UTC  # type: ignore[attr-defined]
+except ImportError:  # Python <3.11
+    from datetime import timezone
+    UTC = timezone.utc
 
 from fastapi import APIRouter
 from pydantic import BaseModel

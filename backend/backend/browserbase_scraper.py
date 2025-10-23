@@ -1,8 +1,9 @@
 """Browserbase-based scraping fallback for improved bot detection evasion."""
 
-import os
 from playwright.async_api import async_playwright
 from browserbase import Browserbase
+
+from backend.config import BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
 
 try:
     from backend.headless_fetch import collect_from_page
@@ -26,20 +27,17 @@ async def get_browserbase_session(username: str):
     Raises:
         ValueError: If Browserbase credentials are missing
     """
-    browserbase_api_key = os.getenv("BROWSERBASE_API_KEY")
-    browserbase_project_id = os.getenv("BROWSERBASE_PROJECT_ID")
-
-    if not browserbase_api_key:
+    if not BROWSERBASE_API_KEY:
         raise ValueError("BROWSERBASE_API_KEY environment variable not set")
 
-    if not browserbase_project_id:
+    if not BROWSERBASE_PROJECT_ID:
         raise ValueError("BROWSERBASE_PROJECT_ID environment variable not set")
 
     notify(f"🌐 Creating Browserbase session for {username}...")
-    browserbase = Browserbase(api_key=browserbase_api_key)
+    browserbase = Browserbase(api_key=BROWSERBASE_API_KEY)
 
     # Create session
-    session = browserbase.sessions.create(project_id=browserbase_project_id)
+    session = browserbase.sessions.create(project_id=BROWSERBASE_PROJECT_ID)
     session_id = session.id
 
     notify(f"✅ Browserbase session created: {session_id}")

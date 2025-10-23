@@ -3,6 +3,8 @@ import requests
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
+from backend.utils import notify
+
 
 # --- config ---
 # OAuth 2.0 *user access token* with permission to create posts (tweets)
@@ -33,7 +35,10 @@ class ReplyTweet(BaseModel):
 
 async def post(username, payload: dict, cache_id: str | None = None) -> dict:
     from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.posted_tweets_cache import add_posted_tweet
+    from backend.tweets_cache import get_user_tweet_cache
     from backend.utils import read_user_info, write_user_info, notify
+    import json
 
     access_token = await _get_access_token_for_user(username)
 
@@ -69,6 +74,44 @@ async def post(username, payload: dict, cache_id: str | None = None) -> dict:
         # Log using the original tweet ID as the key if available, otherwise use posted_tweet_id
         log_key = original_tweet_id or posted_tweet_id
         log_tweet_action(username, TweetAction.POSTED, str(log_key), metadata=metadata)
+
+        # Get original tweet data from cache for posted_tweets.json
+        response_to_thread = []
+        responding_to_handle = ""
+        replying_to_pfp = ""
+        original_tweet_url = ""
+
+        if cache_id:
+            try:
+                cache_path = get_user_tweet_cache(username)
+                if cache_path.exists():
+                    with open(cache_path, encoding="utf-8") as f:
+                        cached_tweets = json.load(f)
+
+                    # Find the original tweet by cache_id
+                    for tweet in cached_tweets:
+                        if tweet.get("cache_id") == cache_id:
+                            response_to_thread = tweet.get("thread", [])
+                            responding_to_handle = tweet.get("handle", "")
+                            replying_to_pfp = tweet.get("author_profile_pic_url", "")
+                            original_tweet_url = tweet.get("url", "")
+                            break
+            except Exception as e:
+                notify(f"⚠️ Could not fetch original tweet data from cache: {e}")
+
+        # Add to posted_tweets.json cache
+        try:
+            add_posted_tweet(
+                username=username,
+                posted_tweet_id=posted_tweet_id,
+                text=payload.get("text", ""),
+                original_tweet_url=original_tweet_url,
+                responding_to_handle=responding_to_handle,
+                replying_to_pfp=replying_to_pfp,
+                response_to_thread=response_to_thread
+            )
+        except Exception as e:
+            notify(f"⚠️ Failed to add to posted_tweets cache: {e}")
 
         # Increment lifetime_posts
         try:
@@ -106,15 +149,16 @@ async def post_quote_tweet(username: str, payload: ReplyTweet) -> dict:
 @router.delete("/tweet/{tweet_id}")
 async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict:
     """Delete a posted tweet from Twitter via API.
-    
+
     Args:
         tweet_id: The Twitter-assigned ID of the posted tweet
         username: The username who owns the tweet
-    
+
     Returns:
         Success message and metadata
     """
     from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.utils import read_user_info, write_user_info
 
     access_token = await _get_access_token_for_user(username)
 
@@ -126,6 +170,20 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
     if response.status_code == 200:
         # Successfully deleted - log the action
         log_tweet_action(username, TweetAction.DELETED, tweet_id, metadata={"deleted_from_twitter": True, "posted_tweet_id": tweet_id})
+
+        # Decrement lifetime_posts
+        try:
+            user_info = read_user_info(username)
+            if user_info:
+                current_posts = user_info.get("lifetime_posts", 0)
+                # Only decrement if count is greater than 0
+                if current_posts > 0:
+                    user_info["lifetime_posts"] = current_posts - 1
+                    write_user_info(user_info)
+                    notify(f"📝 Post count decremented for @{username} (total: {user_info['lifetime_posts']})")
+        except Exception as e:
+            notify(f"⚠️ Failed to update post count for {username}: {e}")
+
         return {"message": "Tweet deleted successfully", "tweet_id": tweet_id, "deleted": True}
     elif response.status_code == 404:
         # Tweet not found (may already be deleted)

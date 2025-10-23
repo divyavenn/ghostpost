@@ -8,7 +8,13 @@ from pydantic import BaseModel
 
 from backend.oauth import exchange_code_for_token, get_authorization_url
 from backend.user import get_user_info
-from backend.utils import BROWSER_STATE_FILE, atomic_file_update, store_browser_state, store_token
+from backend.utils import atomic_file_update, notify, store_browser_state, store_token
+from backend.config import (
+    BROWSERBASE_API_KEY,
+    BROWSERBASE_PROJECT_ID,
+    BROWSER_STATE_FILE,
+    SHOW_BROWSER,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -82,13 +88,12 @@ async def start_browser_login() -> dict[str, str]:
     Start Twitter login using Browserbase with username/password.
     User logs in via Browserbase debugger to capture session cookies.
     """
-    import os
     from playwright.async_api import async_playwright
     from browserbase import Browserbase
 
-    # Get Browserbase API key from environment
-    browserbase_api_key = os.getenv("BROWSERBASE_API_KEY")
-    browserbase_project_id = os.getenv("BROWSERBASE_PROJECT_ID")
+    # Get Browserbase API key from config
+    browserbase_api_key = BROWSERBASE_API_KEY
+    browserbase_project_id = BROWSERBASE_PROJECT_ID
 
     if not browserbase_api_key:
         raise ValueError("BROWSERBASE_API_KEY environment variable not set")
@@ -100,11 +105,11 @@ async def start_browser_login() -> dict[str, str]:
     session_id = secrets.token_urlsafe(32)
 
     # Create Browserbase session
-    print("🌐 Creating Browserbase session for browser login...")
+    notify("🌐 Creating Browserbase session for browser login...")
     browserbase = Browserbase(api_key=browserbase_api_key)
 
     # Create session with project ID and enable residential proxies
-    print("🔒 Enabling residential proxies for anti-bot protection...")
+    notify("🔒 Enabling residential proxies for anti-bot protection...")
     session = browserbase.sessions.create(
         project_id=browserbase_project_id,
         proxies=True  # Enable US-based residential proxies
@@ -115,8 +120,8 @@ async def start_browser_login() -> dict[str, str]:
     debug_info = browserbase.sessions.debug(session_id_bb)
     debugger_url = debug_info.debugger_fullscreen_url
 
-    print(f"✅ Browserbase session created: {session_id_bb}")
-    print(f"🔗 Debugger URL: {debugger_url}")
+    notify(f"✅ Browserbase session created: {session_id_bb}")
+    notify(f"🔗 Debugger URL: {debugger_url}")
 
     # Connect Playwright to Browserbase session
     playwright = await async_playwright().start()
@@ -125,7 +130,7 @@ async def start_browser_login() -> dict[str, str]:
     page = context.pages[0] if context.pages else await context.new_page()
 
     # Navigate to Twitter login page
-    print("🔗 Navigating to Twitter login page...")
+    notify("🔗 Navigating to Twitter login page...")
     await page.goto("https://x.com/i/flow/login")
 
     # Store browser session for later retrieval
@@ -165,11 +170,11 @@ async def check_browser_login(session_id: str) -> dict:
     try:
         # Check if we're on Twitter home page (successful login indicator)
         current_url = page.url
-        print(f"📍 Current URL: {current_url}")
+        notify(f"📍 Current URL: {current_url}")
 
         # Successful login redirects to /home
         if "/home" in current_url:
-            print("✅ Login successful! Capturing browser state...")
+            notify("✅ Login successful! Capturing browser state...")
 
             # Give time for all cookies to be set
             await page.wait_for_timeout(2000)
@@ -185,14 +190,14 @@ async def check_browser_login(session_id: str) -> dict:
                 else:
                     # Fallback: ask user or extract from URL
                     username = "unknown_user"
-                    print("⚠️ Could not auto-detect username")
+                    notify("⚠️ Could not auto-detect username")
             except Exception as e:
-                print(f"Warning: Could not extract username: {e}")
+                notify(f"Warning: Could not extract username: {e}")
                 username = "unknown_user"
 
             # Save browser state with captured cookies
             await store_browser_state(username, context)
-            print(f"💾 Browser state saved for {username}")
+            notify(f"💾 Browser state saved for {username}")
 
             # Clean up browser session
             await _cleanup_browser(browser_session)
@@ -224,7 +229,7 @@ async def check_browser_login(session_id: str) -> dict:
             }
 
     except Exception as e:
-        print(f"❌ Error checking login status: {e}")
+        notify(f"❌ Error checking login status: {e}")
         return {
             "status": "error",
             "error": str(e)
@@ -301,12 +306,12 @@ async def twitter_callback(
 
     try:
         # Exchange code for OAuth tokens
-        print("🔄 Exchanging OAuth code for tokens...")
+        notify("🔄 Exchanging OAuth code for tokens...")
         try:
             token_response = exchange_code_for_token(code, code_verifier)
         except Exception as token_error:
             error_msg = f"Twitter API rejected token exchange: {str(token_error)}"
-            print(f"❌ {error_msg}")
+            notify(f"❌ {error_msg}")
             if session_id and session_id in _cookie_sessions:
                 _cookie_sessions[session_id]["status"] = "error"
                 _cookie_sessions[session_id]["error"] = "token_exchange_failed"
@@ -332,7 +337,7 @@ async def twitter_callback(
 
         if not access_token or not refresh_token:
             error_msg = f"Twitter returned incomplete token response (access_token: {bool(access_token)}, refresh_token: {bool(refresh_token)})"
-            print(f"❌ {error_msg}")
+            notify(f"❌ {error_msg}")
             if session_id and session_id in _cookie_sessions:
                 _cookie_sessions[session_id]["status"] = "error"
                 _cookie_sessions[session_id]["error"] = "incomplete_tokens"
@@ -356,7 +361,7 @@ async def twitter_callback(
             twitter_handle = user_info.get("handle") or user_info.get("username")
         except Exception as user_info_error:
             error_msg = f"Failed to fetch user info from Twitter API: {str(user_info_error)}"
-            print(f"❌ {error_msg}")
+            notify(f"❌ {error_msg}")
             if session_id and session_id in _cookie_sessions:
                 _cookie_sessions[session_id]["status"] = "error"
                 _cookie_sessions[session_id]["error"] = "user_info_fetch_failed"
@@ -378,7 +383,7 @@ async def twitter_callback(
 
         if not twitter_handle:
             error_msg = "Twitter API returned user info but username/handle is missing"
-            print(f"❌ {error_msg}")
+            notify(f"❌ {error_msg}")
             if session_id and session_id in _cookie_sessions:
                 _cookie_sessions[session_id]["status"] = "error"
                 _cookie_sessions[session_id]["error"] = "no_handle"
@@ -397,7 +402,7 @@ async def twitter_callback(
             """)
 
         # Store OAuth tokens (API access tokens)
-        print(f"✅ OAuth tokens obtained for @{twitter_handle}")
+        notify(f"✅ OAuth tokens obtained for @{twitter_handle}")
         store_token(twitter_handle, refresh_token, access_token, expires_in)
 
         # Update session with username so extension knows which user this is
@@ -406,7 +411,7 @@ async def twitter_callback(
             _cookie_sessions[session_id]["username"] = twitter_handle
             _cookie_sessions[session_id]["status"] = "awaiting_cookies"  # Waiting for extension
             _cookie_sessions[session_id]["oauth_complete_time"] = __import__('datetime').datetime.now(__import__('datetime').timezone.utc).isoformat()
-            print(f"⏳ Session {session_id} awaiting browser cookies for @{twitter_handle}")
+            notify(f"⏳ Session {session_id} awaiting browser cookies for @{twitter_handle}")
 
         # Redirect to React success page - extension will detect this page and send cookies
         # Use stored frontend_url from login initiation, or construct from request headers
@@ -414,7 +419,7 @@ async def twitter_callback(
 
         if frontend_url:
             # Use the exact frontend URL provided by the frontend
-            print(f"🏠 Using provided frontend URL: {frontend_url}")
+            notify(f"🏠 Using provided frontend URL: {frontend_url}")
             base_url = frontend_url.rstrip('/')
         else:
             # Fallback: construct from request headers
@@ -428,11 +433,11 @@ async def twitter_callback(
                 host = host.replace(":8000", "")
 
             base_url = f"{scheme}://{host}"
-            print(f"🏠 Constructed frontend URL from headers: {base_url}")
+            notify(f"🏠 Constructed frontend URL from headers: {base_url}")
 
         # Include username and session_id as URL params for extension to read
         success_url = f"{base_url}/login-success?username={twitter_handle}&session_id={session_id}"
-        print(f"🔗 Redirecting to: {success_url}")
+        notify(f"🔗 Redirecting to: {success_url}")
 
         return HTMLResponse(content=f"""
             <html>
@@ -452,7 +457,7 @@ async def twitter_callback(
         """)
 
     except Exception as e:
-        print(f"❌ OAuth callback error: {e}")
+        notify(f"❌ OAuth callback error: {e}")
         if session_id and session_id in _cookie_sessions:
             _cookie_sessions[session_id]["status"] = "error"
             _cookie_sessions[session_id]["error"] = str(e)
@@ -493,9 +498,9 @@ async def _cleanup_temp_browser_state(temp_username: str):
         if isinstance(cache, dict) and temp_username in cache:
             cache.pop(temp_username)
             atomic_file_update(BROWSER_STATE_FILE, cache)
-            print(f"🧹 Cleaned up temporary browser state for {temp_username}")
+            notify(f"🧹 Cleaned up temporary browser state for {temp_username}")
     except Exception as e:
-        print(f"Warning: Could not cleanup temp browser state: {e}")
+        notify(f"Warning: Could not cleanup temp browser state: {e}")
 
 
 async def _cleanup_browser(browser_session: dict):
@@ -514,14 +519,14 @@ async def _cleanup_browser(browser_session: dict):
             bb_session_id = browser_session["browserbase_session_id"]
             bb_client = browser_session["browserbase_client"]
             try:
-                print(f"🛑 Stopping Browserbase session: {bb_session_id}")
+                notify(f"🛑 Stopping Browserbase session: {bb_session_id}")
                 bb_client.sessions.complete(bb_session_id, status="completed")
-                print(f"✅ Browserbase session {bb_session_id} stopped")
+                notify(f"✅ Browserbase session {bb_session_id} stopped")
             except Exception as e:
-                print(f"Warning: Error stopping Browserbase session: {e}")
+                notify(f"Warning: Error stopping Browserbase session: {e}")
 
     except Exception as e:
-        print(f"Error cleaning up browser: {e}")
+        notify(f"Error cleaning up browser: {e}")
 
 
 
@@ -568,10 +573,10 @@ async def get_login_url(payload: LoginUrlRequest | None = None) -> dict:
         "state": state
     }
 
-    print(f"📝 Created login session: {session_id}")
-    print(f"🔗 OAuth URL: {auth_url}")
+    notify(f"📝 Created login session: {session_id}")
+    notify(f"🔗 OAuth URL: {auth_url}")
     if frontend_url:
-        print(f"🏠 Frontend URL: {frontend_url}")
+        notify(f"🏠 Frontend URL: {frontend_url}")
 
     return {
         "login_url": auth_url,
@@ -640,12 +645,12 @@ async def import_cookies(payload: CookieImport) -> dict:
     username = payload.data.username
     cookies = payload.cookies
 
-    print(f"📦 Received {len(cookies)} cookies for @{username} from extension")
+    notify(f"📦 Received {len(cookies)} cookies for @{username} from extension")
 
     # Validate cookies exist
     if not cookies or len(cookies) == 0:
         error_msg = f"No cookies provided for @{username}"
-        print(f"❌ {error_msg}")
+        notify(f"❌ {error_msg}")
         return {
             "success": False,
             "error": "no_cookies",
@@ -658,7 +663,7 @@ async def import_cookies(payload: CookieImport) -> dict:
     has_auth_token = any(c.get("name") == "auth_token" for c in cookies)
     if not has_auth_token:
         error_msg = f"Missing auth_token cookie for @{username}"
-        print(f"⚠️  {error_msg}")
+        notify(f"⚠️  {error_msg}")
         return {
             "success": False,
             "error": "missing_auth_token",
@@ -683,12 +688,12 @@ async def import_cookies(payload: CookieImport) -> dict:
 
             sanitized_cookies.append(sanitized)
         except Exception as e:
-            print(f"⚠️  Warning: Could not sanitize cookie {cookie.get('name', 'unknown')}: {e}")
+            notify(f"⚠️  Warning: Could not sanitize cookie {cookie.get('name', 'unknown')}: {e}")
             continue
 
     if len(sanitized_cookies) == 0:
         error_msg = f"All cookies failed sanitization for @{username}"
-        print(f"❌ {error_msg}")
+        notify(f"❌ {error_msg}")
         return {
             "success": False,
             "error": "cookie_sanitization_failed",
@@ -712,7 +717,7 @@ async def import_cookies(payload: CookieImport) -> dict:
         }
     except Exception as e:
         error_msg = f"Failed to create storage state for @{username}: {e}"
-        print(f"❌ {error_msg}")
+        notify(f"❌ {error_msg}")
         return {
             "success": False,
             "error": "storage_state_creation_failed",
@@ -727,13 +732,13 @@ async def import_cookies(payload: CookieImport) -> dict:
             try:
                 cache = json.loads(BROWSER_STATE_FILE.read_text())
             except json.JSONDecodeError as e:
-                print(f"⚠️  Warning: Corrupted cache file, creating new one: {e}")
+                notify(f"⚠️  Warning: Corrupted cache file, creating new one: {e}")
                 cache = {}
         else:
             cache = {}
     except Exception as e:
         error_msg = f"Failed to load browser state cache: {e}"
-        print(f"❌ {error_msg}")
+        notify(f"❌ {error_msg}")
         return {
             "success": False,
             "error": "cache_load_failed",
@@ -748,10 +753,10 @@ async def import_cookies(payload: CookieImport) -> dict:
     # Save to file
     try:
         atomic_file_update(BROWSER_STATE_FILE, cache)
-        print(f"✅ Imported {len(cookies)} cookies for @{username}")
+        notify(f"✅ Imported {len(cookies)} cookies for @{username}")
     except Exception as e:
         error_msg = f"Failed to save browser state for @{username}: {e}"
-        print(f"❌ {error_msg}")
+        notify(f"❌ {error_msg}")
         return {
             "success": False,
             "error": "cache_save_failed",
@@ -765,11 +770,11 @@ async def import_cookies(payload: CookieImport) -> dict:
     verification_error = None
 
     try:
-        print(f"🔍 Verifying cookies for @{username}...")
+        notify(f"🔍 Verifying cookies for @{username}...")
         playwright = await async_playwright().start()
 
         try:
-            browser = await playwright.chromium.launch(headless=True)
+            browser = await playwright.chromium.launch(headless=(not SHOW_BROWSER))
 
             try:
                 context = await browser.new_context(storage_state=storage_state)
@@ -782,15 +787,15 @@ async def import_cookies(payload: CookieImport) -> dict:
                     # Check if we're still on login page (cookies didn't work)
                     current_url = page.url
                     if "/login" in current_url or "/flow" in current_url:
-                        print(f"⚠️  Cookies for @{username} appear invalid (redirected to login)")
+                        notify(f"⚠️  Cookies for @{username} appear invalid (redirected to login)")
                         verified = False
                         verification_error = "Cookies appear invalid - Twitter redirected to login page"
                     else:
-                        print(f"✅ Cookies for @{username} verified successfully")
+                        notify(f"✅ Cookies for @{username} verified successfully")
                         verified = True
 
                 except Exception as e:
-                    print(f"⚠️  Could not navigate to Twitter: {e}")
+                    notify(f"⚠️  Could not navigate to Twitter: {e}")
                     verification_error = f"Navigation failed: {str(e)}"
                     verified = False
 
@@ -806,18 +811,18 @@ async def import_cookies(payload: CookieImport) -> dict:
 
         # Debug: Show all active sessions
         if _cookie_sessions:
-            print(f"🔍 Checking {len(_cookie_sessions)} active session(s):")
+            notify(f"🔍 Checking {len(_cookie_sessions)} active session(s):")
             for sid, sdata in _cookie_sessions.items():
-                print(f"   Session {sid[:8]}...: status={sdata.get('status')}, username={sdata.get('username')}")
+                notify(f"   Session {sid[:8]}...: status={sdata.get('status')}, username={sdata.get('username')}")
         else:
-            print(f"🔍 No active sessions in memory")
+            notify(f"🔍 No active sessions in memory")
 
         for session_id, session_data in _cookie_sessions.items():
             is_waiting = session_data.get("status") in ["pending", "awaiting_cookies"]
             expected_user = session_data.get("username")  # Set during OAuth callback
             is_correct_user = expected_user == username
 
-            print(f"   Session {session_id[:8]}...: waiting={is_waiting}, expected_user={expected_user}, match={is_correct_user}")
+            notify(f"   Session {session_id[:8]}...: waiting={is_waiting}, expected_user={expected_user}, match={is_correct_user}")
 
             if is_waiting and is_correct_user:
                 _cookie_sessions[session_id] = {
@@ -828,17 +833,17 @@ async def import_cookies(payload: CookieImport) -> dict:
                     "error": verification_error if not verified else None
                 }
                 sessions_updated += 1
-                print(f"📢 ✅ Updated session {session_id[:8]}... → success for @{username}")
+                notify(f"📢 ✅ Updated session {session_id[:8]}... → success for @{username}")
 
         if sessions_updated > 0:
-            print(f"✅ Updated {sessions_updated} session(s) for @{username}")
+            notify(f"✅ Updated {sessions_updated} session(s) for @{username}")
         else:
-            print(f"ℹ️  No sessions waiting for @{username} - cookies saved but no matching frontend")
-            print(f"    To test: Start login flow from frontend, not just extension")
+            notify(f"ℹ️  No sessions waiting for @{username} - cookies saved but no matching frontend")
+            notify(f"    To test: Start login flow from frontend, not just extension")
 
     except Exception as e:
         error_msg = f"Cookie verification failed for @{username}: {e}"
-        print(f"❌ {error_msg}")
+        notify(f"❌ {error_msg}")
         verified = False
         verification_error = str(e)
 

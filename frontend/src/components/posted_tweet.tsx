@@ -1,134 +1,50 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
-import { AnimatedText } from './AnimatedText';
 import xLottie from '../assets/x.lottie';
 
-export interface TweetData {
-  id: string;
-  cache_id?: string;
-  posted_tweet_id?: string;  // Twitter's ID for posted tweets (for deletion)
-  text: string;
+export interface PostedTweetData {
+  id: string;  // Posted tweet ID
+  text: string;  // Your response text
   likes: number;
   retweets: number;
   quotes: number;
   replies: number;
-  handle: string;
-  score: number;
-  username: string;
-  followers: number;
-  reply?: string;
   created_at: string;
-  url: string;
-  thread?: string[];
-  author_profile_pic_url?: string;
-  scraped_from?: {
-    type: 'account' | 'query';
-    value: string;
-  };
-  media?: Array<{
-    type: 'photo';
-    url: string;
-    alt_text?: string;
-  }>;
-  quoted_tweet?: {
-    text: string;
-    author_name: string;
-    author_handle: string;
-    author_profile_pic_url?: string;
-    media?: Array<{type: 'photo'; url: string; alt_text?: string}>;
-    created_at: string;
-    url: string;
-  };
+  url: string;  // URL of your posted tweet
+  response_to_thread: string[];  // Original tweet thread you responded to
+  responding_to: string;  // Handle of original tweet author
+  replying_to_pfp: string;  // Profile pic URL of original tweet author
+  original_tweet_url: string;  // URL of original tweet
+  last_metrics_update: string | null;
 }
 
-interface TweetDisplayProps {
-  tweet: TweetData;
-  replyText: string;
+interface PostedTweetDisplayProps {
+  tweet: PostedTweetData;
   myProfilePicUrl: string;
-  onPublish: (text: string) => void;
-  onSkip: () => void;
-  onEditReply?: (newReply: string) => void;
-  onRegenerate?: () => void;
+  myHandle: string;
+  myUsername: string;
+  onDelete: (tweetId: string) => void;
   isDeleting?: boolean;
-  isPosting?: boolean;
-  isRegenerating?: boolean;
-  readOnly?: boolean;
-  showDeleteButton?: boolean;  // Explicit control over delete button visibility
 }
 
-export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
-  const [editedText, setEditedText] = useState(tweet.reply || '');
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsername, onDelete, isDeleting = false }: PostedTweetDisplayProps) {
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const displayName = tweet.username;
-  const handle = tweet.handle;
-  const userAvatar = tweet.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
-  const myAvatar = myProfilePicUrl;
+  // Original tweet author info
+  const originalHandle = tweet.responding_to;
+  const originalAvatar = tweet.replying_to_pfp || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
 
-  const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
+  // Thread messages from the original tweet - only show first 280 characters
+  const threadMessages = useMemo(() => {
+    const messages = tweet.response_to_thread ?? [];
+    if (messages.length === 0) return [];
 
-  // Update editedText when tweet changes
-  useEffect(() => {
-    setEditedText(tweet.reply || '');
-    setHasUnsavedChanges(false);
-  }, [tweet.id, tweet.reply]);
+    // Combine all messages and take first 280 characters
+    const fullText = messages.join(' ');
+    const truncated = fullText.slice(0, 280);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [editedText]);
-
-  // Handle text change and mark as unsaved
-  const handleTextChange = (newText: string) => {
-    setEditedText(newText);
-
-    // Mark as having unsaved changes if different from original
-    if (newText !== tweet.reply) {
-      setHasUnsavedChanges(true);
-    } else {
-      setHasUnsavedChanges(false);
-    }
-
-    // Clear existing debounce timer
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-  };
-
-  // Save changes manually
-  const handleSave = async () => {
-    if (onEditReply && editedText !== tweet.reply) {
-      await onEditReply(editedText);
-      setHasUnsavedChanges(false);
-    }
-  };
-
-  // Handle publish - save first if needed, then publish
-  const handlePublish = async () => {
-    // Save changes first if there are any
-    if (hasUnsavedChanges && onEditReply && editedText !== tweet.reply) {
-      await onEditReply(editedText);
-      setHasUnsavedChanges(false);
-    }
-    // Then publish
-    onPublish(editedText);
-  };
-
-  // Cleanup timer on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
+    return [truncated];
+  }, [tweet.response_to_thread]);
 
   const getRelativeTime = (dateStr: string): string => {
     try {
@@ -156,41 +72,37 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
       className={`w-full px-[2%] pb-[4%] rounded-2xl bg-black text-white shadow-2xl transition-all ${
         isDeleting
           ? 'duration-300 scale-95 opacity-0'
-          : isPosting
-          ? 'duration-400 translate-x-[150%] opacity-0'
           : 'duration-300 scale-100 opacity-100 translate-x-0'
       }`}
     >
       <div className="flex items-center justify-between p-5 ml-[-20px] mb-2">
-        {showDeleteButton && (
-          <button
-            type="button"
-            onClick={onSkip}
-            onMouseEnter={() => setIsDeleteHovered(true)}
-            onMouseLeave={() => setIsDeleteHovered(false)}
-            className="relative flex items-center gap-2 rounded-full transition-colors h-10 w-10 justify-center hover:bg-neutral-800"
-            aria-label={readOnly ? "Delete tweet from Twitter" : "Delete"}
-            title={readOnly ? "Delete tweet from Twitter" : "Delete"}
-          >
-            {isDeleteHovered ? (
-              <div className="w-8 h-8 flex items-center justify-center">
-                <DotLottieReact
-                  src={xLottie}
-                  loop
-                  autoplay
-                />
-              </div>
-            ) : (
-              <span className="text-xl text-white">×</span>
-            )}
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={() => onDelete(tweet.id)}
+          onMouseEnter={() => setIsDeleteHovered(true)}
+          onMouseLeave={() => setIsDeleteHovered(false)}
+          className="relative flex items-center gap-2 rounded-full transition-colors h-10 w-10 justify-center hover:bg-neutral-800"
+          aria-label="Delete tweet from Twitter"
+          title="Delete tweet from Twitter"
+        >
+          {isDeleteHovered ? (
+            <div className="w-8 h-8 flex items-center justify-center">
+              <DotLottieReact
+                src={xLottie}
+                loop
+                autoplay
+              />
+            </div>
+          ) : (
+            <span className="text-xl text-white">×</span>
+          )}
+        </button>
         <a
           href={tweet.url}
           target="_blank"
           rel="noopener noreferrer"
           className="ml-auto text-neutral-400 hover:text-sky-400 transition-colors"
-          aria-label="View original tweet on Twitter"
+          aria-label="View your posted tweet on Twitter"
           title="View on Twitter"
         >
           <i className="fa-solid fa-arrow-up-right-from-square text-sm" />
@@ -198,105 +110,23 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
       </div>
 
       <div className="px-5 py-3">
+        {/* Original Tweet Thread */}
         <div className="space-y-4 pb-1">
           {threadMessages.map((message, index) => (
-            <div key={`${tweet.id}-${index}`} className="relative flex gap-3">
+            <div key={`${tweet.id}-original-${index}`} className="relative flex gap-3">
               {index === 0 ? (
-                <img src={userAvatar} alt={displayName} className="h-12 w-12 rounded-full" />
+                <img src={originalAvatar} alt={originalHandle} className="h-12 w-12 rounded-full" />
               ) : (
                 <div className="h-12 w-12" aria-hidden="true" />
               )}
               <div className="flex-1 space-y-1 pb-4">
                 {index === 0 && (
                   <div className="flex items-center gap-2 text-sm text-neutral-400">
-                    <span className="text-base font-bold text-white">{displayName}</span>
-                    <span>{'@' + handle}</span>
-                    {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
-                    {tweet.scraped_from && (
-                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-neutral-800 text-xs text-neutral-400">
-                        <i className={`fa-solid ${tweet.scraped_from.type === 'account' ? 'fa-user' : 'fa-magnifying-glass'}`} />
-                        <span>
-                          {tweet.scraped_from.type === 'account'
-                            ? `@${tweet.scraped_from.value}`
-                            : tweet.scraped_from.value}
-                        </span>
-                      </div>
-                    )}
-                    {tweet.media && tweet.media.length > 0 && (
-                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-900/30 text-xs text-blue-400">
-                        <i className="fa-solid fa-image" />
-                        <span>{tweet.media.length} image{tweet.media.length > 1 ? 's' : ''}</span>
-                      </div>
-                    )}
+                    <span className="text-base font-bold text-white">@{originalHandle}</span>
                   </div>
                 )}
                 <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>
-                
-                {/* Display quoted tweet if present */}
-                {index === 0 && tweet.quoted_tweet && (
-                  <a 
-                    href={tweet.quoted_tweet.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 block rounded-2xl border border-neutral-700 p-3 hover:bg-neutral-900 transition no-underline"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="flex items-start gap-2 mb-2">
-                      <img 
-                        src={tweet.quoted_tweet.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'} 
-                        alt={tweet.quoted_tweet.author_name}
-                        className="h-5 w-5 rounded-full"
-                      />
-                      <div className="flex items-center gap-1 text-sm">
-                        <span className="font-semibold text-neutral-300">{tweet.quoted_tweet.author_name}</span>
-                        <span className="text-neutral-500">@{tweet.quoted_tweet.author_handle}</span>
-                      </div>
-                    </div>
-                    
-                    <p className="whitespace-pre-wrap text-sm text-neutral-300 mb-2">
-                      {tweet.quoted_tweet.text}
-                    </p>
-                    
-                    {/* Quoted tweet images */}
-                    {tweet.quoted_tweet.media && tweet.quoted_tweet.media.length > 0 && (
-                      <div className="rounded-xl overflow-hidden mt-2">
-                        {tweet.quoted_tweet.media.map((media, idx) => (
-                          <img 
-                            key={idx}
-                            src={media.url}
-                            alt={media.alt_text || ''}
-                            className="w-full max-h-48 object-cover"
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </a>
-                )}
-                
-                {/* Display images for first message only */}
-                {index === 0 && tweet.media && tweet.media.length > 0 && (
-                  <div className={`mt-3 rounded-2xl overflow-hidden border border-neutral-800 ${
-                    (tweet.media?.length ?? 0) === 1 ? 'max-w-2xl' : 
-                    (tweet.media?.length ?? 0) === 2 ? 'grid grid-cols-2 gap-0.5' :
-                    (tweet.media?.length ?? 0) === 3 ? 'grid grid-cols-2 gap-0.5' :
-                    'grid grid-cols-2 gap-0.5'
-                  }`}>
-                    {tweet.media.map((media, mediaIndex) => (
-                      <img
-                        key={mediaIndex}
-                        src={media.url}
-                        alt={media.alt_text || `Image ${mediaIndex + 1}`}
-                        className={`w-full ${
-                          (tweet.media?.length ?? 0) === 1 ? 'object-contain max-h-[600px]' :
-                          (tweet.media?.length ?? 0) === 3 && mediaIndex === 0 ? 'row-span-2 h-full object-cover' :
-                          'h-48 object-cover'
-                        }`}
-                        loading="lazy"
-                      />
-                    ))}
-                  </div>
-                )}
-                
+
                 {index < threadMessages.length - 1 && (
                   <div className="absolute inset-x-14 bottom-0 border-t border-neutral-800" aria-hidden="true" />
                 )}
@@ -305,7 +135,38 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
           ))}
         </div>
 
-        <div className="flex items-center gap-8 pl-14 text-sm text-neutral-500" aria-label="Tweet engagement">
+        {/* Link to original tweet */}
+        {tweet.original_tweet_url && (
+          <div className="pl-14 pb-4">
+            <a
+              href={tweet.original_tweet_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm text-sky-400 hover:underline"
+            >
+              View original thread
+            </a>
+          </div>
+        )}
+
+        {/* Your Posted Reply */}
+        <p className="text-sm text-neutral-500 pt-7">
+          Your reply to <span className="text-sky-400">@{originalHandle}</span>
+        </p>
+        <div className="flex gap-3 pt-6">
+          <img src={myProfilePicUrl} alt={myUsername} className="h-12 w-12 rounded-full" />
+          <div className="flex-1">
+            <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
+              <span className="text-base font-bold text-white">{myUsername}</span>
+              <span>@{myHandle}</span>
+              {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
+            </div>
+            <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{tweet.text}</p>
+          </div>
+        </div>
+
+        {/* Performance Metrics */}
+        <div className="flex items-center gap-8 pl-14 pt-4 text-sm text-neutral-500" aria-label="Tweet engagement">
           <div className="flex items-center gap-2">
             <i className="fa-regular fa-comment text-lg text-neutral-500" aria-hidden="true" />
             <span className="font-medium">{formatMetric(tweet.replies)}</span>
@@ -319,83 +180,7 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
             <span className="font-medium">{formatMetric(tweet.likes)}</span>
           </div>
         </div>
-
-        {!readOnly ? (
-          <>
-            <p className="text-sm text-neutral-500 pt-7">
-              Replying to <span className="text-sky-400">{'@' + handle}</span>
-            </p>
-            <div className="flex gap-3 pt-6">
-              <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
-              <div className="flex-1">
-                {isRegenerating ? (
-                  <div className="w-full min-h-[6rem] flex items-start pt-2">
-                    <AnimatedText
-                      text="Regenerating reply"
-                      className="text-lg"
-                    />
-                  </div>
-                ) : (
-                  <textarea
-                    ref={textareaRef}
-                    placeholder="Post your reply"
-                    value={editedText}
-                    onChange={(e) => handleTextChange(e.target.value)}
-                    className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
-                  />
-                )}
-              </div>
-            </div>
-          </>
-        ) : (
-          editedText && (
-            <>
-              <p className="text-sm text-neutral-500 pt-7">
-                Your reply to <span className="text-sky-400">{'@' + handle}</span>
-              </p>
-              <div className="flex gap-3 pt-6">
-                <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
-                <div className="flex-1">
-                  <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{editedText}</p>
-                </div>
-              </div>
-            </>
-          )
-        )}
       </div>
-
-      {!readOnly && (
-        <div className="flex items-center justify-end gap-3 px-5 pb-8 pt-0">
-          <button
-            type="button"
-            onClick={handleSave}
-            disabled={!hasUnsavedChanges}
-            className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              hasUnsavedChanges
-                ? 'bg-neutral-700 text-white hover:bg-neutral-600'
-                : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
-            }`}
-          >
-            Save
-          </button>
-          {onRegenerate && (
-            <button
-              type="button"
-              onClick={onRegenerate}
-              className="rounded-full bg-neutral-700 px-5 py-2 text-sm font-semibold text-white transition hover:bg-neutral-600 flex items-center gap-2"
-            >
-              <i className="fa-solid fa-rotate-right" />
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={handlePublish}
-            className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
-          >
-            Reply
-          </button>
-        </div>
-      )}
     </div>
   );
 }

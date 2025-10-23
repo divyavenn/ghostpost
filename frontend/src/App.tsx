@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
+import {PostedTweetDisplay, type PostedTweetData } from './components/posted_tweet';
 import { api, type UserInfo } from './api/client';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { AnimatedText } from './components/AnimatedText';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { StatsDashboard } from './components/StatsDashboard';
+import { Background } from './components/Background';
 import desktopLottie from './assets/desktop.lottie';
 import writingLottie from './assets/writing.lottie';
 
 function App() {
+  const navigate = useNavigate();
   const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
   const [tweets, setTweets] = useState<TweetData[]>([]);
   const [currentTweetIndex, setCurrentTweetIndex] = useState(0);
@@ -17,7 +21,7 @@ function App() {
   const [deletingTweetIds, setDeletingTweetIds] = useState<Set<string>>(new Set());
   const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
   const [regeneratingTweetIds, setRegeneratingTweetIds] = useState<Set<string>>(new Set());
-  const [postedTweets, setPostedTweets] = useState<TweetData[]>([]);
+  const [postedTweets, setPostedTweets] = useState<PostedTweetData[]>([]);
   const [activeTab, setActiveTab] = useState<'generated' | 'posted'>('generated');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
@@ -61,6 +65,13 @@ function App() {
     }
   }, []);
 
+  // Redirect to login if no username
+  useEffect(() => {
+    if (!username) {
+      navigate('/login');
+    }
+  }, [username, navigate]);
+
   // Load posted tweets from backend
   const loadPostedTweets = async (user: string, reset: boolean = true) => {
     try {
@@ -86,6 +97,37 @@ function App() {
 
       // Check if there are more tweets to load
       setHasMorePostedTweets(data.count === 50);
+
+      // Check performance metrics for the loaded tweets
+      if (data.tweets.length > 0) {
+        const tweetIds = data.tweets.map(t => t.id).filter(Boolean);
+        if (tweetIds.length > 0) {
+          try {
+            console.log(`Checking performance for ${tweetIds.length} tweets...`);
+            const metricsResult = await api.checkTweetPerformance(user, tweetIds);
+            console.log(`Updated metrics for ${metricsResult.updated_count} tweets`);
+
+            // Reload tweets to get updated metrics
+            const updatedData = await api.getPostedTweets(user, 50, reset ? 0 : postedTweetsOffset - data.count);
+            if (reset) {
+              setPostedTweets(updatedData.tweets);
+            } else {
+              // Replace the newly loaded tweets with updated versions
+              setPostedTweets(prev => {
+                const newTweets = [...prev];
+                const startIdx = prev.length - data.count;
+                for (let i = 0; i < updatedData.tweets.length && i < data.count; i++) {
+                  newTweets[startIdx + i] = updatedData.tweets[i];
+                }
+                return newTweets;
+              });
+            }
+          } catch (error) {
+            console.error('Failed to check tweet performance:', error);
+            // Continue anyway - we still have the tweets even if metrics failed
+          }
+        }
+      }
     } catch (error) {
       console.error('Failed to load posted tweets:', error);
     }
@@ -221,152 +263,6 @@ function App() {
     }
   };
 
-  const handleLogin = async () => {
-    try {
-      console.log('Starting Twitter login...');
-
-      // Step 1: Open loading page IMMEDIATELY (synchronously) to avoid popup blockers
-      const loginTab = window.open('/login-loading', '_blank');
-
-      if (!loginTab) {
-        alert('Please allow popups to continue with login');
-        return;
-      }
-
-      // Step 2: Get Twitter login URL from backend
-      // VITE_API_BASE_URL already includes /api in production
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
-
-      // Send current frontend URL so backend knows where to redirect
-      const frontendUrl = window.location.origin; // e.g., http://localhost:5173
-
-      const response = await fetch(`${apiBaseUrl}/auth/twitter/login-url`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          frontend_url: frontendUrl
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to get login URL');
-      }
-
-      const { login_url, session_id } = await response.json();
-      console.log('Got login URL, session:', session_id);
-
-      // Step 3: Wait for login page to be ready, then send login URL
-      let messageSent = false;
-      const sendLoginUrl = () => {
-        if (messageSent) return; // Prevent duplicate sends
-        messageSent = true;
-        console.log('Sending LOGIN_URL to tab:', login_url);
-        loginTab.postMessage({
-          type: 'LOGIN_URL',
-          url: login_url
-        }, window.location.origin);
-      };
-
-      // Listen for ready message from login tab
-      const handleReadyMessage = (event: MessageEvent) => {
-        console.log('Received message from login tab:', event.data);
-        if (event.origin !== window.location.origin) {
-          console.warn('Ignoring message from different origin:', event.origin);
-          return;
-        }
-        if (event.data.type === 'LOGIN_PAGE_READY') {
-          console.log('Login page is ready, sending URL');
-          window.removeEventListener('message', handleReadyMessage);
-          sendLoginUrl();
-        }
-      };
-
-      window.addEventListener('message', handleReadyMessage);
-      console.log('Waiting for LOGIN_PAGE_READY from child window...');
-
-      // Fallback: send after 1000ms if no ready message received
-      setTimeout(() => {
-        console.log('Fallback timeout: sending login URL anyway');
-        window.removeEventListener('message', handleReadyMessage);
-        sendLoginUrl();
-      }, 1000);
-
-      // Step 4: Poll backend for cookie import completion
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusResponse = await fetch(
-            `${apiBaseUrl}/auth/twitter/cookie-status/${session_id}`
-          );
-
-          if (!statusResponse.ok) return; // Keep polling
-
-          const status = await statusResponse.json();
-          console.log('Cookie import status:', status);
-
-          if (status.status === 'success' && status.username) {
-            clearInterval(pollInterval);
-            console.log('✅ Login successful for:', status.username);
-
-            // Close the login tab
-            try {
-              loginTab.close();
-              console.log('Closed login tab');
-            } catch (e) {
-              console.warn('Could not close login tab:', e);
-            }
-
-            // Bring main window back into focus
-            window.focus();
-
-            // Load user data in main app
-            setUsername(status.username);
-            localStorage.setItem('username', status.username);
-            await loadUserInfo(status.username);
-            await loadTweets(status.username);
-            await loadPostedTweets(status.username);
-          } else if (status.status === 'extension_required') {
-            clearInterval(pollInterval);
-            console.log('⚠️ Extension not detected');
-
-            // Close the login tab
-            try {
-              loginTab.close();
-            } catch (e) {
-              console.warn('Could not close login tab:', e);
-            }
-
-            // Show extension install prompt
-            const installExtension = confirm(
-              `Browser Extension Required\n\n` +
-              `The GhostPoster browser extension is required to complete login.\n\n` +
-              `Please install the extension and try logging in again.\n\n` +
-              `Click OK to open the Chrome Web Store.`
-            );
-
-            if (installExtension) {
-              // Placeholder URL - replace with actual Chrome Web Store link when published
-              window.open('https://google.com', '_blank');
-            }
-          }
-        } catch (error) {
-          console.error('Polling error:', error);
-          // Keep polling even on errors
-        }
-      }, 2000); // Poll every 2 seconds
-
-      // Timeout after 5 minutes
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        console.log('Login polling timeout');
-      }, 300000);
-
-    } catch (error) {
-      console.error('Login failed:', error);
-      alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
 
   const handleLogout = () => {
     setUsername(null);
@@ -425,21 +321,18 @@ function App() {
       if (!tweet) return;
 
       try {
-        const postResult = await api.postReply(username, text, tweet.id, tweet.cache_id);
-        const postedTweetId = postResult.posted_tweet_id || postResult.data?.id;
+        await api.postReply(username, text, tweet.id, tweet.cache_id);
 
         // Remove tweet from cache backend without logging (since we already logged the post)
         await api.deleteTweet(username, tweet.id, false);
 
-        // Add to posted tweets list WITH posted_tweet_id at the beginning
-        setPostedTweets(prev => [{
-          ...tweet,
-          reply: text,
-          posted_tweet_id: postedTweetId  // Store Twitter's ID for later deletion
-        }, ...prev]);
-
         // Reload user info to update lifetime_posts counter
         await loadUserInfo(username);
+
+        // Reload posted tweets to include the newly posted one
+        if (activeTab === 'posted') {
+          await loadPostedTweets(username, true);
+        }
 
         // Remove from local state
         const updatedTweets = tweets.filter(t => t.id !== tweetId);
@@ -508,40 +401,39 @@ function App() {
     }, 300); // Match animation duration
   };
 
-  const handleDeletePosted = async (tweetId: string, postedTweetId?: string) => {
+  const handleDeletePosted = async (postedTweetId: string) => {
     if (!username || !postedTweetId) {
-      alert('Cannot delete: tweet ID not found. This tweet may have been posted before delete tracking was implemented.');
-      return;
-    }
-
-    if (!confirm('Delete this tweet from Twitter? This cannot be undone.')) {
+      alert('Cannot delete: tweet ID not found.');
       return;
     }
 
     // Mark as deleting for animation
-    setDeletingTweetIds(prev => new Set(prev).add(tweetId));
+    setDeletingTweetIds(prev => new Set(prev).add(postedTweetId));
 
     setTimeout(async () => {
       try {
         await api.deletePostedTweet(username, postedTweetId);
 
         // Remove from postedTweets state
-        setPostedTweets(prev => prev.filter(t => t.id !== tweetId));
+        setPostedTweets(prev => prev.filter(t => t.id !== postedTweetId));
 
         // Clear deleting state
         setDeletingTweetIds(prev => {
           const next = new Set(prev);
-          next.delete(tweetId);
+          next.delete(postedTweetId);
           return next;
         });
+
+        // Reload user info to update posted count
+        await loadUserInfo(username);
       } catch (error) {
         console.error('Failed to delete posted tweet:', error);
         alert(`Failed to delete tweet: ${error instanceof Error ? error.message : 'Unknown error'}`);
-        
+
         // Clear deleting state on error
         setDeletingTweetIds(prev => {
           const next = new Set(prev);
-          next.delete(tweetId);
+          next.delete(postedTweetId);
           return next;
         });
       }
@@ -550,55 +442,14 @@ function App() {
 
 
   if (!username) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6">
-        <div className="text-center">
-          <div className="flex justify-center mb-12">
-            <img
-              src="/ghostposter_logo.png"
-              alt="GhostPoster"
-              className="h-64 w-auto object-contain animate-flicker"
-            />
-          </div>
-          <button
-            onClick={handleLogin}
-            className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
-          >
-            Login with Twitter
-          </button>
-        </div>
-
-        <style>{`
-          @keyframes flicker {
-            0%, 100% { opacity: 1; }
-            2% { opacity: 0.8; }
-            4% { opacity: 1; }
-            8% { opacity: 0.9; }
-            10% { opacity: 1; }
-            12% { opacity: 0.7; }
-            14% { opacity: 1; }
-            18% { opacity: 0.95; }
-            20% { opacity: 1; }
-            70% { opacity: 1; }
-            72% { opacity: 0.85; }
-            74% { opacity: 1; }
-            76% { opacity: 0.9; }
-            78% { opacity: 1; }
-          }
-
-          .animate-flicker {
-            animation: flicker 4s infinite;
-          }
-        `}</style>
-      </div>
-    );
+    return null;
   }
 
   if (isLoading && !loadingPhase) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-900 p-6">
+      <Background className="flex items-center justify-center p-6">
         <div className="text-white text-xl">Loading tweets...</div>
-      </div>
+      </Background>
     );
   }
 
@@ -606,7 +457,7 @@ function App() {
 
   if (tweets.length === 0) {
     return (
-      <div className="flex min-h-screen flex-col bg-slate-900 p-6">
+      <Background className="flex flex-col p-6">
         {/* Logo - Top Left */}
         <div className="absolute top-6 left-6">
           <img
@@ -684,12 +535,12 @@ function App() {
             </div>
           </div>
         )}
-      </div>
+      </Background>
     );
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-900 p-20">
+    <Background className="flex flex-col p-20">
       {/* Logo - Top Left */}
       <div className="absolute top-6 left-6 z-10">
         <img
@@ -846,34 +697,28 @@ function App() {
                 {/* Left Column */}
                 <div className="flex-1 flex flex-col gap-6">
                   {postedTweets.filter((_, index) => index % 2 === 0).map((tweet) => (
-                    <TweetDisplay
+                    <PostedTweetDisplay
                       key={tweet.id}
                       tweet={tweet}
-                      replyText={tweet.reply || ''}
                       myProfilePicUrl={userInfo!.profile_pic_url}
-                      onPublish={() => {}}
-                      onSkip={() => handleDeletePosted(tweet.id, tweet.posted_tweet_id)}
+                      myHandle={userInfo!.handle}
+                      myUsername={userInfo!.username}
+                      onDelete={(tweetId) => handleDeletePosted(tweetId)}
                       isDeleting={deletingTweetIds.has(tweet.id)}
-                      isPosting={false}
-                      readOnly={true}
-                      showDeleteButton={true}
                     />
                   ))}
                 </div>
                 {/* Right Column */}
                 <div className="flex-1 flex flex-col gap-6">
                   {postedTweets.filter((_, index) => index % 2 === 1).map((tweet) => (
-                    <TweetDisplay
+                    <PostedTweetDisplay
                       key={tweet.id}
                       tweet={tweet}
-                      replyText={tweet.reply || ''}
                       myProfilePicUrl={userInfo!.profile_pic_url}
-                      onPublish={() => {}}
-                      onSkip={() => handleDeletePosted(tweet.id, tweet.posted_tweet_id)}
+                      myHandle={userInfo!.handle}
+                      myUsername={userInfo!.username}
+                      onDelete={(tweetId) => handleDeletePosted(tweetId)}
                       isDeleting={deletingTweetIds.has(tweet.id)}
-                      isPosting={false}
-                      readOnly={true}
-                      showDeleteButton={true}
                     />
                   ))}
                 </div>
@@ -919,7 +764,7 @@ function App() {
           scrollbar-width: none;
         }
       `}</style>
-    </div>
+    </Background>
   );
 }
 

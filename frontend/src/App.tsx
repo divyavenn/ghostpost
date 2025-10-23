@@ -4,6 +4,7 @@ import { api, type UserInfo } from './api/client';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { AnimatedText } from './components/AnimatedText';
 import { UserSettingsModal } from './components/UserSettingsModal';
+import { StatsDashboard } from './components/StatsDashboard';
 import desktopLottie from './assets/desktop.lottie';
 import writingLottie from './assets/writing.lottie';
 
@@ -23,6 +24,9 @@ function App() {
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
   const [scrapingStatusText, setScrapingStatusText] = useState<string>('Scraping tweets');
+  const [postedTweetsOffset, setPostedTweetsOffset] = useState(0);
+  const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
+  const [isLoadingMorePosted, setIsLoadingMorePosted] = useState(false);
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -57,29 +61,47 @@ function App() {
     }
   }, []);
 
-  // Load posted tweets from localStorage
-  const loadPostedTweets = (user: string) => {
-    const saved = localStorage.getItem(`postedTweets_${user}`);
-    if (saved) {
-      try {
-        setPostedTweets(JSON.parse(saved));
-      } catch (error) {
-        console.error('Failed to load posted tweets from localStorage:', error);
+  // Load posted tweets from backend
+  const loadPostedTweets = async (user: string, reset: boolean = true) => {
+    try {
+      if (reset) {
+        setPostedTweetsOffset(0);
+        setHasMorePostedTweets(true);
       }
+
+      const data = await api.getPostedTweets(user, 50, reset ? 0 : postedTweetsOffset);
+
+      if (reset) {
+        setPostedTweets(data.tweets);
+      } else {
+        setPostedTweets(prev => [...prev, ...data.tweets]);
+      }
+
+      // Update offset for next load
+      if (!reset) {
+        setPostedTweetsOffset(prev => prev + data.count);
+      } else {
+        setPostedTweetsOffset(data.count);
+      }
+
+      // Check if there are more tweets to load
+      setHasMorePostedTweets(data.count === 50);
+    } catch (error) {
+      console.error('Failed to load posted tweets:', error);
     }
   };
 
-  // Save posted tweets to localStorage whenever they change
-  useEffect(() => {
-    if (username) {
-      if (postedTweets.length > 0) {
-        localStorage.setItem(`postedTweets_${username}`, JSON.stringify(postedTweets));
-      } else {
-        // Clear localStorage when no posted tweets remain
-        localStorage.removeItem(`postedTweets_${username}`);
-      }
+  // Load more posted tweets (for infinite scroll)
+  const loadMorePostedTweets = async () => {
+    if (!username || isLoadingMorePosted || !hasMorePostedTweets) return;
+
+    setIsLoadingMorePosted(true);
+    try {
+      await loadPostedTweets(username, false);
+    } finally {
+      setIsLoadingMorePosted(false);
     }
-  }, [postedTweets, username]);
+  };
 
   const loadUserInfo = async (user: string) => {
     try {
@@ -214,8 +236,18 @@ function App() {
       // Step 2: Get Twitter login URL from backend
       // VITE_API_BASE_URL already includes /api in production
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
+
+      // Send current frontend URL so backend knows where to redirect
+      const frontendUrl = window.location.origin; // e.g., http://localhost:5173
+
       const response = await fetch(`${apiBaseUrl}/auth/twitter/login-url`, {
-        method: 'POST'
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          frontend_url: frontendUrl
+        })
       });
 
       if (!response.ok) {
@@ -395,16 +427,19 @@ function App() {
       try {
         const postResult = await api.postReply(username, text, tweet.id, tweet.cache_id);
         const postedTweetId = postResult.posted_tweet_id || postResult.data?.id;
-        
+
         // Remove tweet from cache backend without logging (since we already logged the post)
         await api.deleteTweet(username, tweet.id, false);
 
-        // Add to posted tweets list WITH posted_tweet_id
+        // Add to posted tweets list WITH posted_tweet_id at the beginning
         setPostedTweets(prev => [{
-          ...tweet, 
+          ...tweet,
           reply: text,
           posted_tweet_id: postedTweetId  // Store Twitter's ID for later deletion
         }, ...prev]);
+
+        // Reload user info to update lifetime_posts counter
+        await loadUserInfo(username);
 
         // Remove from local state
         const updatedTweets = tweets.filter(t => t.id !== tweetId);
@@ -713,8 +748,11 @@ function App() {
         />
       )}
 
+      {/* Stats Dashboard */}
+      {userInfo && <StatsDashboard userInfo={userInfo} />}
+
       {/* Tab Navigation */}
-      <div className="flex justify-center gap-4 pt-6 pb-4">
+      <div className="flex justify-center gap-4 pt-2 pb-4">
         <button
           onClick={() => setActiveTab('generated')}
           className={`px-6 py-2 text-sm font-semibold transition rounded-full ${
@@ -733,12 +771,24 @@ function App() {
               : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
           }`}
         >
-          Posted ({postedTweets.length})
+          Posted ({userInfo?.lifetime_posts || 0})
         </button>
       </div>
 
       {/* Continuous scroll with hidden scrollbar */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide">
+      <div
+        className="flex-1 overflow-y-auto scrollbar-hide"
+        onScroll={(e) => {
+          if (activeTab === 'posted') {
+            const element = e.currentTarget;
+            const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 500;
+
+            if (isNearBottom && !isLoadingMorePosted && hasMorePostedTweets) {
+              loadMorePostedTweets();
+            }
+          }
+        }}
+      >
         <div className="flex gap-6 py-10 px-6">
           {activeTab === 'generated' ? (
             tweets.length === 0 ? (
@@ -786,11 +836,12 @@ function App() {
               </>
             )
           ) : (
-            postedTweets.length === 0 ? (
-              <div className="w-full flex items-center justify-center h-64">
-                <p className="text-neutral-400 text-lg">No tweets posted yet</p>
-              </div>
-            ) : (
+            <>
+              {postedTweets.length === 0 ? (
+                <div className="w-full flex items-center justify-center h-64">
+                  <p className="text-neutral-400 text-lg">No tweets posted yet</p>
+                </div>
+              ) : (
               <>
                 {/* Left Column */}
                 <div className="flex-1 flex flex-col gap-6">
@@ -827,7 +878,15 @@ function App() {
                   ))}
                 </div>
               </>
-            )
+              )}
+
+              {/* Loading indicator for infinite scroll */}
+              {isLoadingMorePosted && (
+                <div className="w-full flex justify-center py-8">
+                  <div className="text-neutral-400 text-sm">Loading more tweets...</div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

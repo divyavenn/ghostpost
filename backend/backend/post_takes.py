@@ -33,6 +33,7 @@ class ReplyTweet(BaseModel):
 
 async def post(username, payload: dict, cache_id: str | None = None) -> dict:
     from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.utils import read_user_info, write_user_info, notify
 
     access_token = await _get_access_token_for_user(username)
 
@@ -68,6 +69,17 @@ async def post(username, payload: dict, cache_id: str | None = None) -> dict:
         # Log using the original tweet ID as the key if available, otherwise use posted_tweet_id
         log_key = original_tweet_id or posted_tweet_id
         log_tweet_action(username, TweetAction.POSTED, str(log_key), metadata=metadata)
+
+        # Increment lifetime_posts
+        try:
+            user_info = read_user_info(username)
+            if user_info:
+                current_posts = user_info.get("lifetime_posts", 0)
+                user_info["lifetime_posts"] = current_posts + 1
+                write_user_info(user_info)
+                notify(f"📝 Post count incremented for @{username} (total: {user_info['lifetime_posts']})")
+        except Exception as e:
+            notify(f"⚠️ Failed to update post count for {username}: {e}")
 
     # Return result with posted_tweet_id explicitly for frontend tracking
     return {**result, "posted_tweet_id": posted_tweet_id}

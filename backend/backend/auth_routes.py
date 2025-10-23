@@ -409,18 +409,29 @@ async def twitter_callback(
             print(f"⏳ Session {session_id} awaiting browser cookies for @{twitter_handle}")
 
         # Redirect to React success page - extension will detect this page and send cookies
-        # Construct frontend URL from the request
-        # When accessed through nginx proxy at /api/, the Host header is the frontend host
-        host = request.headers.get("host", "localhost")
-        scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+        # Use stored frontend_url from login initiation, or construct from request headers
+        frontend_url = oauth_data.get("frontend_url")
 
-        # If accessed directly on port 8000, redirect to port 80 (frontend)
-        # In production, host will already be correct (no port or correct port)
-        if ":8000" in host:
-            host = host.replace(":8000", "")
+        if frontend_url:
+            # Use the exact frontend URL provided by the frontend
+            print(f"🏠 Using provided frontend URL: {frontend_url}")
+            base_url = frontend_url.rstrip('/')
+        else:
+            # Fallback: construct from request headers
+            # When accessed through nginx proxy at /api/, the Host header is the frontend host
+            host = request.headers.get("host", "localhost")
+            scheme = "https" if request.headers.get("x-forwarded-proto") == "https" else "http"
+
+            # If accessed directly on port 8000, redirect to port 80 (frontend)
+            # In production, host will already be correct (no port or correct port)
+            if ":8000" in host:
+                host = host.replace(":8000", "")
+
+            base_url = f"{scheme}://{host}"
+            print(f"🏠 Constructed frontend URL from headers: {base_url}")
 
         # Include username and session_id as URL params for extension to read
-        success_url = f"{scheme}://{host}/login-success?username={twitter_handle}&session_id={session_id}"
+        success_url = f"{base_url}/login-success?username={twitter_handle}&session_id={session_id}"
         print(f"🔗 Redirecting to: {success_url}")
 
         return HTMLResponse(content=f"""
@@ -516,8 +527,12 @@ async def _cleanup_browser(browser_session: dict):
 
 
 
+class LoginUrlRequest(BaseModel):
+    frontend_url: str | None = None
+
+
 @router.post("/twitter/login-url")
-async def get_login_url() -> dict:
+async def get_login_url(payload: LoginUrlRequest | None = None) -> dict:
     """
     Generate a session ID and return Twitter OAuth URL.
     Frontend opens this URL in a new tab, user logs in via OAuth,
@@ -535,10 +550,14 @@ async def get_login_url() -> dict:
     from backend.oauth import get_authorization_url
     auth_url, code_verifier = get_authorization_url(state)
 
+    # Store frontend URL for redirect after OAuth
+    frontend_url = payload.frontend_url if payload else None
+
     # Store OAuth state for potential callback handling
     _oauth_states[state] = {
         "code_verifier": code_verifier,
         "session_id": session_id,
+        "frontend_url": frontend_url,  # Store for redirect
         "created_at": __import__('datetime').datetime.now().isoformat()
     }
 
@@ -551,6 +570,8 @@ async def get_login_url() -> dict:
 
     print(f"📝 Created login session: {session_id}")
     print(f"🔗 OAuth URL: {auth_url}")
+    if frontend_url:
+        print(f"🏠 Frontend URL: {frontend_url}")
 
     return {
         "login_url": auth_url,

@@ -42,6 +42,9 @@ export interface UserInfo {
   username: string;
   profile_pic_url: string;
   follower_count: number;
+  lifetime_posts: number;
+  lifetime_new_follows: number;
+  scrolling_time_saved: number;
   email?: string;
   model?: string;
 }
@@ -304,6 +307,13 @@ export const api = {
       method: 'POST'
     });
     if (!response.ok) throw new Error('Failed to validate accounts');
+    return response.json();
+  },
+
+  // Posted tweets endpoints
+  getPostedTweets: async (username: string, limit: number = 50, offset: number = 0): Promise<{ username: string; count: number; limit: number; offset: number; tweets: TweetData[] }> => {
+    const response = await fetch(`${API_BASE_URL}/posted/${encodeURIComponent(username)}/tweets?limit=${limit}&offset=${offset}`);
+    if (!response.ok) throw new Error('Failed to get posted tweets');
     return response.json();
   },
 };

@@ -43,6 +43,11 @@ async def scrape_tweets_for_training(handle: str,
     Returns:
         Path to the output .jsonl file
     """
+    import time
+    from utils import read_user_info, write_user_info
+
+    start_time = time.time()
+
     notify(f"Loading user info for handle: {handle}")
     user_settings = read_user_settings(handle)
 
@@ -117,6 +122,18 @@ async def scrape_tweets_for_training(handle: str,
             f.write(json.dumps(item, ensure_ascii=False, indent=2) + "\n")
 
     notify(f"Saved {len(training_data)} tweets to {output_path}")
+
+    # Update scrolling_time_saved
+    elapsed_seconds = int(time.time() - start_time)
+    try:
+        user_info = read_user_info(handle)
+        if user_info:
+            current_time_saved = user_info.get("scrolling_time_saved", 0)
+            user_info["scrolling_time_saved"] = current_time_saved + elapsed_seconds
+            write_user_info(user_info)
+            notify(f"⏱️ Added {elapsed_seconds}s to scrolling time for @{handle} (total: {user_info['scrolling_time_saved']}s)")
+    except Exception as e:
+        notify(f"⚠️ Failed to update scrolling time for {handle}: {e}")
 
     return output_path
 

@@ -56,44 +56,9 @@ export function LoginSuccess() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-900">
       <div className="text-center max-w-[600px] p-10">
-        {/* Success checkmark animation */}
-        <svg
-          className="w-[120px] h-[120px] mx-auto mb-8 animate-[fill_0.4s_ease-in-out_0.4s_forwards,scale_0.3s_ease-in-out_0.9s_both]"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 52 52"
-          style={{
-            strokeWidth: 3,
-            stroke: '#22c55e',
-            strokeMiterlimit: 10
-          }}
-        >
-          <circle
-            className="animate-[stroke_0.6s_cubic-bezier(0.65,0,0.45,1)_forwards]"
-            cx="26"
-            cy="26"
-            r="25"
-            fill="none"
-            style={{
-              strokeDasharray: 166,
-              strokeDashoffset: 166,
-              strokeWidth: 3,
-              stroke: '#22c55e'
-            }}
-          />
-          <path
-            className="animate-[stroke_0.3s_cubic-bezier(0.65,0,0.45,1)_0.8s_forwards]"
-            fill="none"
-            d="M14.1 27.2l7.1 7.2 16.7-16.8"
-            style={{
-              transformOrigin: '50% 50%',
-              strokeDasharray: 48,
-              strokeDashoffset: 48
-            }}
-          />
-        </svg>
 
         {/* Cat Lottie animation */}
-        <div className="w-[300px] h-[300px] mx-auto mb-8">
+        <div className="w-[400px] h-[400px] mx-auto mb-8 mt-[-200px]">
           <DotLottieReact
             src="/cat.lottie"
             loop
@@ -102,18 +67,14 @@ export function LoginSuccess() {
         </div>
 
         {/* Success message */}
-        <div className="mb-8">
-          <AnimatedText text="Login Successful!" className="text-[32px] font-bold" />
+        <div className="mt-[-70px] mb-8">
+          <AnimatedText text="Taking you back to GhostPost!" className="text-[20px]" />
         </div>
-
-        <p className="text-xl text-green-400 font-semibold mb-4">
-          Cleaning things up...
-        </p>
 
         <p className="text-base opacity-70 text-slate-300">
           {countdown > 0
-            ? `This tab will close in ${countdown} second${countdown !== 1 ? 's' : ''}...`
-            : 'Closing...'}
+            ? `Login Sucessful! This tab will close in ${countdown} second${countdown !== 1 ? 's' : ''}...`
+            : 'Login Sucessful! Closing...'}
         </p>
       </div>
 

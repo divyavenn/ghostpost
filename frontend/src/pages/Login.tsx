@@ -149,21 +149,74 @@ export function Login() {
   };
 
   return (
-    <Background className="flex items-center justify-center p-6">
-      <div className="text-center">
-        <div className="flex justify-center mb-12">
+    <Background className="flex flex-col min-h-screen p-6">
+      {/* Hero Section - Top */}
+      <div className="flex-1 flex flex-col items-center justify-center text-center max-w-6xl mx-auto">
+        <h1 className="text-8xl font-bold text-white mb-6">
+          Nobody knows<br />
+          <span className="text-gray-400">you exist.</span>
+        </h1>
+        <p className="text-3xl text-gray-400 mb-12">We can fix that.</p>
+
+        {/* Logo */}
+        <div className="mb-8">
           <img
             src="/ghostposter_logo.png"
             alt="GhostPoster"
-            className="h-64 w-auto object-contain animate-flicker"
+            className="h-32 w-auto object-contain animate-flicker"
           />
         </div>
+
+        {/* Login Button */}
         <button
           onClick={handleLogin}
           className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
         >
           Login with Twitter
         </button>
+      </div>
+
+      {/* Cards Section - Bottom */}
+      <div className="w-full max-w-6xl mx-auto pb-8">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* Card 1 */}
+          <div className="p-8">
+            <div className="text-gray-500 text-sm mb-4">01</div>
+            <h3 className="text-xl font-bold text-white mb-4">
+              We build you a bespoke<br />language model
+            </h3>
+            <p className="text-gray-400">
+              Your unique style <span className="underline">baked in.</span>
+            </p>
+          </div>
+
+          {/* Card 2 */}
+          <div className="p-8">
+            <div className="text-gray-500 text-sm mb-4">02</div>
+            <h3 className="text-xl font-bold text-white mb-4">
+              It finds people who<br />would love your brand
+            </h3>
+            <p className="text-gray-400">
+              And tells them in <span className="font-bold">your voice.</span>
+            </p>
+          </div>
+
+          {/* Card 3 */}
+          <div className="p-8">
+            <div className="text-gray-500 text-sm mb-4">03</div>
+            <h3 className="text-xl font-bold text-white mb-4">
+              No AI slop, no spam.
+            </h3>
+            <p className="text-gray-400">
+              Just <span className="font-bold">influence</span> that scales and<br />
+              the reputation you deserve.
+            </p>
+          </div>
+        </div>
+
+        <div className="text-center mt-8">
+          <p className="text-gray-500 text-lg">Ready to be seen?</p>
+        </div>
       </div>
 
       <style>{`

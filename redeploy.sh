@@ -38,7 +38,8 @@ docker compose down
 
 echo "🏗️  Building and starting containers..."
 # Build and start containers in detached mode
-docker compose up --build -d
+
+docker compose up --build --no-cache -d
 
 echo ""
 echo "✅ Deployment complete!"

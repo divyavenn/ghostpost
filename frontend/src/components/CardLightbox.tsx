@@ -4,8 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Swiper, SwiperSlide } from 'swiper/react';
 import { Navigation, Keyboard, EffectCoverflow } from 'swiper/modules';
 import type { LoginCard } from '../data/loginCards';
-import type { Swiper as SwiperType } from 'swiper';
-
 // Import Swiper styles
 import 'swiper/css';
 import 'swiper/css/navigation';

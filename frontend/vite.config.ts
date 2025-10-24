@@ -7,7 +7,7 @@ export default defineConfig(({ command, mode }) => {
   
   return {
     // CRITICAL: Base path for Docker/nginx deployment
-    base: '/',
+    base: './',
     
     plugins: [react()],
     

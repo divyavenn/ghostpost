@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.account_routes import router as account_router
 from backend.auth_routes import router as auth_router
 from backend.browser_auth_routes import router as browser_auth_router
 from backend.generate_replies import router as generate_router
@@ -43,6 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(account_router)
 app.include_router(auth_router)
 app.include_router(browser_auth_router)
 app.include_router(tweets_router)

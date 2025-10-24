@@ -1,7 +1,8 @@
 import { type TweetData } from '../components/tweet_new';
 import { type PostedTweetData } from '../components/posted_tweet';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://x.ghostposter.app/api';
+console.log('Using API_BASE_URL:', API_BASE_URL);
 
 export interface AuthResponse {
   auth_url: string;

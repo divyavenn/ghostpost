@@ -218,7 +218,8 @@ def write_user_info(user_info: dict[str, Any]) -> Path:
     entries = load_user_info_entries()
     target = find_user_info(entries, handle) if handle else None
 
-    if target is None:
+    is_new_user = target is None
+    if is_new_user:
         target = {}
         entries.append(target)
 
@@ -229,6 +230,13 @@ def write_user_info(user_info: dict[str, Any]) -> Path:
     if handle:
         target.setdefault("handle", handle)
         target.setdefault("username", handle)
+
+    # Set default values for new users
+    if is_new_user:
+        target.setdefault("account_type", "trial")
+        # Trial users start with 3 scrapes and 3 posts
+        target.setdefault("scrapes_left", 3)
+        target.setdefault("posts_left", 3)
 
     atomic_file_update(USER_INFO_FILE, entries, ".tmp", ensure_ascii=False)
     notify("💾 Updated user info")

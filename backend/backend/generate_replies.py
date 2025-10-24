@@ -246,6 +246,9 @@ class GenerateRepliesRequest(BaseModel):
 async def generate_replies_endpoint(username: str, payload: GenerateRepliesRequest | None = None) -> dict:
     """Generate AI replies for tweets in the cache."""
     try:
+        # Set status to generating immediately when endpoint is called
+        scraping_status[username] = {"type": "generating", "value": "Starting...", "phase": "generating"}
+
         if payload is None:
             tweets = await generate_replies(username=username)
         else:

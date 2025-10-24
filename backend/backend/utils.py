@@ -34,7 +34,9 @@ def cookie_still_valid(state: dict[str, Any]) -> bool:
         return False
     for c in state.get("cookies", []):
         if c.get("name") == AUTH_COOKIE:
-            return c.get("expires", 0) == 0 or c["expires"] > time.time() + 60
+            # Check both 'expires' and 'expirationDate' fields (different cookie formats)
+            expiry = c.get("expires") or c.get("expirationDate", 0)
+            return expiry == 0 or expiry > time.time() + 60
     return False
 
 

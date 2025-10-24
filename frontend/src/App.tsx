@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
 import {PostedTweetDisplay, type PostedTweetData } from './components/posted_tweet';
@@ -28,19 +28,19 @@ function App() {
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
   const [scrapingStatusText, setScrapingStatusText] = useState<string>('Scraping tweets');
-  const [postedTweetsOffset, setPostedTweetsOffset] = useState(0);
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
   const [isLoadingMorePosted, setIsLoadingMorePosted] = useState(false);
+  const postedTweetsOffsetRef = useRef(0); // Track offset with ref to avoid re-creating callback
 
   // Load posted tweets from backend
   const loadPostedTweets = useCallback(async (user: string, reset: boolean = true) => {
     try {
       if (reset) {
-        setPostedTweetsOffset(0);
+        postedTweetsOffsetRef.current = 0;
         setHasMorePostedTweets(true);
       }
 
-      const data = await api.getPostedTweets(user, 50, reset ? 0 : postedTweetsOffset);
+      const data = await api.getPostedTweets(user, 50, reset ? 0 : postedTweetsOffsetRef.current);
 
       if (reset) {
         setPostedTweets(data.tweets);
@@ -50,9 +50,9 @@ function App() {
 
       // Update offset for next load
       if (!reset) {
-        setPostedTweetsOffset(prev => prev + data.count);
+        postedTweetsOffsetRef.current += data.count;
       } else {
-        setPostedTweetsOffset(data.count);
+        postedTweetsOffsetRef.current = data.count;
       }
 
       // Check if there are more tweets to load
@@ -73,7 +73,7 @@ function App() {
               setPostedTweets(updatedData.tweets);
             } else {
               // For infinite scroll, reload from beginning to get all updated metrics
-              const updatedData = await api.getPostedTweets(user, postedTweetsOffset + data.count, 0);
+              const updatedData = await api.getPostedTweets(user, postedTweetsOffsetRef.current, 0);
               setPostedTweets(updatedData.tweets);
             }
           } catch (error: unknown) {
@@ -91,7 +91,7 @@ function App() {
     } catch (error) {
       console.error('Failed to load posted tweets:', error);
     }
-  }, [postedTweetsOffset]);
+  }, []); // No dependencies needed - using functional setState and user param
 
   useEffect(() => {
     // Check for OAuth callback parameters
@@ -252,8 +252,12 @@ function App() {
       const readResult = await api.readTweets(username);
       console.log(`Scraped ${readResult.count} new tweets`);
 
+      // Update user info to reflect new scrolling_time_saved value
+      await loadUserInfo(username);
+
       // Step 2: Generate AI replies for the scraped tweets
       setLoadingPhase('generating');
+      setScrapingStatusText('Generating replies (Starting...)');
       const generateResult = await api.generateReplies(username);
       console.log(`Generated ${generateResult.replies_generated} replies`);
 

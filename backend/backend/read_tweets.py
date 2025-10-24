@@ -87,13 +87,15 @@ async def log_in(username: str, password: str, browser=None):
     return browser, ctx
 
 
-async def get_home(browser=None):
+async def get_home(browser=None, username=None):
     from backend.utils import read_browser_state
 
     if browser is None:
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=(not see_browser))
-    session = await read_browser_state(browser, USERNAME)
+    # Use provided username or fall back to default
+    user = username or USERNAME
+    session = await read_browser_state(browser, user)
     if session:
         return session
     error("No authorization found; user needs to log in.")
@@ -176,7 +178,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
     # Try local scraping first (cost-effective)
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=(not see_browser))
-        browser, ctx = await get_home(browser=browser)
+        browser, ctx = await get_home(browser=browser, username=username)
 
         # user timelines
         for u in usernames:

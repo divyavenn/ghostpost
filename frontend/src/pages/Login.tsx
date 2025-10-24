@@ -1,18 +1,27 @@
 import { Background } from '../components/Background';
 import { useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { LoginLoading } from '../components/LoginLoading';
+import { LoginCarousel } from '../components/LoginCarousel';
+import { loginCards } from '../data/loginCards';
 
 export function Login() {
   const navigate = useNavigate();
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleLogin = async () => {
     try {
+      setError(null);
+      setIsLoggingIn(true);
       console.log('Starting Twitter login...');
 
       // Step 1: Open loading page IMMEDIATELY (synchronously) to avoid popup blockers
       const loginTab = window.open('/login-loading', '_blank');
 
       if (!loginTab) {
-        alert('Please allow popups to continue with login');
+        setError('Please allow popups to continue with login');
+        setIsLoggingIn(false);
         return;
       }
 
@@ -105,6 +114,7 @@ export function Login() {
 
             // Save username and navigate to app
             localStorage.setItem('username', status.username);
+            setIsLoggingIn(false);
             navigate('/', { replace: true });
           } else if (status.status === 'extension_required') {
             clearInterval(pollInterval);
@@ -118,17 +128,8 @@ export function Login() {
             }
 
             // Show extension install prompt
-            const installExtension = confirm(
-              `Browser Extension Required\n\n` +
-              `The GhostPoster browser extension is required to complete login.\n\n` +
-              `Please install the extension and try logging in again.\n\n` +
-              `Click OK to open the Chrome Web Store.`
-            );
-
-            if (installExtension) {
-              // Placeholder URL - replace with actual Chrome Web Store link when published
-              window.open('https://google.com', '_blank');
-            }
+            setIsLoggingIn(false);
+            setError('Browser Extension Required. The GhostPoster browser extension is required to complete login. Please install the extension and try logging in again.');
           }
         } catch (error) {
           console.error('Polling error:', error);
@@ -144,79 +145,55 @@ export function Login() {
 
     } catch (error) {
       console.error('Login failed:', error);
-      alert(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setError(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setIsLoggingIn(false);
     }
   };
 
-  return (
-    <Background className="flex flex-col min-h-screen p-6">
-      {/* Hero Section - Top */}
-      <div className="flex-1 flex flex-col items-center justify-center text-center max-w-6xl mx-auto">
-        <h1 className="text-8xl font-bold text-white mb-6">
-          Nobody knows<br />
-          <span className="text-gray-400">you exist.</span>
-        </h1>
-        <p className="text-3xl text-gray-400 mb-12">We can fix that.</p>
+  // Show loading screen while logging in
+  if (isLoggingIn) {
+    return <LoginLoading />;
+  }
 
-        {/* Logo */}
-        <div className="mb-8">
-          <img
-            src="/ghostposter_logo.png"
-            alt="GhostPoster"
-            className="h-32 w-auto object-contain animate-flicker"
-          />
+  return (
+    <Background className="relative min-h-screen flex flex-col items-center justify-center overflow-hidden">
+      {/* Error Message */}
+      {error && (
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-[2000] bg-red-500/90 backdrop-blur-sm text-white px-6 py-3 rounded-lg font-semibold max-w-md text-center">
+          {error}
         </div>
+      )}
+
+      {/* Wheel Carousel - Behind everything */}
+      <div className="absolute">
+        <LoginCarousel cards={loginCards} />
+      </div>
+
+      {/* Logo and Login Button Overlay - In front of cards but behind lightbox */}
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[1000] flex flex-col items-center text-center pointer-events-none">
+        {/* Logo */}
+        <img
+          src="/ghostposter_logo.png"
+          alt="GhostPoster"
+          className="h-24 w-auto object-contain mb-8 animate-flicker"
+        />
+
 
         {/* Login Button */}
         <button
           onClick={handleLogin}
-          className="rounded-full bg-sky-500 px-8 py-3 text-lg font-semibold text-white transition hover:bg-sky-600"
+          className="rounded-full bg-sky-500 px-10 py-4 text-xl font-semibold text-white transition-all hover:bg-sky-600 hover:scale-105 shadow-2xl pointer-events-auto"
         >
           Login with Twitter
         </button>
+
+        {/* Scroll Indicator */}
+        <div className="mt-12 text-gray-500 text-sm">Scroll to explore</div>
       </div>
 
-      {/* Cards Section - Bottom */}
-      <div className="w-full max-w-6xl mx-auto pb-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {/* Card 1 */}
-          <div className="p-8">
-            <div className="text-gray-500 text-sm mb-4">01</div>
-            <h3 className="text-xl font-bold text-white mb-4">
-              We build you a bespoke<br />language model
-            </h3>
-            <p className="text-gray-400">
-              Your unique style <span className="underline">baked in.</span>
-            </p>
-          </div>
-
-          {/* Card 2 */}
-          <div className="p-8">
-            <div className="text-gray-500 text-sm mb-4">02</div>
-            <h3 className="text-xl font-bold text-white mb-4">
-              It finds people who<br />would love your brand
-            </h3>
-            <p className="text-gray-400">
-              And tells them in <span className="font-bold">your voice.</span>
-            </p>
-          </div>
-
-          {/* Card 3 */}
-          <div className="p-8">
-            <div className="text-gray-500 text-sm mb-4">03</div>
-            <h3 className="text-xl font-bold text-white mb-4">
-              No AI slop, no spam.
-            </h3>
-            <p className="text-gray-400">
-              Just <span className="font-bold">influence</span> that scales and<br />
-              the reputation you deserve.
-            </p>
-          </div>
-        </div>
-
-        <div className="text-center mt-8">
-          <p className="text-gray-500 text-lg">Ready to be seen?</p>
-        </div>
+      {/* Bottom CTA */}
+      <div className="fixed bottom-8 left-1/2 -translate-x-1/2 text-center z-[1500] pointer-events-none">
+        <p className="text-gray-400 text-base">Ready to be seen?</p>
       </div>
 
       <style>{`

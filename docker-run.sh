@@ -31,9 +31,13 @@ fi
 echo "✅ Environment file found"
 echo ""
 
+echo "Shut down any running instances"
+docker compose down 
+
 # Build and start containers
-echo "🏗️  Building Docker images (this may take a few minutes)..."
-docker compose build
+echo "🏗️  Clear cache and rebuild Docker images"
+
+docker compose build --no-cache
 
 echo ""
 echo "🚀 Starting containers..."

@@ -1,19 +1,18 @@
 
 services:
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      # Don't set VITE_API_BASE_URL - use relative URLs to go through nginx
     ports:
       - "80:80"
     depends_on:
       - backend
-    environment:
-      - VITE_APP_BACKEND_ADDRESS=http://backend:8000
 
   backend:
     build: ./backend
     ports:
       - "8000:8000"  # Backend API
-      - "6080:6080"  # noVNC web interface for OAuth
     # Removed user restriction - container runs as user defined in Dockerfile
     # This works on all platforms (Mac/Windows/Linux)
     volumes:
@@ -23,7 +22,7 @@ services:
     depends_on:
       - cache-init
     environment:
-      - DISPLAY=:99
+      - DISPLAY=:99  # For local scraping with Xvfb
 
   cache-init:
     image: alpine:latest

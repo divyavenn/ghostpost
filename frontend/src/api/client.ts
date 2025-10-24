@@ -1,4 +1,5 @@
 import { type TweetData } from '../components/tweet_new';
+import { type PostedTweetData } from '../components/posted_tweet';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/';
 
@@ -7,6 +8,22 @@ export interface AuthResponse {
   state: string;
   session_id: string;
   message: string;
+  debugger_url?: string;  // Browserbase live debugger URL
+}
+
+export interface BrowserLoginResponse {
+  session_id: string;
+  debugger_url: string;
+  login_url: string;
+  message: string;
+}
+
+export interface BrowserLoginStatus {
+  status: 'pending' | 'complete' | 'error';
+  username?: string;
+  error?: string;
+  message?: string;
+  current_url?: string;
 }
 
 export interface TwitterStatus {
@@ -26,6 +43,9 @@ export interface UserInfo {
   username: string;
   profile_pic_url: string;
   follower_count: number;
+  lifetime_posts: number;
+  lifetime_new_follows: number;
+  scrolling_time_saved: number;
   email?: string;
   model?: string;
 }
@@ -62,6 +82,48 @@ export const api = {
   getTwitterStatus: async (): Promise<TwitterStatus> => {
     const response = await fetch(`${API_BASE_URL}/auth/twitter/status`);
     if (!response.ok) throw new Error('Failed to get Twitter status');
+    return response.json();
+  },
+
+  startBrowserLogin: async (): Promise<BrowserLoginResponse> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/browser-login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) throw new Error('Failed to start browser login');
+    return response.json();
+  },
+
+  checkBrowserLogin: async (sessionId: string): Promise<BrowserLoginStatus> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/browser-login/check/${sessionId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) throw new Error('Failed to check browser login');
+    return response.json();
+  },
+
+  getLoginUrl: async (frontendUrl: string): Promise<{ login_url: string; session_id: string }> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/login-url`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        frontend_url: frontendUrl
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to get login URL');
+    return response.json();
+  },
+
+  checkCookieStatus: async (sessionId: string): Promise<{ status: string; username?: string; verified?: boolean }> => {
+    const response = await fetch(`${API_BASE_URL}/auth/twitter/cookie-status/${sessionId}`);
+    if (!response.ok) throw new Error('Failed to check cookie status');
     return response.json();
   },
 
@@ -266,6 +328,27 @@ export const api = {
       method: 'POST'
     });
     if (!response.ok) throw new Error('Failed to validate accounts');
+    return response.json();
+  },
+
+  // Posted tweets endpoints
+  getPostedTweets: async (username: string, limit: number = 50, offset: number = 0): Promise<{ username: string; total: number; count: number; limit: number; offset: number; tweets: PostedTweetData[] }> => {
+    const response = await fetch(`${API_BASE_URL}/performance/${encodeURIComponent(username)}/posted-tweets?limit=${limit}&offset=${offset}`);
+    if (!response.ok) throw new Error('Failed to get posted tweets');
+    return response.json();
+  },
+
+  checkTweetPerformance: async (username: string, tweetIds: string[]): Promise<{ message: string; updated_count: number; metrics: Array<{ id: string; likes: number; retweets: number; quotes: number; replies: number }> }> => {
+    const response = await fetch(`${API_BASE_URL}/performance/${encodeURIComponent(username)}/check-performance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        tweet_ids: tweetIds
+      }),
+    });
+    if (!response.ok) throw new Error('Failed to check tweet performance');
     return response.json();
   },
 };

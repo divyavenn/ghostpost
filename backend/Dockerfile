@@ -6,18 +6,12 @@ WORKDIR /app
 
 # Prevent Python from writing .pyc files and buffer output
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    DISPLAY=:99
+    PYTHONUNBUFFERED=1
 
-# Install system dependencies for virtual display, VNC, and basic utilities
+# Install system dependencies - Xvfb for local scraping, basic utilities
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Virtual display and VNC components
+    # Virtual display for local scraping (headless Playwright)
     xvfb \
-    x11vnc \
-    # noVNC dependencies
-    git \
-    python3-numpy \
-    websockify \
     # Basic utilities
     curl \
     wget \
@@ -25,14 +19,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     # Cleanup to reduce image size
     && rm -rf /var/lib/apt/lists/*
 
-# Clone and setup noVNC
-RUN git clone --depth 1 https://github.com/novnc/noVNC.git /opt/novnc && \
-    git clone --depth 1 https://github.com/novnc/websockify /opt/novnc/utils/websockify && \
-    ln -s /opt/novnc/vnc.html /opt/novnc/index.html
-
 # Install uv package manager for Python
-RUN curl -LsSf https://astral.sh/uv/install.sh | sh
-ENV PATH="/root/.local/bin:${PATH}"
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    # Copy uv binary to system-wide location so appuser can access it
+    cp /root/.local/bin/uv /usr/local/bin/uv && \
+    chmod +x /usr/local/bin/uv
+ENV PATH="/usr/local/bin:${PATH}"
 
 # Copy project files
 COPY pyproject.toml uv.lock* ./
@@ -46,9 +38,6 @@ RUN uv sync --frozen
 
 # Install Playwright system dependencies first (as root before switching to appuser)
 RUN uv run playwright install-deps chromium
-
-# Install Playwright browsers (Chromium for browser automation)
-RUN uv run playwright install chromium
 
 # Create cache directory with proper permissions
 RUN mkdir -p /app/cache && \
@@ -64,11 +53,13 @@ RUN useradd -m -u 1000 appuser && \
 # Switch to non-root user
 USER appuser
 
-# Expose ports
+# Install Playwright browsers (Chromium for browser automation) as appuser
+# This ensures browsers are in /home/appuser/.cache where Playwright expects them
+RUN uv run playwright install chromium
+
+# Expose port
 # 8000: Backend API
-# 6080: noVNC web interface
-# 5900: VNC server (optional, for direct VNC clients)
-EXPOSE 8000 6080 5900
+EXPOSE 8000
 
 # Health check for the backend API
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \

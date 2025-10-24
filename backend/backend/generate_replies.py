@@ -18,8 +18,8 @@ ensure_standalone_imports(globals())
 # Load .env from backend/ directory (one level up from backend/backend/)
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-# Put your OBELISK_KEY in an environment variable for safety
-OBELISK_KEY = os.getenv("OBELISK_KEY")
+# Import config
+from backend.config import OBELISK_KEY
 
 # Import scraping status tracker from read_tweets for status updates
 try:

@@ -24,6 +24,7 @@ dependencies = [
 
   # Web scraping / browser automation
   "playwright>=1.40.0",
+  "browserbase>=0.3.0",
 
   # WebSocket support
   "websockets>=12.0",

@@ -1,1198 +1,430 @@
 [
   {
-    "id": "1978940691129716847",
-    "text": "YC startup funded by @t_blom 👀",
-    "likes": 319,
-    "retweets": 17,
+    "id": "1981032641035182522",
+    "text": "These YC companies are on fire",
+    "likes": 261,
+    "retweets": 12,
     "quotes": 2,
-    "replies": 17,
-    "score": 376,
-    "followers": 613447,
-    "created_at": "Thu Oct 16 21:46:42 +0000 2025",
-    "url": "https://x.com/Garrytan/status/1978940691129716847",
+    "replies": 19,
+    "score": 310,
+    "followers": 614686,
+    "created_at": "Wed Oct 22 16:19:22 +0000 2025",
+    "url": "https://x.com/Garrytan/status/1981032641035182522",
     "username": "Garry Tan",
     "handle": "Garrytan",
     "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1922894268403941377/-dGWAt3N_400x400.jpg",
     "media": [],
     "quoted_tweet": {
-      "text": "wow. learned the fastest startup to go 0-&gt;$100m revenue was not Cursor(&gt;12mo), Mercor (~12mo),or Lovable (8mo).\n\n-&gt;it was Axiom Trade\n\nthey went  0-&gt;$100m in PROFIT in 4mo with &lt; 10 ppl\n\nthis makes it the fastest growing startup ever 🤯",
-      "author_name": "david",
-      "author_handle": "davidtsong",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1898905433051746305/5NtwmDoY_400x400.jpg",
-      "media": [],
-      "created_at": "Thu Oct 16 16:45:00 +0000 2025",
-      "url": "https://x.com/davidtsong/status/1978864765960122721"
+      "text": "Three Warp customers just announced massive rounds.\n\nReducto - $108M raised from a16z and Benchmark. Teaching AI to read documents. Processing 1B pages monthly.\n\nGreptile - $25M Series A led by Benchmark. Reviews 500M+ lines of code monthly. Prevents bugs before production for Brex, PostHog, Substack.\n\nDatacurve - $15M Series A. Building bounty hunter systems for the AI training data nobody else can get.\n\nCongrats to all three teams. Let's keep building.",
+      "author_name": "Ayush S",
+      "author_handle": "ayushswrites",
+      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1981050393833385985/uQx2IqjP_400x400.jpg",
+      "media": [
+        {
+          "type": "photo",
+          "url": "https://pbs.twimg.com/media/G3ymWZTWYAAZWyu.jpg",
+          "alt_text": ""
+        }
+      ],
+      "created_at": "Tue Oct 21 14:25:50 +0000 2025",
+      "url": "https://x.com/ayushswrites/status/1980641684535877987"
     },
-    "cache_id": "29f4a1b8-b92e-4123-87f6-7ab5efe695ec",
+    "cache_id": "856ee1b5-8e44-4bbd-8d8b-a3a89eb8b55d",
     "thread": [
-      "YC startup funded by @t_blom 👀"
+      "These YC companies are on fire"
     ],
     "scraped_from": {
       "type": "account",
       "value": "Garrytan"
-    }
-  },
-  {
-    "id": "1979380215311929686",
-    "text": "The thing you need to protect at all costs is your sense of humor. Feed it with experiences and life will always turn out fine. Seasons will season. Sometimes brutally. You just have to be a funny person through it all. The day you stop clowning is the day your future turns bleak",
-    "likes": 584,
-    "retweets": 82,
-    "quotes": 8,
-    "replies": 12,
-    "score": 784,
-    "followers": 117229,
-    "created_at": "Sat Oct 18 02:53:13 +0000 2025",
-    "url": "https://x.com/thedulab/status/1979380215311929686",
-    "username": "du",
-    "handle": "thedulab",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "1ab11c66-3fa4-4580-ab8a-a30b90d35d1b",
-    "thread": [
-      "The thing you need to protect at all costs is your sense of humor. Feed it with experiences and life will always turn out fine. Seasons will season. Sometimes brutally. You just have to be a funny person through it all. The day you stop clowning is the day your future turns bleak"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "thedulab"
-    }
-  },
-  {
-    "id": "1979309030402330723",
-    "text": "Don't know where to start? Wealth, health, relationships. Only areas of life that matter. Make some sort of progress in all three every day. Doesn't matter what you do. Don't need to quantify it. Just be able to go to bed knowing you at least attempted to move the needle. All focus should be on the consistency of daily action. Forget the future. Find meaning in the process and you'll just wake up one day financially stable, not fat, and around people you hug a lot. Game has been won and you didn't even realize it. Now you get to max out whatever stats you want for fun. Enjoy forever",
-    "likes": 540,
-    "retweets": 65,
-    "quotes": 1,
-    "replies": 6,
-    "score": 679,
-    "followers": 117229,
-    "created_at": "Fri Oct 17 22:10:21 +0000 2025",
-    "url": "https://x.com/thedulab/status/1979309030402330723",
-    "username": "du",
-    "handle": "thedulab",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "c5049230-d1b0-4c8c-ae3d-e69d45925884",
-    "thread": [
-      "Don't know where to start? Wealth, health, relationships. Only areas of life that matter. Make some sort of progress in all three every day. Doesn't matter what you do. Don't need to quantify it. Just be able to go to bed knowing you at least attempted to move the needle. All focus should be on the consistency of daily action. Forget the future. Find meaning in the process and you'll just wake up one day financially stable, not fat, and around people you hug a lot. Game has been won and you didn't even realize it. Now you get to max out whatever stats you want for fun. Enjoy forever"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "thedulab"
-    }
-  },
-  {
-    "id": "1979289478096392342",
-    "text": "Comparison games have changed so much. We have guys in their early 20's unable to enjoy life because they're not rich yet. Wondering if some huge figure is enough to retire. Terrified of time running out\n\nI'm an unc now but when I was that age, I don't remember feeling that level of scarcity. The comparisons I'd make were basically talking to accomplished professionals in their 40's-50's and thinking \"this is a great life they're living\" and just feeling hopeful about my future because of it\n\nMost of my anxieties involved not enjoying my job, but this general fear of getting left behind in some permanent underclass was never part of the equation. Accumulate wealth over the long term. Don't worry, you'll get there one day. Simple, attainable, proof it works. Now it feels like you need to find a way to escape reality as quickly as possible. Lock in, all or nothing\n\nSome validity to it of course. Economy different. Social media different. But pretty crazy to see how drastically things have shifted from even just a decade ago, and will be even more crazy to see what the next decade has in store",
-    "likes": 409,
-    "retweets": 19,
-    "quotes": 1,
-    "replies": 22,
-    "score": 472,
-    "followers": 117229,
-    "created_at": "Fri Oct 17 20:52:39 +0000 2025",
-    "url": "https://x.com/thedulab/status/1979289478096392342",
-    "username": "du",
-    "handle": "thedulab",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "7165d39b-c883-47ab-8477-f549448c9fad",
-    "thread": [
-      "Comparison games have changed so much. We have guys in their early 20's unable to enjoy life because they're not rich yet. Wondering if some huge figure is enough to retire. Terrified of time running out\n\nI'm an unc now but when I was that age, I don't remember feeling that level of scarcity. The comparisons I'd make were basically talking to accomplished professionals in their 40's-50's and thinking \"this is a great life they're living\" and just feeling hopeful about my future because of it\n\nMost of my anxieties involved not enjoying my job, but this general fear of getting left behind in some permanent underclass was never part of the equation. Accumulate wealth over the long term. Don't worry, you'll get there one day. Simple, attainable, proof it works. Now it feels like you need to find a way to escape reality as quickly as possible. Lock in, all or nothing\n\nSome validity to it of course. Economy different. Social media different. But pretty crazy to see how drastically things have shifted from even just a decade ago, and will be even more crazy to see what the next decade has in store"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "thedulab"
-    }
-  },
-  {
-    "id": "1979014699883860296",
-    "text": "Takes balls because you're intelligent enough to know that you're always able to control your perception of things. So when those perspective shifts actually end up making you feel better, you're forced to become a more honest person\n\nYou can't blame external circumstances for your problems anymore because deep down you now know that you're full of shit. You've proven to yourself time and time again that thoughts are what dictate your reality\n\nIf you fight against this truth and continue to play the victim, your subconscious will constantly remind you that you're living a perpetual lie. Easier in the short term to just be miserable than have to take responsibility for your life. Way different story in the long term",
-    "likes": 382,
-    "retweets": 28,
-    "quotes": 2,
-    "replies": 9,
-    "score": 453,
-    "followers": 117229,
-    "created_at": "Fri Oct 17 02:40:47 +0000 2025",
-    "url": "https://x.com/thedulab/status/1979014699883860296",
-    "username": "du",
-    "handle": "thedulab",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
-    "media": [],
-    "quoted_tweet": {
-      "text": "Whenever something happens that you don't like, you have to train yourself to immediately ask the following question. Could this have actually happened in my favor? If you're courageous and contrarian enough to become a happier person, you'll always find a reason to believe yes",
-      "author_name": "du",
-      "author_handle": "thedulab",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
-      "media": [],
-      "created_at": "Fri Oct 17 01:53:33 +0000 2025",
-      "url": "https://x.com/thedulab/status/1979002811766415552"
     },
-    "cache_id": "ba38d293-7a52-4188-be9b-cf4562a20f17",
-    "thread": [
-      "Takes balls because you're intelligent enough to know that you're always able to control your perception of things. So when those perspective shifts actually end up making you feel better, you're forced to become a more honest person\n\nYou can't blame external circumstances for your problems anymore because deep down you now know that you're full of shit. You've proven to yourself time and time again that thoughts are what dictate your reality\n\nIf you fight against this truth and continue to play the victim, your subconscious will constantly remind you that you're living a perpetual lie. Easier in the short term to just be miserable than have to take responsibility for your life. Way different story in the long term"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "thedulab"
-    }
+    "reply": "it’s always a little wild to me how 99% of the world will never even hear about companies like this but they just quietly grease the wheels of progress behind the scenes "
   },
   {
-    "id": "1979002811766415552",
-    "text": "Whenever something happens that you don't like, you have to train yourself to immediately ask the following question. Could this have actually happened in my favor? If you're courageous and contrarian enough to become a happier person, you'll always find a reason to believe yes",
-    "likes": 434,
-    "retweets": 47,
-    "quotes": 2,
-    "replies": 9,
-    "score": 543,
-    "followers": 117229,
-    "created_at": "Fri Oct 17 01:53:33 +0000 2025",
-    "url": "https://x.com/thedulab/status/1979002811766415552",
-    "username": "du",
-    "handle": "thedulab",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "03c0914b-2b41-401d-be01-5deddf0fbfa2",
-    "thread": [
-      "Whenever something happens that you don't like, you have to train yourself to immediately ask the following question. Could this have actually happened in my favor? If you're courageous and contrarian enough to become a happier person, you'll always find a reason to believe yes"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "thedulab"
-    }
-  },
-  {
-    "id": "1979608875906281757",
-    "text": "i just reached 100 000 likes on sora! https://t.co/ZIBhBUlYyR",
-    "likes": 170,
+    "id": "1981107232793382978",
+    "text": "You come across a tweet that tells you that everything is going to work out. How does it make you feel? If it's able to generate even the slightest bit of positive emotion in you, then it's literally true\n\nBecause if it wasn't, you wouldn't have reacted that way. You would've felt nothing or flat out rejected it. Proves that something in you still believes it's not the end of your story, that you still embody enough faith for your body to have not rejected the white pill. You have nothing to worry about",
+    "likes": 200,
     "retweets": 9,
     "quotes": 1,
-    "replies": 35,
-    "score": 226,
-    "followers": 54403,
-    "created_at": "Sat Oct 18 18:01:50 +0000 2025",
-    "url": "https://x.com/GabrielPeterss4/status/1979608875906281757",
-    "username": "gabriel",
-    "handle": "GabrielPeterss4",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1900416323030581248/LRlv5e8n_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3j7tq0WMAA0RnF.png",
-        "alt_text": ""
-      }
-    ],
+    "replies": 9,
+    "score": 230,
+    "followers": 117512,
+    "created_at": "Wed Oct 22 21:15:46 +0000 2025",
+    "url": "https://x.com/thedulab/status/1981107232793382978",
+    "username": "du",
+    "handle": "thedulab",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
+    "media": [],
     "quoted_tweet": null,
-    "cache_id": "b09f7c6f-de18-4a96-977c-252d57025f07",
+    "cache_id": "e950583b-f4f6-4a58-a754-d2ab882e1789",
     "thread": [
-      "i just reached 100 000 likes on sora! https://t.co/ZIBhBUlYyR"
+      "You come across a tweet that tells you that everything is going to work out. How does it make you feel? If it's able to generate even the slightest bit of positive emotion in you, then it's literally true\n\nBecause if it wasn't, you wouldn't have reacted that way. You would've felt nothing or flat out rejected it. Proves that something in you still believes it's not the end of your story, that you still embody enough faith for your body to have not rejected the white pill. You have nothing to worry about"
     ],
     "scraped_from": {
       "type": "account",
-      "value": "GabrielPeterss4"
-    }
-  },
-  {
-    "id": "1979603643377832273",
-    "text": "im expelled from mars",
-    "likes": 433,
-    "retweets": 7,
-    "quotes": 4,
-    "replies": 75,
-    "score": 534,
-    "followers": 54403,
-    "created_at": "Sat Oct 18 17:41:02 +0000 2025",
-    "url": "https://x.com/GabrielPeterss4/status/1979603643377832273",
-    "username": "gabriel",
-    "handle": "GabrielPeterss4",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1900416323030581248/LRlv5e8n_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "717da138-3617-453a-a1f4-a2f007664f0c",
-    "thread": [
-      "im expelled from mars",
-      "can someone make a sora cameo of me on mars"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "GabrielPeterss4"
-    }
-  },
-  {
-    "id": "1979460292410290335",
-    "text": "10% chance elon declare he reached agi a fourth time",
-    "likes": 1160,
-    "retweets": 33,
-    "quotes": 12,
-    "replies": 92,
-    "score": 1354,
-    "followers": 54403,
-    "created_at": "Sat Oct 18 08:11:24 +0000 2025",
-    "url": "https://x.com/GabrielPeterss4/status/1979460292410290335",
-    "username": "gabriel",
-    "handle": "GabrielPeterss4",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1900416323030581248/LRlv5e8n_400x400.jpg",
-    "media": [],
-    "quoted_tweet": {
-      "text": "My estimate of the probability of Grok 5 achieving AGI is now at 10% and rising",
-      "author_name": "Elon Musk",
-      "author_handle": "elonmusk",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1936002956333080576/kqqe2iWO_400x400.jpg",
-      "media": [],
-      "created_at": "Sat Oct 18 06:18:21 +0000 2025",
-      "url": "https://x.com/elonmusk/status/1979431839824777673"
+      "value": "thedulab"
     },
-    "cache_id": "5c399998-3fe7-4c6b-8a73-3a97436acc50",
-    "thread": [
-      "10% chance elon declare he reached agi a fourth time",
-      "it's no longer first to agi, it's first to 10 agis"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "GabrielPeterss4"
-    }
+    "reply": "optimism as a physiological reflex test LOL love it\nbut also: you can make yourself feel hopeful over time by flooding ur brain w feel good propaganda. it actually does sink in over time. You have to simultaneously admit to yourself u don't fully buy it yet but really really want to"
   },
   {
-    "id": "1979452825462865960",
-    "text": "i have interact with roon in a professional capacity for the first time, AMA",
-    "likes": 238,
-    "retweets": 0,
+    "id": "1980705044946383305",
+    "text": "It's really hard to lose money if you enjoy your life. Making it was never the issue. Be a driven person and invest part of your income every month. You really don't have much to worry about. You'll see anywhere between a lot and a ton of it, just stay alive\n\nProblem was always feeling like you needed to escape your mind. Contribute something purposeful to society, share meaningful experiences with people you love, your headspace suddenly turns into a safe place to call home\n\nNow you're thinking \"well I'm happy, life is good, so do I really need to fomo into this thing? Is this really my one chance to win? Am I really missing out on anything?\" Answer is no, because you feel like you've already reached the final destination in the present\n\nThis sense of internal security allows you to capitalize on opportunities from a place of abundance, rather than scarcity. Assessing risk is now backed by curiosity, rather than anxiety. You begin to see yourself as someone who already won, where the passing of physical time will just make you more and more aware of that\n\nWhy feel the need to retire when you're actually living? Why do you care so much about hitting this particular number now when it's essentially a given later in the decade? Why sabotage it all for a chance to chase something that isn't nearly as fulfilling as what you currently have?\n\nEmbody the right energy, trust that you'll always be fine, and showcase gratitude when luck surprises you with realities that allow you to relish in being more than fine. Not needing to be anywhere other than \"here\" is what gives the world permission to bring you \"there\"",
+    "likes": 387,
+    "retweets": 38,
     "quotes": 1,
-    "replies": 28,
-    "score": 269,
-    "followers": 54403,
-    "created_at": "Sat Oct 18 07:41:44 +0000 2025",
-    "url": "https://x.com/GabrielPeterss4/status/1979452825462865960",
-    "username": "gabriel",
-    "handle": "GabrielPeterss4",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1900416323030581248/LRlv5e8n_400x400.jpg",
+    "replies": 15,
+    "score": 481,
+    "followers": 117512,
+    "created_at": "Tue Oct 21 18:37:37 +0000 2025",
+    "url": "https://x.com/thedulab/status/1980705044946383305",
+    "username": "du",
+    "handle": "thedulab",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1687662676212613120/UjmtbMXI_400x400.jpg",
     "media": [],
     "quoted_tweet": null,
-    "cache_id": "9cdfafab-47c2-4fad-b4da-16eb6fe20fdd",
+    "cache_id": "72599af7-70e9-443e-963e-16d38e774ceb",
     "thread": [
-      "i have interact with roon in a professional capacity for the first time, AMA"
+      "It's really hard to lose money if you enjoy your life. Making it was never the issue. Be a driven person and invest part of your income every month. You really don't have much to worry about. You'll see anywhere between a lot and a ton of it, just stay alive\n\nProblem was always feeling like you needed to escape your mind. Contribute something purposeful to society, share meaningful experiences with people you love, your headspace suddenly turns into a safe place to call home\n\nNow you're thinking \"well I'm happy, life is good, so do I really need to fomo into this thing? Is this really my one chance to win? Am I really missing out on anything?\" Answer is no, because you feel like you've already reached the final destination in the present\n\nThis sense of internal security allows you to capitalize on opportunities from a place of abundance, rather than scarcity. Assessing risk is now backed by curiosity, rather than anxiety. You begin to see yourself as someone who already won, where the passing of physical time will just make you more and more aware of that\n\nWhy feel the need to retire when you're actually living? Why do you care so much about hitting this particular number now when it's essentially a given later in the decade? Why sabotage it all for a chance to chase something that isn't nearly as fulfilling as what you currently have?\n\nEmbody the right energy, trust that you'll always be fine, and showcase gratitude when luck surprises you with realities that allow you to relish in being more than fine. Not needing to be anywhere other than \"here\" is what gives the world permission to bring you \"there\""
     ],
     "scraped_from": {
       "type": "account",
-      "value": "GabrielPeterss4"
-    }
-  },
-  {
-    "id": "1979352820139855915",
-    "text": "i had already started writing all my code with ai when i started learning ml at openai\n\njust turned off cursor tab and raw dogged code for reading some tensors from azure. feeling powerful",
-    "likes": 125,
-    "retweets": 0,
-    "quotes": 0,
-    "replies": 13,
-    "score": 138,
-    "followers": 54403,
-    "created_at": "Sat Oct 18 01:04:21 +0000 2025",
-    "url": "https://x.com/GabrielPeterss4/status/1979352820139855915",
-    "username": "gabriel",
-    "handle": "GabrielPeterss4",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1900416323030581248/LRlv5e8n_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "79999c9f-2f64-4561-a205-68bdb07b5b32",
-    "thread": [
-      "i had already started writing all my code with ai when i started learning ml at openai\n\njust turned off cursor tab and raw dogged code for reading some tensors from azure. feeling powerful",
-      "i literally can't open a file in python without asking ai lol it's insane. but i was doing web before chatgpt was a thing, and i know every single web api all the way into wasm\n\nand it's not like i don't know my code, it's just the syntax doesn't stick in memory at all",
-      "im super ai coding pilled but clearly it makes sense to turn off all cursor tabbing &amp; forcing yourself to think through everything you do one day a week at least\n\nim just way too all in or nothing, time to change",
-      "inspired after being roasted by @leonmaksin_"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "GabrielPeterss4"
-    }
-  },
-  {
-    "id": "1979336295634866202",
-    "text": "the only reason i'm chasing greatness is to be in one of those tbpn sports card announcements",
-    "likes": 370,
-    "retweets": 9,
-    "quotes": 0,
-    "replies": 22,
-    "score": 410,
-    "followers": 54403,
-    "created_at": "Fri Oct 17 23:58:41 +0000 2025",
-    "url": "https://x.com/GabrielPeterss4/status/1979336295634866202",
-    "username": "gabriel",
-    "handle": "GabrielPeterss4",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1900416323030581248/LRlv5e8n_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "a7ce0a15-e548-4f65-94cb-270275495f95",
-    "thread": [
-      "the only reason i'm chasing greatness is to be in one of those tbpn sports card announcements",
-      "like what do you need from me? i can fortnite dance outside ferry building or eat a pepper (i hate peppers) or something"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "GabrielPeterss4"
-    }
-  },
-  {
-    "id": "1979274138545258570",
-    "text": "We're hosting the official @Vercel Ship AI afterparty, along with our friends at @braintrustdata.\n\nSign up to join other builders in SF on Oct 23. Limited spots. 🔗👇 https://t.co/2Z188hcifO",
-    "likes": 22,
-    "retweets": 1,
-    "quotes": 0,
-    "replies": 4,
-    "score": 28,
-    "followers": 14635,
-    "created_at": "Fri Oct 17 19:51:42 +0000 2025",
-    "url": "https://x.com/pk_iv/status/1979274138545258570",
-    "username": "Paul Klein IV",
-    "handle": "pk_iv",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1851174378635210753/LZHk5rYZ_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3fLS2zWAAAJlTr.png",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "dc548501-386d-456a-bb81-75cf197dffe9",
-    "thread": [
-      "We're hosting the official @Vercel Ship AI afterparty, along with our friends at @braintrustdata.\n\nSign up to join other builders in SF on Oct 23. Limited spots. 🔗👇 https://t.co/2Z188hcifO",
-      "@vercel @braintrustdata Sign up here: https://t.co/PV9NL4PKJg"
-    ]
-  },
-  {
-    "id": "1978999494348829136",
-    "text": "very excited to have @harsehajd on the 🅱️ team!! been a huge fan of her writing and excited to create some beautiful words together.",
-    "likes": 65,
-    "retweets": 1,
-    "quotes": 0,
-    "replies": 4,
-    "score": 71,
-    "followers": 14635,
-    "created_at": "Fri Oct 17 01:40:22 +0000 2025",
-    "url": "https://x.com/pk_iv/status/1978999494348829136",
-    "username": "Paul Klein IV",
-    "handle": "pk_iv",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1851174378635210753/LZHk5rYZ_400x400.jpg",
-    "media": [],
-    "quoted_tweet": {
-      "text": "only fall activity i’m doing is locking in https://t.co/wkKAg51W31",
-      "author_name": "harsehaj !",
-      "author_handle": "harsehajd",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1919413086999498753/Kf5xtB_s_400x400.jpg",
-      "media": [
-        {
-          "type": "photo",
-          "url": "https://pbs.twimg.com/media/G3bQH71WcAA7dE5.jpg",
-          "alt_text": ""
-        }
-      ],
-      "created_at": "Fri Oct 17 01:34:26 +0000 2025",
-      "url": "https://x.com/harsehajd/status/1978998003273806301"
+      "value": "thedulab"
     },
-    "cache_id": "0a042ed0-783d-4ed0-bb5b-662bf85d5f36",
+    "reply": "this is beautifully said tbh. the best ROI in life is rearranging your own headspace until being you feels like a good place to be. it's wild how abundance starts to show up everywhere once you're not urgently searching for it"
+  },
+  {
+    "id": "1981129581030703466",
+    "text": "how tf do i get my package with UPS in the US?  \n\nthey refuse to give it to me except if i'm home, and they randomly tell me in the middle of the day \"hey you need to be home between now and 5 hours forward\". wtf?? and hold at ups location is \"ineligible\"??",
+    "likes": 76,
+    "retweets": 0,
+    "quotes": 0,
+    "replies": 29,
+    "score": 105,
+    "followers": 55228,
+    "created_at": "Wed Oct 22 22:44:34 +0000 2025",
+    "url": "https://x.com/GabrielPeterss4/status/1981129581030703466",
+    "username": "gabriel",
+    "handle": "GabrielPeterss4",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1900416323030581248/LRlv5e8n_400x400.jpg",
+    "media": [],
+    "quoted_tweet": null,
+    "cache_id": "0e40ba53-5300-4325-bed6-58d54088d23d",
     "thread": [
-      "very excited to have @harsehajd on the 🅱️ team!! been a huge fan of her writing and excited to create some beautiful words together."
+      "how tf do i get my package with UPS in the US?  \n\nthey refuse to give it to me except if i'm home, and they randomly tell me in the middle of the day \"hey you need to be home between now and 5 hours forward\". wtf?? and hold at ups location is \"ineligible\"??"
     ],
     "scraped_from": {
       "type": "account",
-      "value": "pk_iv"
-    }
+      "value": "GabrielPeterss4"
+    },
+    "reply": "there are places that will recieve ur packages for you and email you when they arrive"
   },
   {
-    "id": "1979643545712742708",
-    "text": "Men will be like “sorry babe i can’t text you all day, i’m locked in” &amp; then go on to actually achieve every single dream they’ve ever wanted",
-    "likes": 20,
-    "retweets": 1,
-    "quotes": 0,
-    "replies": 1,
-    "score": 23,
-    "followers": 59518,
-    "created_at": "Sat Oct 18 20:19:35 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979643545712742708",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "14d5a040-369c-4874-abd1-fc3df73099da",
-    "thread": [
-      "Men will be like “sorry babe i can’t text you all day, i’m locked in” &amp; then go on to actually achieve every single dream they’ve ever wanted"
-    ]
-  },
-  {
-    "id": "1979640907516596597",
-    "text": "Women will find a random water-stained book on the ground then throw it up on their IG story with the caption “10/10 recommended read. Her best literature in my opinion” then put it right down &amp; go cheat on their husband",
-    "likes": 18,
-    "retweets": 0,
-    "quotes": 1,
-    "replies": 4,
-    "score": 25,
-    "followers": 59518,
-    "created_at": "Sat Oct 18 20:09:06 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979640907516596597",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "c767c97b-e2da-41dd-be89-fa9f26c885b2",
-    "thread": [
-      "Women will find a random water-stained book on the ground then throw it up on their IG story with the caption “10/10 recommended read. Her best literature in my opinion” then put it right down &amp; go cheat on their husband",
-      "*lowers monacle*\n\n“Oh wow, what an exquisite quality publication! Thank you, bad bitch! Tis the finest literature i’ve read in ages!”",
-      "If only we could see the entire narrative\n\nSadly we only get consciously constructed snippets\n\nExtrapolate"
-    ]
-  },
-  {
-    "id": "1979628475347800323",
-    "text": "When you find a woman attractive you are basically admitting you find her father attractive\n\nextremely gay",
-    "likes": 55,
-    "retweets": 0,
-    "quotes": 0,
-    "replies": 4,
-    "score": 59,
-    "followers": 59518,
-    "created_at": "Sat Oct 18 19:19:42 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979628475347800323",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "18cc61ad-cd71-4b71-b15e-6962cd6f1b62",
-    "thread": [
-      "When you find a woman attractive you are basically admitting you find her father attractive\n\nextremely gay"
-    ]
-  },
-  {
-    "id": "1979576782040051875",
-    "text": "In Basketball if you want to get better at defense/pace-of-play you need to play someone slightly better than you. But if you want to get better at offense you need someone slightly worse than you\n\nThis is what comment sections are for. Just shred normie arguments for sport as u try to understand what the fuck they even typed. Is an easy way to write more / hash out your own ideas.",
-    "likes": 42,
-    "retweets": 1,
-    "quotes": 0,
-    "replies": 4,
-    "score": 48,
-    "followers": 59518,
-    "created_at": "Sat Oct 18 15:54:18 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979576782040051875",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "0dd7a5a1-a3e0-4ce2-a521-d02ba28eecfb",
-    "thread": [
-      "In Basketball if you want to get better at defense/pace-of-play you need to play someone slightly better than you. But if you want to get better at offense you need someone slightly worse than you\n\nThis is what comment sections are for. Just shred normie arguments for sport as u try to understand what the fuck they even typed. Is an easy way to write more / hash out your own ideas.",
-      "The issue is on the court ur defender will be slightly worse than u and in a tiktok comment section you’re literallt dealing with a meatblob that’s sentiently closer to a cow than a human\n\nBut nonethless is good exercise. I always end up doing this on my personal but many can practice with an anon acc. Can just randomly disagree with anyone (and argue the other side) & they usually just snap",
-      "It’s also dope cuz ur forced to fit the idea in a limited character count so you have to shred what isn’t absolutely essential\n\nEngaging in intellectual comment section warfare with the 80 IQers in limited text arenas MONSTROUSLY slept on from a training ground POV",
-      "What may also happen is the 80 IQer says the most familiar hivemind response & u actually have never thought about your own response/stance on it so it forces you to develop your own perspective. Every once in a while the simplest shit (that they accidentally wrote themselves into or probably didn’t even mean to write) will actually be a good question/rebuttal that does make you think\n\nFun"
-    ]
-  },
-  {
-    "id": "1979558821539520642",
-    "text": "https://t.co/wtGhBvFju0",
-    "likes": 43,
-    "retweets": 1,
-    "quotes": 0,
-    "replies": 3,
-    "score": 48,
-    "followers": 59518,
-    "created_at": "Sat Oct 18 14:42:56 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979558821539520642",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3jOQXAXYAAYKyk.jpg",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "0749b8a1-66a1-473d-9593-11dd5949821a",
-    "thread": [
-      "https://t.co/wtGhBvFju0"
-    ]
-  },
-  {
-    "id": "1979313024600281466",
-    "text": "If they don’t see it, fuck em\n\nZero point in convincing anyone of anything\n\nDo u &amp; right people will appear",
-    "likes": 404,
-    "retweets": 33,
-    "quotes": 0,
-    "replies": 4,
-    "score": 474,
-    "followers": 59518,
-    "created_at": "Fri Oct 17 22:26:13 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979313024600281466",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "0c1736b3-611e-4022-a2ca-7c9f79367898",
-    "thread": [
-      "If they don’t see it, fuck em\n\nZero point in convincing anyone of anything\n\nDo u &amp; right people will appear"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1979031300552970560",
-    "text": "All the psychology sauce you need/want is quite literally just found in going after ur goals. it is ver sinple\n\nOn ur way there (if u actually go), u will realize 99.99999% of whats stopping u is ur psyche. the answers r found when u just try to fix ur own shit (by going after the goal - the fix is the byproduct). U will realize u:\n\n- cant make a decision\n- cant sit down & work\n- cant plan something out\n- cant get urself to do a task\n- too tired to function\n- cant stick to 1 thing long enough\n- cant research long enough to find the answer\n- cant track anything & lose everything\n- cant have a harsh direct conversion\n\nEtc etc. Then ur like \"so how do i actually do (thing stopping you). Then in the process of solving it u learn way more about it. U go \"oh wow, this is way different than I thought\". Congrats. U now know psychology.\n\nWild to me that the average person doesn't realize the infinite psych training ground is literally strapped to them 24/7",
-    "likes": 284,
-    "retweets": 19,
+    "id": "1980668861541196106",
+    "text": "I thought that sentence was pretty self explanatory but what I mean is before i got the corp job i thought it would be gay & i’d hate it but it was actually fun af, got paid 6-figs for a job i did on literal autopilot & got off at 2:30pm, had all the homies there, and was “the guy”\n\nExperiencing that made me realize exactly why people never leave. It hits every paychological human need at the exact same time lmao. U have to be lowkey sick in the head & actually about ur growth to bail on that. If i didn’t have the desire to turn my yearly income into my monthly income i would have never bailed. But soul overtook comfort & i needed aventure+risk+fun. I knew my potential was way higher than the world’s smoothest/safest 6 figures\n\nA lot of life actually works this way. You think you’ll hate something (and will probably tell people how gay it is) BEFORE you even actually experience it yourself. then when you ACTUALLY experience it, You’re like “oh I get it”\n\nOnce i went through this experience I stopped making judgements on things I had never directly experienced because I was very aware how much of an asshat that made me\n\n“Corp jobs are gay bro I could never get a corp job!” - guy that’s never had a corp job",
+    "likes": 100,
+    "retweets": 3,
     "quotes": 0,
     "replies": 5,
-    "score": 327,
-    "followers": 59518,
-    "created_at": "Fri Oct 17 03:46:45 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979031300552970560",
+    "score": 111,
+    "followers": 59774,
+    "created_at": "Tue Oct 21 16:13:50 +0000 2025",
+    "url": "https://x.com/retirementkeys/status/1980668861541196106",
     "username": "Grant Lannin",
     "handle": "retirementkeys",
     "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "2331cac7-3011-4fe5-aa4a-4e4a282f8420",
-    "thread": [
-      "All the psychology sauce you need/want is quite literally just found in going after ur goals. it is ver sinple\n\nOn ur way there (if u actually go), u will realize 99.99999% of whats stopping u is ur psyche. the answers r found when u just try to fix ur own shit (by going after the goal - the fix is the byproduct). U will realize u:\n\n- cant make a decision\n- cant sit down & work\n- cant plan something out\n- cant get urself to do a task\n- too tired to function\n- cant stick to 1 thing long enough\n- cant research long enough to find the answer\n- cant track anything & lose everything\n- cant have a harsh direct conversion\n\nEtc etc. Then ur like \"so how do i actually do (thing stopping you). Then in the process of solving it u learn way more about it. U go \"oh wow, this is way different than I thought\". Congrats. U now know psychology.\n\nWild to me that the average person doesn't realize the infinite psych training ground is literally strapped to them 24/7",
-      "U can only study/learn about something if there's a directionality attached to it. Without a target, there is no baseline/metric/foundation for comparison. there is no good or bad, up or down. U literally can't learn anything useful about anything, because you have no USE for it.\n\nIf u just try to look inside ur mind u won't find anything. Nothing there. But if u say \"im going to make myself sit down and work for 20 minutes\", now you get to observe ALL OF THE STUFF that is stopping you from doing that. \"oh wow, this thing is fucking me up\". Then u figure out how to beat it. Then when u do, congrats. u now have a piece of content 😂",
-      "Then when u find someone trying to do what u did u can say \"here's what worked for me\" & they may try it and actually find that it works. Pretty fucking wild if u think about it. We're all in the same exact minefield, and some people have already found the solves to the exact mine ur trying to dodge. \n\nWhat a strange fucking existence. Genuinely. Gotta fucking love life lmao. This shit is beyond insane. Imcomprehensibly insane",
-      "Guy 1: \"hey here's the mental sound I told MY inner tones that allowed me to type on my robot brain to earn shekels so i can afford gas for my fleshvehicle. It's fklmdivofidpk\"\n\nguy 2: fklmdivofidpk. oh wow it worked, thanks!\n\nLike bruh"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1979009318461567014",
-    "text": "Fuck \"the way it's supposed to be done\". Do it how YOU THE FUCK WANNA DO IT. That is how you add SPEED to your life, and genuinely leapfrog the trajectory/progress you're making INSTANTANEOUSLY\n\npeople telling u to cold email but u can just pick up the phone & rip? Do that.\n\npeople saying \"build muh slide deck\" but u have better idea? do that\n\npeople saying \"blah blah blah im a npc blah blah blah\"? (obviously)\n\nAsk yourself \"how would I get this done as quickly as possible assuming I had zero fucking clue how other people did it\". Tap into your NATURAL TENDENCIES, TRUST that GOD GAVE YOU THE FACULTIES, and fly at the target without all of the added bullshit resistance of wondering how \"mUhOThERpERson\" did it or wants you to do it. Who Gyves thy Phuk.\n\nEven as a test experiment, just drop the gaymap u think u gotta follow & just pull out the dub ur way. Let the blueprint go & ask yourself \"how the fuck do i wanna do this tho\"\n\nChances are that answer is NOT like anything else you see but WILL speed you the fuck up tremendously\n\nNo rules. Game of 1.",
-    "likes": 261,
-    "retweets": 22,
-    "quotes": 1,
-    "replies": 6,
-    "score": 314,
-    "followers": 59518,
-    "created_at": "Fri Oct 17 02:19:24 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979009318461567014",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "659da6e4-82de-47a0-bc43-3fb13f61c4b0",
-    "thread": [
-      "Fuck \"the way it's supposed to be done\". Do it how YOU THE FUCK WANNA DO IT. That is how you add SPEED to your life, and genuinely leapfrog the trajectory/progress you're making INSTANTANEOUSLY\n\npeople telling u to cold email but u can just pick up the phone & rip? Do that.\n\npeople saying \"build muh slide deck\" but u have better idea? do that\n\npeople saying \"blah blah blah im a npc blah blah blah\"? (obviously)\n\nAsk yourself \"how would I get this done as quickly as possible assuming I had zero fucking clue how other people did it\". Tap into your NATURAL TENDENCIES, TRUST that GOD GAVE YOU THE FACULTIES, and fly at the target without all of the added bullshit resistance of wondering how \"mUhOThERpERson\" did it or wants you to do it. Who Gyves thy Phuk.\n\nEven as a test experiment, just drop the gaymap u think u gotta follow & just pull out the dub ur way. Let the blueprint go & ask yourself \"how the fuck do i wanna do this tho\"\n\nChances are that answer is NOT like anything else you see but WILL speed you the fuck up tremendously\n\nNo rules. Game of 1.",
-      "I got roasted by my HS football coaches EVERY FUCKING DAY because I was literally technique-retarded. I played basketball & just said \"fuck it, i'll play football\". They put me at D end, had zero clue how to do anything. But I was faster than anyone I played against, so I'd quite literally just go around them or under them. Our D-line coach was on vikings & he'd continually lose his shit at my technique, but who gave a fuck\n\nGot the sack record",
-      "Obviously there is a discernment that has to be made here. Meaning, YES the fundamentals are absolutely essential (basically everything you want in life is just getting better than everyone else at the literal basics, because they literally don't do them) - but at the SAME time, there IS an edge in how YOU would do something naturally. God designed it all in. Ur body is a supergenius & levels u can't comprehend. it KNOWS. Now - i'm not saying \"listen to it blindly\" - but I AM saying \"study what its telling you and try to incorporate the wisdom you're being fed INTO your technique, as opposed to completely ignoring it & gaslighting yourself because some retard in authority told you it was bad\"\n\nSauce on their face, but your way",
-      "My writing is actually a good example of this as well. I break every grammatical \"rule\" and just spam random schizo ideas in capital letters with zero structure or gameplan while literally never editing anything. You just get what you get. I just get what I get, lmao. It's not polished, not strategized, not thought out - it's just dropped, even to my own surprise. But THAT is fucking fun for me, so THAT is what I do\n\n\"BUut DRop ValAuE ANd EDiDt yOuR TeXt bRo!!\"\n\nnah",
-      "The moment something makes you hate your life is the moment the question \"why am I actually even doing this\" comes into play & if you're good at re-framing anything, you will be able to philosophically wiggle your way out of the work if it actually doesn't absolutely fucking matter to you\n\nThat was always my biggest problem. If i literally didn't like it, I am so stubborn i quite literally just won't do it because I never needed what doing it what give me, i'd just skip the line & give that to myself, realizing it was inside of me the entire time.\n\nSounds \"oh woohoo that's great\" until you realize you're an ambitious 20-something with like 2-3 options to pursue. The ONLY THING  that ever gave me a shot was positioning my life to the point where when I asked myself \"what else would I be doing rn\" the answer was literally \"this\".\n\nIf someone gave me 5 billion dollars RIGHT NOW, i would quite literally be doing the EXACT same thing with the EXACT same people. NOTHING would change\n\nAnd here is crazy part - life designing/positioning your life in that way costs literally $0. It is just strategic thinking, balls & desire. And at the VERY beginning, a lot of discovery of both yourself & the world\n\nMuch fun to be had. No point in doing some meaningless bullshit when u can just build something u fucking love"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1979002100961923129",
-    "text": "THE SYNCHRONICITIES ARE FIRING\n\nTHE WORMHOLE HAS BEEN OPENED\n \nJUMP THE FUCK IN &amp; HOLD ON TO YOUR MASCARA SIS\n\nWE’RE GOING FOR A RIDE",
-    "likes": 127,
-    "retweets": 9,
-    "quotes": 2,
-    "replies": 8,
-    "score": 159,
-    "followers": 59518,
-    "created_at": "Fri Oct 17 01:50:43 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1979002100961923129",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "f2a1cb4b-9038-4e48-943c-d94c19d41c4f",
-    "thread": [
-      "THE SYNCHRONICITIES ARE FIRING\n\nTHE WORMHOLE HAS BEEN OPENED\n \nJUMP THE FUCK IN &amp; HOLD ON TO YOUR MASCARA SIS\n\nWE’RE GOING FOR A RIDE"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1978990621684539421",
-    "text": "imagine letting a random fucking obstacle (with no thumbs) stop YOU (someone with thumbs) from getting what they want\n\nEmbarrassing",
-    "likes": 115,
-    "retweets": 4,
-    "quotes": 0,
-    "replies": 4,
-    "score": 127,
-    "followers": 59518,
-    "created_at": "Fri Oct 17 01:05:06 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1978990621684539421",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "4685f02a-0c54-4d7e-ab68-37241eb8850c",
-    "thread": [
-      "imagine letting a random fucking obstacle (with no thumbs) stop YOU (someone with thumbs) from getting what they want\n\nEmbarrassing"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1978989236725412120",
-    "text": "First time u do anything difficult, will take way longer than u \"feel\" like it should (as u learn all u didn't know u didn't know)\n\nThen 2nd time, will be tremendously faster\n\n3rd time will be lightning\n\nRealize if ur just starting &amp; it's hard\n\nWill never be that hard again",
-    "likes": 148,
-    "retweets": 8,
-    "quotes": 1,
-    "replies": 7,
-    "score": 174,
-    "followers": 59518,
-    "created_at": "Fri Oct 17 00:59:36 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1978989236725412120",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "febffc33-2851-47fa-b6eb-95dc6614f1e1",
-    "thread": [
-      "First time u do anything difficult, will take way longer than u \"feel\" like it should (as u learn all u didn't know u didn't know)\n\nThen 2nd time, will be tremendously faster\n\n3rd time will be lightning\n\nRealize if ur just starting &amp; it's hard\n\nWill never be that hard again",
-      "The \"false\" mental model u imagine the thing 2 be doesn't include anywhere CLOSE to the actual # of variables that have 2 be \"sorted\" for it 2 work\n\nAs u walk down path, MORE unfolds. Then when u actually \"see it\" (what is ACTUALLY required) ur like \"oh, there's actually a ton of shit here\n\nThis \"oh shit, there's actually a ton here\" feeling means you are EXACTLY where u need to be. u've found the pocket. U've broke past being sideliner & are now in the game. \n\nKey now is to realize the game is the game. Meaning, the shit u gotta do is the shit u gotta do. Most \"see\" reality & then back away. U want 2 see reality & lean IN, knowing it's just obstacles (with no thumbs), and you are human with a BRAIN (and thumbs). U'll win every time."
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1978963911194853816",
-    "text": "Hurry up &amp; do the abnormal so you can then do the impossible",
-    "likes": 98,
-    "retweets": 8,
-    "quotes": 0,
-    "replies": 2,
-    "score": 116,
-    "followers": 59518,
-    "created_at": "Thu Oct 16 23:18:58 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1978963911194853816",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "095a75d4-70c6-4d04-9c89-b7b4b81bba2e",
-    "thread": [
-      "Hurry up &amp; do the abnormal so you can then do the impossible"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1978937000846586236",
-    "text": "When you’re making shit happen it will often feel like 1 step forward 2 steps back, an ANNOYING amount of times\n\nU just need to keep taking the unforeseen bumps 2 the chin & keep fucking pushing. continually fight for every uphill inch - over & over & over & over. You’ll be like “gawt dayum”. Who gives a fuck. Keep going.\n\nYou’ll look back after a couple dominos FINALLY fall your way in a row (and give you a tiny bit of breathing room / downhill momentum) & be monstrously glad u kept ur spirit up like u did. Whatever u r doing (assuming u actually want it), will probably require more spiritual firepower than u either anticipated or probably have ever used, but fuck it. Nothing else to do.\n\nVery normal. Keep pushing",
-    "likes": 176,
-    "retweets": 14,
-    "quotes": 1,
-    "replies": 7,
-    "score": 214,
-    "followers": 59518,
-    "created_at": "Thu Oct 16 21:32:02 +0000 2025",
-    "url": "https://x.com/retirementkeys/status/1978937000846586236",
-    "username": "Grant Lannin",
-    "handle": "retirementkeys",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "de3a3bcb-5b4a-401b-864c-9cd1a47f1c4f",
-    "thread": [
-      "When you’re making shit happen it will often feel like 1 step forward 2 steps back, an ANNOYING amount of times\n\nU just need to keep taking the unforeseen bumps 2 the chin & keep fucking pushing. continually fight for every uphill inch - over & over & over & over. You’ll be like “gawt dayum”. Who gives a fuck. Keep going.\n\nYou’ll look back after a couple dominos FINALLY fall your way in a row (and give you a tiny bit of breathing room / downhill momentum) & be monstrously glad u kept ur spirit up like u did. Whatever u r doing (assuming u actually want it), will probably require more spiritual firepower than u either anticipated or probably have ever used, but fuck it. Nothing else to do.\n\nVery normal. Keep pushing",
-      "When ur almost there, thefe is an emotion of “leaning over it” that you’ll feel that is fantastic signal. Very different from being far away from it\n\nIt’s like ur upper body is leaning over the finish line but ur feet haven’t caught up & crossed yet & ur trying to just figure out why ur feet haven’t moved. But ur BASICALLY there. Absolute green flag emotion although it manfiests as confusion.\n\nKEEP PUSHING"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "retirementkeys"
-    }
-  },
-  {
-    "id": "1979589710927241558",
-    "text": "TIL the C in ENIAC was \"Computor.\" https://t.co/ZSGz6kkbeL",
-    "likes": 120,
-    "retweets": 10,
-    "quotes": 3,
-    "replies": 17,
-    "score": 166,
-    "followers": 2087657,
-    "created_at": "Sat Oct 18 16:45:40 +0000 2025",
-    "url": "https://x.com/paulg/status/1979589710927241558",
-    "username": "Paul Graham",
-    "handle": "paulg",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1824002576/pg-railsconf_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3jp-5KWEAAGWCM.png",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "fcd6d5a8-a88a-45b6-bafa-fe0d38923213",
-    "thread": [
-      "TIL the C in ENIAC was \"Computor.\" https://t.co/ZSGz6kkbeL"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "paulg"
-    }
-  },
-  {
-    "id": "1979477064878330340",
-    "text": "It's easier to innovate when you're the original of something. People copying you can only copy a snapshot of your current state. They don't know which aspects of the snapshot are essential and which are random things you'd been about to change anyway.",
-    "likes": 2312,
-    "retweets": 314,
-    "quotes": 58,
-    "replies": 166,
-    "score": 3280,
-    "followers": 2087657,
-    "created_at": "Sat Oct 18 09:18:03 +0000 2025",
-    "url": "https://x.com/paulg/status/1979477064878330340",
-    "username": "Paul Graham",
-    "handle": "paulg",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1824002576/pg-railsconf_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "46d23575-3389-42b2-b1a9-607077cc73b8",
-    "thread": [
-      "It's easier to innovate when you're the original of something. People copying you can only copy a snapshot of your current state. They don't know which aspects of the snapshot are essential and which are random things you'd been about to change anyway."
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "paulg"
-    }
-  },
-  {
-    "id": "1979101402346512506",
-    "text": "This is common among the most successful startups. It may seem wasteful, but it's a good idea to have some extra money in the bank as insurance against disasters, and the most successful startups have that luxury.",
-    "likes": 2508,
-    "retweets": 107,
-    "quotes": 21,
-    "replies": 94,
-    "score": 2879,
-    "followers": 2087657,
-    "created_at": "Fri Oct 17 08:25:18 +0000 2025",
-    "url": "https://x.com/paulg/status/1979101402346512506",
-    "username": "Paul Graham",
-    "handle": "paulg",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1824002576/pg-railsconf_400x400.jpg",
     "media": [],
     "quoted_tweet": {
-      "text": "Have *not* yet spent a single dollar from the money we raised 2.5 years ago!",
-      "author_name": "Amjad Masad",
-      "author_handle": "amasad",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1897858917507776512/TRVTyKFk_400x400.jpg",
+      "text": "@retirementkeys “Before i got that job i thought it would be gay then when i left i 100% understood why most never do” what do you mean by this?",
+      "author_name": "xlockedmyaccountburner",
+      "author_handle": "s4vvvvy",
+      "author_profile_pic_url": "https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png",
       "media": [],
-      "created_at": "Thu Oct 16 21:55:47 +0000 2025",
-      "url": "https://x.com/amasad/status/1978942977453023371"
+      "created_at": "Tue Oct 21 07:47:54 +0000 2025",
+      "url": "https://x.com/s4vvvvy/status/1980541539551178791"
     },
-    "cache_id": "d80b775a-1535-4911-9bf6-6b2fa5abbd21",
+    "cache_id": "8ccd3a5f-0035-47ac-804e-213ebce5fc62",
     "thread": [
-      "This is common among the most successful startups. It may seem wasteful, but it's a good idea to have some extra money in the bank as insurance against disasters, and the most successful startups have that luxury."
+      "I thought that sentence was pretty self explanatory but what I mean is before i got the corp job i thought it would be gay & i’d hate it but it was actually fun af, got paid 6-figs for a job i did on literal autopilot & got off at 2:30pm, had all the homies there, and was “the guy”\n\nExperiencing that made me realize exactly why people never leave. It hits every paychological human need at the exact same time lmao. U have to be lowkey sick in the head & actually about ur growth to bail on that. If i didn’t have the desire to turn my yearly income into my monthly income i would have never bailed. But soul overtook comfort & i needed aventure+risk+fun. I knew my potential was way higher than the world’s smoothest/safest 6 figures\n\nA lot of life actually works this way. You think you’ll hate something (and will probably tell people how gay it is) BEFORE you even actually experience it yourself. then when you ACTUALLY experience it, You’re like “oh I get it”\n\nOnce i went through this experience I stopped making judgements on things I had never directly experienced because I was very aware how much of an asshat that made me\n\n“Corp jobs are gay bro I could never get a corp job!” - guy that’s never had a corp job",
+      "I will also say there was monstrous identity pain for me being associated with literal incapable emotionally-stunted normietards\n\nI didn’t give a fuck about the fact iw as getting paid more / was “better”, me doing the SAME THING as some retarded bitch doing drugs in the bathroom while casting spells on me in her free time made a part of me hate myself. It’s like “what the fuck is you doing buddy” type shit lmfao. If u settle for bottomfeeder-accessible shit you’ll have always a little bottomfeeder alive inside of you",
+      "Some dude will shart himself while drinking a big gulp and you’ll be like “the fact we’re both in the same place is fucking absolutely astronomical”. And you’re actually right lol. U playing way 2 small but avoiding the work required to shoot upwards.\n\nGet on that magic carpet kang. Spread dem wings @ fly 🆙🆙🆙",
+      "You also get psychefucked by the hiveprogramming. Unless ur psyche is strong enough to snap spells you’ll probably get fucked mentally\n\nI had failed a company & jumped in with ambitious & take-over-world energy. I literally asked sales manager in my interview “if one car is going 120mpg while all others are going 35pmh will the 120mph car get paid more”. I knew i was the best & it would just be bloodshet on scoreboard. I just needed cash for my next diceroll\n\nBut when u actually enter into it it’s infinite social proof/assumption that you’re literally retarded. You are IN the cage of the babies, and it is endless subconscious programming that tells you “hey you’re retarded!”. But it’s not for YOU specifically, it’s because you’re with people that LITERALLY need it.\n\nThe guy sharting himself from his 9th big gulp & the single mom with 3 baby daddys & a drug problem actually do need it at a 1st grade level. That is why i got offended at first. And then when i realized the truth i was like “woah”\n\nYou really do have to hate yourself to put up with that in a way - with rare exceptions"
     ],
     "scraped_from": {
       "type": "account",
-      "value": "paulg"
-    }
+      "value": "retirementkeys"
+    },
+    "reply": "honestly, a lot of this just reads as “I’m too special for my environment” cope. totally get the shock of realizing you actually fit in, or even thrive, in a setting you once scorned, corporate can be scarily cozy. but if being “the guy” makes you spiral about being surrounded by normies, that’s just a new flavor of ego trap. \n\nthe humility pill is realizing how easy it is for *anyone* (no matter how smart or “different”) to become seduced by comfort. stuff like “bottomfeeder alive inside you” is like, bro… it’s all of us. the people you’re sneering at are just earlier in the loop."
   },
   {
-    "id": "1979606021636014363",
-    "text": "Stanford just released a new course for this Fall: Transformers & Large Language Models by the Amidi brothers. Three videos are already available for free on YouTube. \n\nSYLLABUS: \n> Transformers (tokenization, embeddings, attention, architecture)\n> LLM foundations (MoEs, types of decoding)\n> LLM training and tuning (SFT, RL , LoRA)\n> LLM evaluation (LLM/VLM-as-a-judge and best practices)\n> Common tricks (RoPE, attention approximation, quantization)\n> Reasoning (train/test-time scaling)\n> Agentic workflows (RAG, tool calling)\n\nIf you already know this stuff, this is a good chance to refresh your mind about some of these topics, and potentially code some techniques from scratch.\n\nCourse syllabus and video links: https://t.co/6Io1nitSx3",
-    "likes": 276,
-    "retweets": 29,
+    "id": "1980666493424849282",
+    "text": "If you post anything genuinely truthful/helpful you’ll quickly realize how monstrous the % of people are that are ABSOLUTELY fucking cooked IS, based on their own voluntary willingness to stay cooked. Totally self-prescribed, entirely willingly\n\n“Nobody understands me or believes in me!”. No shit. They are literally all nondiscerning retards afraid of literally everything unimportant (including you rising). Just tune it out.\n\nBasically nobody “gets it”. If someone does get it - that is SO fucking rare it’s genuinely astronomical when you find someone that does. Ur on some mad max type shit. “Oh, you have a soul? Hi”\n\nDon’t hinge your psychological or spiritual health on “does the group accept me”. If THAT is your aim, you are DOOMED to be a perpetually caged, uninteresting loser who just copes & replyguys through life as he pokes people from the anon shadows\n\nInstead hinge ur psyche on “did i courageously fade the bullshit around me to pursue what I was pulled to pursue on my life & generate my actions based on the map God placed into MY soul. Did i give MYSELF permission to go MY WAY..”\n\nHinge it on if your ACTIONS are aligned with your own SELF. If the ACTIONS are in agreement with your soul\n\nIf THAT answer is yes, you WILL be okay. \n\nYou’ll probably have a lot of mouthbreathers mad/coping at you & firing off little soyremarks 24/7 as they attack ur sweg, but who gives a fuck\n\n“Is the path i’m walking aligning with my soul or not”.\n\nAnd it takes $0 to start there (shifting the foundational alignment/path your life is going). And even if you “don’t know what to do”, you KNOW where to look & where to start. You KNOW what to “pivot” your life towarda to “make it feel more nourishing/fun/enjoyable”. What sounds fucking fun to you? Go do that. \n\nOut of MIND, into HEART",
+    "likes": 155,
+    "retweets": 5,
     "quotes": 0,
-    "replies": 4,
-    "score": 338,
-    "followers": 39894,
-    "created_at": "Sat Oct 18 17:50:29 +0000 2025",
-    "url": "https://x.com/Hesamation/status/1979606021636014363",
+    "replies": 3,
+    "score": 168,
+    "followers": 59774,
+    "created_at": "Tue Oct 21 16:04:25 +0000 2025",
+    "url": "https://x.com/retirementkeys/status/1980666493424849282",
+    "username": "Grant Lannin",
+    "handle": "retirementkeys",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1850776128526426112/x8ZTnlYv_400x400.jpg",
+    "media": [],
+    "quoted_tweet": null,
+    "cache_id": "5c55807c-ce5b-4df7-a174-193727b4cb96",
+    "thread": [
+      "If you post anything genuinely truthful/helpful you’ll quickly realize how monstrous the % of people are that are ABSOLUTELY fucking cooked IS, based on their own voluntary willingness to stay cooked. Totally self-prescribed, entirely willingly\n\n“Nobody understands me or believes in me!”. No shit. They are literally all nondiscerning retards afraid of literally everything unimportant (including you rising). Just tune it out.\n\nBasically nobody “gets it”. If someone does get it - that is SO fucking rare it’s genuinely astronomical when you find someone that does. Ur on some mad max type shit. “Oh, you have a soul? Hi”\n\nDon’t hinge your psychological or spiritual health on “does the group accept me”. If THAT is your aim, you are DOOMED to be a perpetually caged, uninteresting loser who just copes & replyguys through life as he pokes people from the anon shadows\n\nInstead hinge ur psyche on “did i courageously fade the bullshit around me to pursue what I was pulled to pursue on my life & generate my actions based on the map God placed into MY soul. Did i give MYSELF permission to go MY WAY..”\n\nHinge it on if your ACTIONS are aligned with your own SELF. If the ACTIONS are in agreement with your soul\n\nIf THAT answer is yes, you WILL be okay. \n\nYou’ll probably have a lot of mouthbreathers mad/coping at you & firing off little soyremarks 24/7 as they attack ur sweg, but who gives a fuck\n\n“Is the path i’m walking aligning with my soul or not”.\n\nAnd it takes $0 to start there (shifting the foundational alignment/path your life is going). And even if you “don’t know what to do”, you KNOW where to look & where to start. You KNOW what to “pivot” your life towarda to “make it feel more nourishing/fun/enjoyable”. What sounds fucking fun to you? Go do that. \n\nOut of MIND, into HEART"
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "retirementkeys"
+    },
+    "reply": "peak \"if you know you know\" energy.  \npeople need to learn to filter for resonance over volume, if 99% of ppl “don’t get it” it just means you’re finding your tribe, not that you’re crazy.  \nthe real test is if you can keep going before anyone claps for it"
+  },
+  {
+    "id": "1981001405155717285",
+    "text": "how to solve hard problems easily, explained by one of the world's best competitive programmers: https://t.co/XEoicnfVIB",
+    "likes": 446,
+    "retweets": 45,
+    "quotes": 1,
+    "replies": 2,
+    "score": 541,
+    "followers": 40562,
+    "created_at": "Wed Oct 22 14:15:14 +0000 2025",
+    "url": "https://x.com/Hesamation/status/1981001405155717285",
     "username": "ℏεsam",
     "handle": "Hesamation",
     "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1978647680357134336/ioMmfkXF_400x400.jpg",
     "media": [
       {
         "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3j38DqWYAAktMB.jpg",
+        "url": "https://pbs.twimg.com/media/G33tZthWQAEHxb2.jpg",
         "alt_text": ""
       }
     ],
     "quoted_tweet": null,
-    "cache_id": "688802a4-c31b-41c1-8227-ae103e7de05d",
+    "cache_id": "b6765ab6-bac0-47cb-882b-913cff2a7839",
     "thread": [
-      "Stanford just released a new course for this Fall: Transformers & Large Language Models by the Amidi brothers. Three videos are already available for free on YouTube. \n\nSYLLABUS: \n> Transformers (tokenization, embeddings, attention, architecture)\n> LLM foundations (MoEs, types of decoding)\n> LLM training and tuning (SFT, RL , LoRA)\n> LLM evaluation (LLM/VLM-as-a-judge and best practices)\n> Common tricks (RoPE, attention approximation, quantization)\n> Reasoning (train/test-time scaling)\n> Agentic workflows (RAG, tool calling)\n\nIf you already know this stuff, this is a good chance to refresh your mind about some of these topics, and potentially code some techniques from scratch.\n\nCourse syllabus and video links: https://t.co/6Io1nitSx3"
+      "how to solve hard problems easily, explained by one of the world's best competitive programmers: https://t.co/XEoicnfVIB"
     ],
-    "reply": "honestly wild how something that would’ve been deep grad student arc maybe 5yrs ago is now beginner/intermediate YouTube fare. \ntech moves so fast it’s easy to get whiplash from just *watching* it.",
     "scraped_from": {
       "type": "account",
       "value": "Hesamation"
-    }
+    },
+    "reply": "love this breakdown. basically: intuition is pattern matching + motivated repetition. \nthe “always verify your intuition with logic” part is slept on, so many smart people get wrecked bc their intuition is good but not calibrated. \ngrowth mindset in a nutshell: train the right patterns, not just grind for grind’s sake."
   },
   {
-    "id": "1979304514294550985",
-    "text": "Critical thinking is one of the most powerful skills you need in 2030. https://t.co/56gmdNBvh5",
-    "likes": 22,
+    "id": "1980758359226593518",
+    "text": "this is crazy. an upcoming 1,000-page O'Reilly book is already No. 1 🥇 in \"computer hardware & architecture\" on Amazon... the longest book in O'Reilly's history!\n\nAI Systems Performance Engineering covers how the hardware and software in real-world AI systems go hand in hand.\n\n1. Introduction and AI System Overview\n2. AI System Hardware Overview\n3. OS, Docker, and Kubernetes Tuning\n4. Tuning Distributed Networking Communication\n5. GPU-based Storage I/O Optimizations\n6. GPU Architecture, CUDA Programming, and Maximizing Occupancy\n7. Profiling and Tuning GPU Memory Access Patterns\n8. Occupancy Tuning, Warp Efficiency, and Instruction-Level Parallelism\n9. Increasing CUDA Kernel Efficiency and Arithmetic Intensity\n10. Intra-Kernel Pipelining and Cooperative Thread Block Clusters\n11. Inter-Kernel Pipelining and CUDA Streams\n12. Dynamic and Device-Side Kernel Orchestration\n13. Profiling, Tuning, and Scaling PyTorch\n14. PyTorch Compiler, XLA, and OpenAI Triton Backends\n15. Multi-Node Inference Parallelism and Routing\n16. Profiling, Debugging, and Tuning Inference at Scale\n17. Scaling Disaggregated Prefill and Decode\n18. Advanced Prefill-Decode and KV Cache Tuning\n19. Dynamic and Adaptive Inference Engine Optimizations\n20. AI-Assisted Performance Optimizations\n\n@cfregly was previously an engineer leader at AWS and Databricks. he definitly knows what he's talking about. I've also seen so many positive reviews, such as @rasbt's. \n\nI haven't been this excited about any other book for a while, because this one points fingers at a pain-point that is rarely ever discussed, and is super comprehensive about it too! \n\nyou can already pre-order the book, before it is released next month: https://t.co/y21jkSxrDk\n\nthis post is not sponsored. I'm genuinely excited about this, and you should probably also be.",
+    "likes": 1582,
+    "retweets": 202,
+    "quotes": 5,
+    "replies": 24,
+    "score": 2025,
+    "followers": 40562,
+    "created_at": "Tue Oct 21 22:09:28 +0000 2025",
+    "url": "https://x.com/Hesamation/status/1980758359226593518",
+    "username": "ℏεsam",
+    "handle": "Hesamation",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1978647680357134336/ioMmfkXF_400x400.jpg",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/G30Q5lyXQAAtQHC.jpg",
+        "alt_text": ""
+      }
+    ],
+    "quoted_tweet": null,
+    "cache_id": "123e4de2-7d3b-4bba-b60d-4565d62b43d5",
+    "thread": [
+      "this is crazy. an upcoming 1,000-page O'Reilly book is already No. 1 🥇 in \"computer hardware & architecture\" on Amazon... the longest book in O'Reilly's history!\n\nAI Systems Performance Engineering covers how the hardware and software in real-world AI systems go hand in hand.\n\n1. Introduction and AI System Overview\n2. AI System Hardware Overview\n3. OS, Docker, and Kubernetes Tuning\n4. Tuning Distributed Networking Communication\n5. GPU-based Storage I/O Optimizations\n6. GPU Architecture, CUDA Programming, and Maximizing Occupancy\n7. Profiling and Tuning GPU Memory Access Patterns\n8. Occupancy Tuning, Warp Efficiency, and Instruction-Level Parallelism\n9. Increasing CUDA Kernel Efficiency and Arithmetic Intensity\n10. Intra-Kernel Pipelining and Cooperative Thread Block Clusters\n11. Inter-Kernel Pipelining and CUDA Streams\n12. Dynamic and Device-Side Kernel Orchestration\n13. Profiling, Tuning, and Scaling PyTorch\n14. PyTorch Compiler, XLA, and OpenAI Triton Backends\n15. Multi-Node Inference Parallelism and Routing\n16. Profiling, Debugging, and Tuning Inference at Scale\n17. Scaling Disaggregated Prefill and Decode\n18. Advanced Prefill-Decode and KV Cache Tuning\n19. Dynamic and Adaptive Inference Engine Optimizations\n20. AI-Assisted Performance Optimizations\n\n@cfregly was previously an engineer leader at AWS and Databricks. he definitly knows what he's talking about. I've also seen so many positive reviews, such as @rasbt's. \n\nI haven't been this excited about any other book for a while, because this one points fingers at a pain-point that is rarely ever discussed, and is super comprehensive about it too! \n\nyou can already pre-order the book, before it is released next month: https://t.co/y21jkSxrDk\n\nthis post is not sponsored. I'm genuinely excited about this, and you should probably also be."
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "Hesamation"
+    },
+    "reply": "1,000 pages is insane. imagine how many lifetimes you’d need to deeply grok all of it lol. \nwe’re living through “the manual gets thicker every year” in real time, feels like. but also kinda cool, proof there’s still real technical depth to be had if you want it."
+  },
+  {
+    "id": "1980746526113558687",
+    "text": "7 years ago, OpenAI was a cool company making AI that plays Dota, works on robotics, and RL. fast forward to 2025, and we're talking about a new browser or selling ads. my apologies if I'm not impressed anymore. https://t.co/JgR42zapcR",
+    "likes": 112,
+    "retweets": 9,
+    "quotes": 1,
+    "replies": 10,
+    "score": 143,
+    "followers": 40562,
+    "created_at": "Tue Oct 21 21:22:26 +0000 2025",
+    "url": "https://x.com/Hesamation/status/1980746526113558687",
+    "username": "ℏεsam",
+    "handle": "Hesamation",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1978647680357134336/ioMmfkXF_400x400.jpg",
+    "media": [
+      {
+        "type": "photo",
+        "url": "https://pbs.twimg.com/media/G30F5RxWMAAo2IA.jpg",
+        "alt_text": ""
+      }
+    ],
+    "quoted_tweet": null,
+    "cache_id": "9a6a823b-48b1-4367-8197-47de1d4c5f73",
+    "thread": [
+      "7 years ago, OpenAI was a cool company making AI that plays Dota, works on robotics, and RL. fast forward to 2025, and we're talking about a new browser or selling ads. my apologies if I'm not impressed anymore. https://t.co/JgR42zapcR"
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "Hesamation"
+    },
+    "reply": "honestly all tech companies start off “playing” and end up “optimizing for revenue” it’s the nature of the beast  \nthe golden age is always like, the first 2-3 years where it’s weird and experimental and no one’s thinking abt ads yet"
+  },
+  {
+    "id": "1981152979828036079",
+    "text": "pov: you accidentally open a light mode website https://t.co/RbwLEkK9cs",
+    "likes": 13,
     "retweets": 0,
     "quotes": 0,
-    "replies": 1,
-    "score": 23,
-    "followers": 39894,
-    "created_at": "Fri Oct 17 21:52:24 +0000 2025",
-    "url": "https://x.com/Hesamation/status/1979304514294550985",
-    "username": "ℏεsam",
-    "handle": "Hesamation",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1978647680357134336/ioMmfkXF_400x400.jpg",
+    "replies": 3,
+    "score": 16,
+    "followers": 9516,
+    "created_at": "Thu Oct 23 00:17:33 +0000 2025",
+    "url": "https://x.com/measure_plan/status/1981152979828036079",
+    "username": "AA",
+    "handle": "measure_plan",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1910027312638070785/yRxWVnD0_400x400.jpg",
     "media": [
       {
         "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3fm9yAWYAINqiC.jpg",
+        "url": "https://pbs.twimg.com/media/G351ImkWgAAIRaL.jpg",
         "alt_text": ""
       }
     ],
     "quoted_tweet": null,
-    "cache_id": "55ea7466-a352-4970-b43a-a010010d9abb",
+    "cache_id": "b0e042e3-7bbd-4815-96f6-72ae4e06ab2a",
     "thread": [
-      "Critical thinking is one of the most powerful skills you need in 2030. https://t.co/56gmdNBvh5"
-    ]
+      "pov: you accidentally open a light mode website https://t.co/RbwLEkK9cs"
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "measure_plan"
+    },
+    "reply": "cat looks like it just saw God and regrets everything"
   },
   {
-    "id": "1979166716602069429",
-    "text": "MIT has a free 34-session playlist on Linear Algebra instructed by the legendary Gilbert Strang. \n\ngoes through matrix manipulations, eigenvectors, differential equations, SVD, basically 100% of the stuff you need to know for machine learning.\n\nsolid stuff to get started. https://t.co/q2pQP6FG2g",
-    "likes": 21,
-    "retweets": 4,
-    "quotes": 0,
-    "replies": 4,
-    "score": 33,
-    "followers": 39894,
-    "created_at": "Fri Oct 17 12:44:51 +0000 2025",
-    "url": "https://x.com/Hesamation/status/1979166716602069429",
-    "username": "ℏεsam",
-    "handle": "Hesamation",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1978647680357134336/ioMmfkXF_400x400.jpg",
+    "id": "1980723659531776169",
+    "text": "It was great to meet @garGoel91 in SF!\n\n@supermemory 🤝 @dodopayments\n\nUnforgettable Pants + Cha-ching hats https://t.co/un0xTYecxW",
+    "likes": 157,
+    "retweets": 2,
+    "quotes": 1,
+    "replies": 18,
+    "score": 182,
+    "followers": 45845,
+    "created_at": "Tue Oct 21 19:51:35 +0000 2025",
+    "url": "https://x.com/DhravyaShah/status/1980723659531776169",
+    "username": "Dhravya Shah",
+    "handle": "DhravyaShah",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1813041528278843392/u50EIuLZ_400x400.jpg",
     "media": [
       {
         "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3dpn7aXEAEdsJd.jpg",
+        "url": "https://pbs.twimg.com/media/G3zxqvTbIAAU23q.jpg",
         "alt_text": ""
       }
     ],
     "quoted_tweet": null,
-    "cache_id": "6c86482f-d19b-4372-b743-3fc231a370d9",
+    "cache_id": "19cc4892-8a52-4796-b4bb-9fd1770586b6",
     "thread": [
-      "MIT has a free 34-session playlist on Linear Algebra instructed by the legendary Gilbert Strang. \n\ngoes through matrix manipulations, eigenvectors, differential equations, SVD, basically 100% of the stuff you need to know for machine learning.\n\nsolid stuff to get started. https://t.co/q2pQP6FG2g"
-    ]
+      "It was great to meet @garGoel91 in SF!\n\n@supermemory 🤝 @dodopayments\n\nUnforgettable Pants + Cha-ching hats https://t.co/un0xTYecxW"
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "DhravyaShah"
+    },
+    "reply": "peak SF energy, love to see the cross-pollination (and the merch is actually hard lol)\nthis is what real networking looks like tbh"
   },
   {
-    "id": "1979131515918282853",
-    "text": "the modern world narrative doesn’t want you to be a POLYMATH. \n- “you must be an expert in AI to land high-level roles in top companies”\n- “you must be the best in your job so you’re not replaced by automation”\n- “resist the distraction, focus”\nignore the bs narrative. you are human, a collection of irrelevant interests that form your character. it’s not your fault that you want to be a great mathematician, musician, engineer, reader. often times, great ideas come from the intersection of these far interests and change the world. Steve Jobs wouldn’t make a giant empire if he didn’t have knowledge about engineering, design, marketing, and customer psychology.",
-    "likes": 20,
+    "id": "1981221228372521440",
+    "text": "This is a big deal",
+    "likes": 70,
     "retweets": 3,
     "quotes": 0,
-    "replies": 2,
-    "score": 28,
-    "followers": 39894,
-    "created_at": "Fri Oct 17 10:24:58 +0000 2025",
-    "url": "https://x.com/Hesamation/status/1979131515918282853",
-    "username": "ℏεsam",
-    "handle": "Hesamation",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1978647680357134336/ioMmfkXF_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3dJntHXgAAs5su.jpg",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "628b2c69-d8f1-4b90-8a51-408310ddd779",
-    "thread": [
-      "the modern world narrative doesn’t want you to be a POLYMATH. \n- “you must be an expert in AI to land high-level roles in top companies”\n- “you must be the best in your job so you’re not replaced by automation”\n- “resist the distraction, focus”\nignore the bs narrative. you are human, a collection of irrelevant interests that form your character. it’s not your fault that you want to be a great mathematician, musician, engineer, reader. often times, great ideas come from the intersection of these far interests and change the world. Steve Jobs wouldn’t make a giant empire if he didn’t have knowledge about engineering, design, marketing, and customer psychology."
-    ]
-  },
-  {
-    "id": "1978975769117290624",
-    "text": "peak male coding setup. https://t.co/1EmTrMBzW1",
-    "likes": 8,
-    "retweets": 0,
-    "quotes": 1,
-    "replies": 0,
-    "score": 11,
-    "followers": 39894,
-    "created_at": "Fri Oct 17 00:06:05 +0000 2025",
-    "url": "https://x.com/Hesamation/status/1978975769117290624",
-    "username": "ℏεsam",
-    "handle": "Hesamation",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1978647680357134336/ioMmfkXF_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3a7-RQWYAAXDna.jpg",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "9362114e-935d-4965-9b6b-621d44f4ddd5",
-    "thread": [
-      "peak male coding setup. https://t.co/1EmTrMBzW1"
-    ]
-  },
-  {
-    "id": "1979363068917465471",
-    "text": "It’s funny how some people thought this was real\n\nIt’s not even an image edit output, but is a realtime video to video output\n\nYall ain’t ready for this to drop 🤫🤐",
-    "likes": 50,
-    "retweets": 0,
-    "quotes": 0,
-    "replies": 3,
-    "score": 53,
-    "followers": 9162,
-    "created_at": "Sat Oct 18 01:45:05 +0000 2025",
-    "url": "https://x.com/noahgsolomon/status/1979363068917465471",
-    "username": "noah",
-    "handle": "noahgsolomon",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1975678332110053377/cCVf56_D_400x400.jpg",
+    "replies": 6,
+    "score": 82,
+    "followers": 614686,
+    "created_at": "Thu Oct 23 04:48:44 +0000 2025",
+    "url": "https://x.com/Garrytan/status/1981221228372521440",
+    "username": "Garry Tan",
+    "handle": "Garrytan",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1922894268403941377/-dGWAt3N_400x400.jpg",
     "media": [],
     "quoted_tweet": {
-      "text": "bro got caught in 4k during the all hands https://t.co/GWNz4KYAF1",
-      "author_name": "Jonathan Fischoff",
-      "author_handle": "jfischoff",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1675234764742336512/YS7hSQI4_400x400.jpg",
-      "media": [
-        {
-          "type": "photo",
-          "url": "https://pbs.twimg.com/media/G3ealhaX0AMSOLQ.jpg",
-          "alt_text": ""
-        }
-      ],
-      "created_at": "Fri Oct 17 16:18:45 +0000 2025",
-      "url": "https://x.com/jfischoff/status/1979220549269360899"
+      "text": "An exciting milestone for AI in science: Our C2S-Scale 27B foundation model, built with @Yale and based on Gemma, generated a novel hypothesis about cancer cellular behavior, which scientists experimentally validated in living cells. \n\nWith more preclinical and clinical tests, this discovery may reveal a promising new pathway for developing therapies to fight cancer.",
+      "author_name": "Sundar Pichai",
+      "author_handle": "sundarpichai",
+      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1710036756731510784/FyfFgM-B_400x400.jpg",
+      "media": [],
+      "created_at": "Wed Oct 15 17:03:48 +0000 2025",
+      "url": "https://x.com/sundarpichai/status/1978507110477332582"
     },
-    "cache_id": "31e66188-a9e4-4611-9e2e-48b9fcbfe7ae",
+    "cache_id": "e22eca51-79dd-4bb5-8b79-123711f3a2f4",
     "thread": [
-      "It’s funny how some people thought this was real\n\nIt’s not even an image edit output, but is a realtime video to video output\n\nYall ain’t ready for this to drop 🤫🤐",
-      "psa: no I don’t smoke that’s haram"
-    ]
-  },
-  {
-    "id": "1979227895282438455",
-    "text": "can I just have ONE uninterrupted cig during the slack huddle. is that too much to ask? 🤕",
-    "likes": 156,
-    "retweets": 0,
-    "quotes": 0,
-    "replies": 6,
-    "score": 162,
-    "followers": 9162,
-    "created_at": "Fri Oct 17 16:47:57 +0000 2025",
-    "url": "https://x.com/noahgsolomon/status/1979227895282438455",
-    "username": "noah",
-    "handle": "noahgsolomon",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1975678332110053377/cCVf56_D_400x400.jpg",
-    "media": [],
-    "quoted_tweet": {
-      "text": "bro got caught in 4k during the all hands https://t.co/GWNz4KYAF1",
-      "author_name": "Jonathan Fischoff",
-      "author_handle": "jfischoff",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1675234764742336512/YS7hSQI4_400x400.jpg",
-      "media": [
-        {
-          "type": "photo",
-          "url": "https://pbs.twimg.com/media/G3ealhaX0AMSOLQ.jpg",
-          "alt_text": ""
-        }
-      ],
-      "created_at": "Fri Oct 17 16:18:45 +0000 2025",
-      "url": "https://x.com/jfischoff/status/1979220549269360899"
+      "This is a big deal",
+      "https://t.co/od0J73dp8k"
+    ],
+    "scraped_from": {
+      "type": "account",
+      "value": "Garrytan"
     },
-    "cache_id": "f49d3f39-69b4-4f84-bf87-38df7b5f5f11",
+    "reply": "growing up i read sci fi novels about artificial intelligence making actual scientific discoveries.  now it's real! awe-inspiring and also little unnerving"
+  },
+  {
+    "id": "1980667660313711092",
+    "text": "Prompting and evals will be everything\n\nPrompting is agency\nEvals is taste",
+    "likes": 1698,
+    "retweets": 161,
+    "quotes": 68,
+    "replies": 221,
+    "score": 2445,
+    "followers": 614686,
+    "created_at": "Tue Oct 21 16:09:03 +0000 2025",
+    "url": "https://x.com/Garrytan/status/1980667660313711092",
+    "username": "Garry Tan",
+    "handle": "Garrytan",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1922894268403941377/-dGWAt3N_400x400.jpg",
+    "media": [],
+    "quoted_tweet": null,
+    "cache_id": "27e176dc-6c18-48ca-ab28-53233612436d",
     "thread": [
-      "can I just have ONE uninterrupted cig during the slack huddle. is that too much to ask? 🤕"
+      "Prompting and evals will be everything\n\nPrompting is agency\nEvals is taste"
     ],
     "scraped_from": {
       "type": "account",
-      "value": "noahgsolomon"
-    }
+      "value": "Garrytan"
+    },
+    "reply": "yep, love this framing. prompting = your ability to get leverage out of the system, evals = whether you know what’s actually worth optimizing for. most ppl have neither."
   },
   {
-    "id": "1978991017081569698",
-    "text": "Quora as a concept amazes me\n\nMe: *wants to find answer to question*\n\nQuora: “how about we show u 50% of the question, 0 of the answers, and suggest a TOTALLY UNRELATED question instead?” https://t.co/lio7HfHJUN",
-    "likes": 15,
-    "retweets": 0,
-    "quotes": 0,
-    "replies": 4,
-    "score": 19,
-    "followers": 9162,
-    "created_at": "Fri Oct 17 01:06:41 +0000 2025",
-    "url": "https://x.com/noahgsolomon/status/1978991017081569698",
-    "username": "noah",
-    "handle": "noahgsolomon",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1975678332110053377/cCVf56_D_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3bJ1rgXIAAjrqQ.jpg",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "7f0404df-d774-4b96-867d-fee2759ad160",
-    "thread": [
-      "Quora as a concept amazes me\n\nMe: *wants to find answer to question*\n\nQuora: “how about we show u 50% of the question, 0 of the answers, and suggest a TOTALLY UNRELATED question instead?” https://t.co/lio7HfHJUN"
-    ]
-  },
-  {
-    "id": "1979343384033812973",
-    "text": "my three favorite movies are you’ve got mail, phantom thread and eyes wide shut, which together perfectly encapsulate my personality",
-    "likes": 68,
-    "retweets": 0,
-    "quotes": 2,
-    "replies": 3,
-    "score": 77,
-    "followers": 61521,
-    "created_at": "Sat Oct 18 00:26:51 +0000 2025",
-    "url": "https://x.com/noampomsky/status/1979343384033812973",
-    "username": "Ava",
-    "handle": "noampomsky",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1973924738683842563/HN4gOHCi_400x400.jpg",
+    "id": "1980662737157124389",
+    "text": "Real market alpha isn’t loud confidence; it’s the capacity to stay in contact with fear long enough to read the signal instead of flinching from it. \n\nThe market punishes comfort. The founders and investors who separate themselves are the ones who can distinguish “this feels dangerous because it’s stupid” from “this feels dangerous because it will rewire my map.”",
+    "likes": 460,
+    "retweets": 57,
+    "quotes": 9,
+    "replies": 55,
+    "score": 656,
+    "followers": 614686,
+    "created_at": "Tue Oct 21 15:49:30 +0000 2025",
+    "url": "https://x.com/Garrytan/status/1980662737157124389",
+    "username": "Garry Tan",
+    "handle": "Garrytan",
+    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1922894268403941377/-dGWAt3N_400x400.jpg",
     "media": [],
     "quoted_tweet": null,
-    "cache_id": "4165ee6e-b8c1-4a69-9bad-8fb3b0c486c5",
+    "cache_id": "05ddf1f9-6ea0-4b9f-a292-3fdb4a3947ad",
     "thread": [
-      "my three favorite movies are you’ve got mail, phantom thread and eyes wide shut, which together perfectly encapsulate my personality"
+      "Real market alpha isn’t loud confidence; it’s the capacity to stay in contact with fear long enough to read the signal instead of flinching from it. \n\nThe market punishes comfort. The founders and investors who separate themselves are the ones who can distinguish “this feels dangerous because it’s stupid” from “this feels dangerous because it will rewire my map.”"
     ],
     "scraped_from": {
       "type": "account",
-      "value": "noampomsky"
-    }
-  },
-  {
-    "id": "1979249043588157689",
-    "text": "the best relationships consist of a series of unbreachable private understandings",
-    "likes": 253,
-    "retweets": 18,
-    "quotes": 0,
-    "replies": 2,
-    "score": 291,
-    "followers": 61521,
-    "created_at": "Fri Oct 17 18:11:59 +0000 2025",
-    "url": "https://x.com/noampomsky/status/1979249043588157689",
-    "username": "Ava",
-    "handle": "noampomsky",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1973924738683842563/HN4gOHCi_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "258c6713-a23d-4b27-9538-02cdeb9287cb",
-    "thread": [
-      "the best relationships consist of a series of unbreachable private understandings"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "noampomsky"
-    }
-  },
-  {
-    "id": "1979248640628756593",
-    "text": "Barthes: “If I had to create a god, I would lend him a “slow understanding”: a kind of drip-by-drip understanding of problems. People who understand quickly frighten me.”",
-    "likes": 19,
-    "retweets": 0,
-    "quotes": 0,
-    "replies": 1,
-    "score": 20,
-    "followers": 61521,
-    "created_at": "Fri Oct 17 18:10:23 +0000 2025",
-    "url": "https://x.com/noampomsky/status/1979248640628756593",
-    "username": "Ava",
-    "handle": "noampomsky",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1973924738683842563/HN4gOHCi_400x400.jpg",
-    "media": [],
-    "quoted_tweet": null,
-    "cache_id": "326d7a8c-24b0-42f3-867a-745b517a3c3b",
-    "thread": [
-      "Barthes: “If I had to create a god, I would lend him a “slow understanding”: a kind of drip-by-drip understanding of problems. People who understand quickly frighten me.”"
-    ]
-  },
-  {
-    "id": "1979549854616412575",
-    "text": "Fusion of 𝗥𝗔𝗚 (Retrieval Augmented Generation) and 𝗖𝗔𝗚 (Cache Augmented Generation). How can you benefit from it as AI Engineer?\n\nFew months ago there was a lot of hype around a technique called CAG. While it is powerful to its own extent, the real magic happens when you combine CAG with regular RAG. Let’s see what it would look like and what additional considerations should be taken into account.\n\nHere are example steps to implement CAG + RAG architecture:\n\n𝘋𝘢𝘵𝘢 𝘗𝘳𝘦𝘱𝘳𝘰𝘤𝘦𝘴𝘴𝘪𝘯𝘨:\n\n𝟭. We use only rarely changing data sources for Cache Augmented Generation. On top of the requirement of data changing rarely we should also think about which of the sources are often hit by relevant queries. Once we have this information, only then we pre-compute all of this selected data into a KV Cache of the LLM. Cache it in memory. This only needs to be done once, the following steps can be run multiple times without recomputing the initial cache.\n𝟮. For RAG, if necessary, precompute and store vector embeddings in a compatible database to be searched later in step 4. Sometimes simpler data types are enough for RAG, a regular database might suffice.\n\n𝘘𝘶𝘦𝘳𝘺 𝘗𝘢𝘵𝘩:\n\nWe can now utilise the preprocessed data.\n\n𝟯. Compose a prompt including user query and the system prompt with instructions on how cached context and retrieved external context should be used by the LLM.\n𝟰. Embed a user query to be used for semantic search via vector DBs and query the context store to retrieve relevant data. If semantic search is not required, query other sources, like real time databases or web.\n𝟱. Enrich the final prompt with external context retrieved in step 4.\n𝟲. Return the final answer to the user.\n\n𝘚𝘰𝘮𝘦 𝘊𝘰𝘯𝘴𝘪𝘥𝘦𝘳𝘢𝘵𝘪𝘰𝘯𝘴:\n\n➡️ Context window is not infinite and even while some models boast enormous context window sizes, the needle in the haystack problem has not yet been solved so use available context wisely and cache only the data you really need.\n\n✅ For some business cases, specific datasets are extremely valuable to be passed to the model as cache. Think about an assistant that has to always comply with a lengthy set of internal rules stored in multiple documents. \n✅ While CAG has been popularised for Open Source just recently, it is already viable for some time via Prompt Caching features in OpenAI and Anthropic APIs. It is really easy to start prototyping there.\n✅ You should always separate hot and cold data sources, only use cold (data that changes rarely) in your cache, otherwise the data will go stale and the application will go out of sync.\n\n❌ Be very careful about what you cache as the data will be available for all users to query.\n❌ It is very hard to ensure RBAC for cached data unless you have a separate model with its own cache per role.\n\nHave you used the fusion of CAG and RAG already? Let me know about your results in the comments 👇\n\n#LLM #AI #MachineLearning",
-    "likes": 162,
-    "retweets": 27,
-    "quotes": 1,
-    "replies": 4,
-    "score": 223,
-    "followers": 32563,
-    "created_at": "Sat Oct 18 14:07:18 +0000 2025",
-    "url": "https://x.com/Aurimas_Gr/status/1979549854616412575",
-    "username": "Aurimas Griciūnas",
-    "handle": "Aurimas_Gr",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1725897062296772608/pkRjNV01_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3jGGKQWwAEdIHc.jpg",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "b19cbb20-8ae4-4709-9a9f-a6f7a7edd132",
-    "thread": [
-      "Fusion of 𝗥𝗔𝗚 (Retrieval Augmented Generation) and 𝗖𝗔𝗚 (Cache Augmented Generation). How can you benefit from it as AI Engineer?\n\nFew months ago there was a lot of hype around a technique called CAG. While it is powerful to its own extent, the real magic happens when you combine CAG with regular RAG. Let’s see what it would look like and what additional considerations should be taken into account.\n\nHere are example steps to implement CAG + RAG architecture:\n\n𝘋𝘢𝘵𝘢 𝘗𝘳𝘦𝘱𝘳𝘰𝘤𝘦𝘴𝘴𝘪𝘯𝘨:\n\n𝟭. We use only rarely changing data sources for Cache Augmented Generation. On top of the requirement of data changing rarely we should also think about which of the sources are often hit by relevant queries. Once we have this information, only then we pre-compute all of this selected data into a KV Cache of the LLM. Cache it in memory. This only needs to be done once, the following steps can be run multiple times without recomputing the initial cache.\n𝟮. For RAG, if necessary, precompute and store vector embeddings in a compatible database to be searched later in step 4. Sometimes simpler data types are enough for RAG, a regular database might suffice.\n\n𝘘𝘶𝘦𝘳𝘺 𝘗𝘢𝘵𝘩:\n\nWe can now utilise the preprocessed data.\n\n𝟯. Compose a prompt including user query and the system prompt with instructions on how cached context and retrieved external context should be used by the LLM.\n𝟰. Embed a user query to be used for semantic search via vector DBs and query the context store to retrieve relevant data. If semantic search is not required, query other sources, like real time databases or web.\n𝟱. Enrich the final prompt with external context retrieved in step 4.\n𝟲. Return the final answer to the user.\n\n𝘚𝘰𝘮𝘦 𝘊𝘰𝘯𝘴𝘪𝘥𝘦𝘳𝘢𝘵𝘪𝘰𝘯𝘴:\n\n➡️ Context window is not infinite and even while some models boast enormous context window sizes, the needle in the haystack problem has not yet been solved so use available context wisely and cache only the data you really need.\n\n✅ For some business cases, specific datasets are extremely valuable to be passed to the model as cache. Think about an assistant that has to always comply with a lengthy set of internal rules stored in multiple documents. \n✅ While CAG has been popularised for Open Source just recently, it is already viable for some time via Prompt Caching features in OpenAI and Anthropic APIs. It is really easy to start prototyping there.\n✅ You should always separate hot and cold data sources, only use cold (data that changes rarely) in your cache, otherwise the data will go stale and the application will go out of sync.\n\n❌ Be very careful about what you cache as the data will be available for all users to query.\n❌ It is very hard to ensure RBAC for cached data unless you have a separate model with its own cache per role.\n\nHave you used the fusion of CAG and RAG already? Let me know about your results in the comments 👇\n\n#LLM #AI #MachineLearning"
-    ],
-    "scraped_from": {
-      "type": "query",
-      "value": "retrieval augmented generation"
-    }
-  },
-  {
-    "id": "1979209612399120413",
-    "text": "AI Engineering Toolkit\n\nA curated list of 100+ LLM libraries and frameworks for training, fine-tuning, building, evaluating, deploying, RAG, and AI Agents.\n\n100% Open Source https://t.co/9uULCZtr50",
-    "likes": 504,
-    "retweets": 94,
-    "quotes": 2,
-    "replies": 6,
-    "score": 704,
-    "followers": 87610,
-    "created_at": "Fri Oct 17 15:35:18 +0000 2025",
-    "url": "https://x.com/mdancho84/status/1979209612399120413",
-    "username": "🔥 Matt Dancho (Business Science) 🔥",
-    "handle": "mdancho84",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/815624333926297600/oc0lCoJ7_400x400.jpg",
-    "media": [
-      {
-        "type": "photo",
-        "url": "https://pbs.twimg.com/media/G3eQpytXYAE8Vc1.jpg",
-        "alt_text": ""
-      }
-    ],
-    "quoted_tweet": null,
-    "cache_id": "7b03f657-ca08-49e5-b2c9-c5735162a7a1",
-    "thread": [
-      "AI Engineering Toolkit\n\nA curated list of 100+ LLM libraries and frameworks for training, fine-tuning, building, evaluating, deploying, RAG, and AI Agents.\n\n100% Open Source https://t.co/9uULCZtr50",
-      "Get it here: https://t.co/PHY85TCzuV\n\nI have one more thing before you go.\n\nIf you want to become a generative AI data scientist in 2025 ($200,000 career), then I'd like to help:",
-      "🚨 NEW WORKSHOP: I'm sharing one of my best AI Projects for FREE: \n\nHow I built an AI Customer Segmentation Agent with Python:\n\n- Scikit Learn\n- K-Means\n- LangChain\n- LangGraph\n- OpenAI\n\n👉Register here (740+ Registered): https://t.co/P6jZxC0iBL https://t.co/O9AaOxW0Br",
-      "That's a wrap! Over the next 24 days, I'm sharing the 24 concepts that helped me become a data scientist.\n\nIf you enjoyed this thread:\n\n1. Follow me @mdancho84 for more of these\n2. RT the tweet below to share this thread with your audience",
-      "P.S. Want free AI, Machine Learning, and Data Science Tips with Python code every Sunday?\n\nDon't forget to sign up for my AI/ML Tips Newsletter Here: https://t.co/qBdxaluVAD"
-    ],
-    "scraped_from": {
-      "type": "query",
-      "value": "applied AI enginering"
-    }
+      "value": "Garrytan"
+    },
+    "reply": "yesss, every actual edge is found in the uncomfy spots where your brain is screaming “abort mission!!” but it’s actually just unfamiliar territory. wish we spent as much time learning to metabolize fear as we do optimizing for certainty"
   }
 ]

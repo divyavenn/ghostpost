@@ -3,8 +3,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install
 COPY . .
-ARG VITE_APP_BACKEND_ADDRESS
-ENV VITE_APP_BACKEND_ADDRESS=$VITE_APP_BACKEND_ADDRESS
+# Don't set VITE_API_BASE_URL - frontend will use relative URLs
 RUN npm run build
 
 FROM nginx:1.25-alpine

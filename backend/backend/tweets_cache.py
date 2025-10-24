@@ -7,20 +7,12 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from backend.utils import _cache_key, atomic_file_update
+from backend.utils import _cache_key, atomic_file_update, error, notify
 
 BACKEND_DIR = Path(__file__).resolve().parent
 # Cache is one level up from backend/backend/ -> backend/cache/
 CACHE_DIR = BACKEND_DIR.parent / "cache"
 USERNAME = "proudlurker"
-
-
-def notify(msg: str):
-    print(msg)
-
-
-def error(msg: str):
-    raise RuntimeError(f"❌ {msg}")
 
 
 def get_user_tweet_cache(username=USERNAME) -> Path:

@@ -13,28 +13,34 @@ import dotenv
 
 from backend.user import get_user_info
 from backend.utils import error, notify
+from backend.config import (
+    BACKEND_URL,
+    SHOW_BROWSER,
+    TWITTER_API_BASE_URL as BASE_URL,
+    TWITTER_CLIENT_ID as client_id,
+    TWITTER_CLIENT_SECRET as client_secret,
+)
 
 # Load .env from backend/ directory (one level up from backend/backend/)
 dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-client_id = os.getenv("TWITTER_CLIENT_ID")
-client_secret = os.getenv("TWITTER_CLIENT_SECRET")
-redirect_uri = os.getenv("BACKEND_URL") + "/auth/callback"
-BASE_URL = "https://api.x.com/2"
+redirect_uri = BACKEND_URL + "/auth/callback"
 
 # Check if we should use headless browser for SCRAPING (not OAuth)
 def is_headless_mode_for_scraping() -> bool:
     """
     Return True if browser should run in headless mode for AUTOMATED SCRAPING.
-    Defaults to True if HEADLESS_BROWSER is not set (safe for production).
+    Uses SHOW_BROWSER config variable (can be overridden by HEADLESS_BROWSER env var).
 
     NOTE: OAuth/login flows should NEVER use headless mode - users need to see
     the browser to enter credentials and authorize the app!
     """
     headless_env = os.getenv("HEADLESS_BROWSER")
-    if headless_env is None:
-        return True  # Default to headless for scraping (production-safe)
-    return headless_env.lower() in ("true", "1", "yes")
+    if headless_env is not None:
+        # Environment variable override
+        return headless_env.lower() in ("true", "1", "yes")
+    # Use config value (inverted - SHOW_BROWSER=True means headless=False)
+    return not SHOW_BROWSER
 
 
 def generate_code_verifier() -> str:
@@ -202,7 +208,13 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
         async with async_playwright() as p:
             # OAuth MUST be visible so user can log in - never use headless!
             # Browser renders to DISPLAY=:99 (Xvfb virtual display, viewable via noVNC)
-            browser = await p.chromium.launch(headless=False)
+            browser = await p.chromium.launch(
+                headless=False,
+                args=[
+                    '--no-sandbox',  # Required for Docker
+                    '--disable-dev-shm-usage',  # Overcome limited resource problems
+                ]
+            )
             context = await browser.new_context()
             page = await context.new_page()
             await page.goto(auth_url)

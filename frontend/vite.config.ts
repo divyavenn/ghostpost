@@ -7,7 +7,7 @@ export default defineConfig(({ command, mode }) => {
   
   return {
     // CRITICAL: Base path for Docker/nginx deployment
-    base: './',
+    base: '/',
     
     plugins: [react()],
     
@@ -40,7 +40,7 @@ export default defineConfig(({ command, mode }) => {
       // Only for development - nginx handles this in production
       proxy: isDev ? {
         '/api': {
-          target: env.VITE_APP_BACKEND_ADDRESS || 'http://localhost:8000',
+          target: env.VITE_APP_BACKEND_URL,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, '')
         }
@@ -53,7 +53,7 @@ export default defineConfig(({ command, mode }) => {
     },
     
     define: {
-      VITE_APP_BACKEND_ADDRESS: JSON.stringify(env.VITE_APP_BACKEND_ADDRESS),
+      VITE_APP_BACKEND_URL : JSON.stringify(env.VITE_APP_BACKEND_URL),
     },
   };
 });

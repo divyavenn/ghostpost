@@ -2,14 +2,14 @@ import { useEffect, useState } from 'react';
 import type { ComponentType } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Swiper, SwiperSlide } from 'swiper/react';
-import { Navigation, Keyboard, EffectCards } from 'swiper/modules';
+import { Navigation, Keyboard, EffectCoverflow } from 'swiper/modules';
 import type { LoginCard } from '../data/loginCards';
 import type { Swiper as SwiperType } from 'swiper';
 
 // Import Swiper styles
 import 'swiper/css';
 import 'swiper/css/navigation';
-import 'swiper/css/effect-cards';
+import 'swiper/css/effect-coverflow';
 
 interface CardLightboxProps {
   cards: LoginCard[];
@@ -49,23 +49,27 @@ export function CardLightbox({ cards, currentIndex, onClose }: CardLightboxProps
         </button>
 
         {/* Swiper carousel */}
-        <div className="max-w-2xl w-full mx-auto flex items-center justify-center h-[600px]" onClick={(e) => e.stopPropagation()}>
+        <div className="w-full mx-auto flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
           <Swiper
-            modules={[Navigation, Keyboard, EffectCards]}
-            effect="cards"
+            modules={[Navigation, Keyboard, EffectCoverflow]}
+            effect="coverflow"
             grabCursor={true}
+            centeredSlides={true}
+            slidesPerView={3}
             loop={true}
             initialSlide={currentIndex}
             onSlideChange={(swiper) => setActiveIndex(swiper.realIndex)}
-            cardsEffect={{
-              perSlideOffset: 8,
-              perSlideRotate: 2,
-              rotate: true,
+            coverflowEffect={{
+              rotate: 0,
+              stretch: 0,
+              depth: 100,
+              modifier: 2.5,
               slideShadows: true,
             }}
             style={{
-              width: '450px',
-              height: '550px',
+              width: '100%',
+              paddingTop: '50px',
+              paddingBottom: '50px',
             }}
             keyboard={{
               enabled: true,
@@ -78,7 +82,7 @@ export function CardLightbox({ cards, currentIndex, onClose }: CardLightboxProps
             className="!pb-0"
           >
             {cards.map((card, index) => (
-              <SwiperSlide key={card.id} className="!rounded-2xl !overflow-hidden">
+              <SwiperSlide key={card.id} className="!rounded-2xl !overflow-hidden" style={{ width: '300px', height: '800px' }}>
                 <div className="w-full h-full">
                   {card.component ? (
                     // Render full component (Poster) for lightbox

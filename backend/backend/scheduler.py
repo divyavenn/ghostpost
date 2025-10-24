@@ -15,6 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter
 
 from backend.generate_replies import generate_replies
+from backend.log_interactions import log_scrape_action
 from backend.read_tweets import read_tweets
 from backend.tweets_cache import cleanup_old_tweets
 from backend.utils import BROWSER_STATE_FILE, cookie_still_valid, notify
@@ -94,6 +95,9 @@ async def auto_scrape_for_user(username: str):
         result = await generate_replies(username=username, overwrite=False)
         reply_count = sum(1 for t in result if t.get('reply'))
         notify(f"✅ [Auto-scrape] Generated {reply_count} new replies for {username}")
+
+        # Log the scraping action (auto-initiated)
+        log_scrape_action(username, len(tweets), initiated_by="auto")
 
         notify(f"🎉 [Auto-scrape] Completed for {username}")
 

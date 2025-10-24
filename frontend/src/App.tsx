@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
 import {PostedTweetDisplay, type PostedTweetData } from './components/posted_tweet';
@@ -32,48 +32,8 @@ function App() {
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
   const [isLoadingMorePosted, setIsLoadingMorePosted] = useState(false);
 
-  useEffect(() => {
-    // Check for OAuth callback parameters
-    const params = new URLSearchParams(window.location.search);
-    const callbackUsername = params.get('username');
-    const status = params.get('status');
-    const error = params.get('error');
-    const errorDescription = params.get('error_description');
-
-    if (status === 'error') {
-      // OAuth failed, show error and go back to login
-      alert(`Authentication failed: ${errorDescription || error || 'Unknown error'}`);
-      setUsername(null);
-      localStorage.removeItem('username');
-
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (callbackUsername && status === 'success') {
-      // OAuth successful, save username and load tweets
-      setUsername(callbackUsername);
-      localStorage.setItem('username', callbackUsername);
-      loadUserInfo(callbackUsername);
-      loadTweets(callbackUsername);
-      loadPostedTweets(callbackUsername);
-
-      // Clean up URL
-      window.history.replaceState({}, document.title, window.location.pathname);
-    } else if (username) {
-      loadUserInfo(username);
-      loadTweets(username);
-      loadPostedTweets(username);
-    }
-  }, []);
-
-  // Redirect to login if no username
-  useEffect(() => {
-    if (!username) {
-      navigate('/login');
-    }
-  }, [username, navigate]);
-
   // Load posted tweets from backend
-  const loadPostedTweets = async (user: string, reset: boolean = true) => {
+  const loadPostedTweets = useCallback(async (user: string, reset: boolean = true) => {
     try {
       if (reset) {
         setPostedTweetsOffset(0);
@@ -98,7 +58,7 @@ function App() {
       // Check if there are more tweets to load
       setHasMorePostedTweets(data.count === 50);
 
-      // Check performance metrics for the loaded tweets
+      // Check performance metrics for the newly loaded tweets
       if (data.tweets.length > 0) {
         const tweetIds = data.tweets.map(t => t.id).filter(Boolean);
         if (tweetIds.length > 0) {
@@ -108,22 +68,22 @@ function App() {
             console.log(`Updated metrics for ${metricsResult.updated_count} tweets`);
 
             // Reload tweets to get updated metrics
-            const updatedData = await api.getPostedTweets(user, 50, reset ? 0 : postedTweetsOffset - data.count);
             if (reset) {
+              const updatedData = await api.getPostedTweets(user, 50, 0);
               setPostedTweets(updatedData.tweets);
             } else {
-              // Replace the newly loaded tweets with updated versions
-              setPostedTweets(prev => {
-                const newTweets = [...prev];
-                const startIdx = prev.length - data.count;
-                for (let i = 0; i < updatedData.tweets.length && i < data.count; i++) {
-                  newTweets[startIdx + i] = updatedData.tweets[i];
-                }
-                return newTweets;
-              });
+              // For infinite scroll, reload from beginning to get all updated metrics
+              const updatedData = await api.getPostedTweets(user, postedTweetsOffset + data.count, 0);
+              setPostedTweets(updatedData.tweets);
             }
-          } catch (error) {
-            console.error('Failed to check tweet performance:', error);
+          } catch (error: unknown) {
+            // Handle rate limiting gracefully
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+              console.warn('⚠️ Twitter API rate limit reached. Showing cached metrics. Try again in 15 minutes.');
+            } else {
+              console.error('Failed to check tweet performance:', error);
+            }
             // Continue anyway - we still have the tweets even if metrics failed
           }
         }
@@ -131,7 +91,56 @@ function App() {
     } catch (error) {
       console.error('Failed to load posted tweets:', error);
     }
-  };
+  }, [postedTweetsOffset]);
+
+  useEffect(() => {
+    // Check for OAuth callback parameters
+    const params = new URLSearchParams(window.location.search);
+    const callbackUsername = params.get('username');
+    const status = params.get('status');
+    const error = params.get('error');
+    const errorDescription = params.get('error_description');
+
+    if (status === 'error') {
+      // OAuth failed, show error and go back to login
+      alert(`Authentication failed: ${errorDescription || error || 'Unknown error'}`);
+      setUsername(null);
+      localStorage.removeItem('username');
+
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (callbackUsername && status === 'success') {
+      // OAuth successful, save username and load tweets
+      setUsername(callbackUsername);
+      localStorage.setItem('username', callbackUsername);
+      loadUserInfo(callbackUsername);
+      loadTweets(callbackUsername);
+      // Don't load posted tweets here - will load when user switches to Posted tab
+
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (username) {
+      loadUserInfo(username);
+      loadTweets(username);
+      // Don't load posted tweets here - will load when user switches to Posted tab
+    }
+    // This should only run once on mount, not when username changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Redirect to login if no username
+  useEffect(() => {
+    if (!username) {
+      navigate('/login');
+    }
+  }, [username, navigate]);
+
+  // Load posted tweets when switching to Posted tab
+  useEffect(() => {
+    if (activeTab === 'posted' && username) {
+      loadPostedTweets(username, true);
+    }
+  }, [activeTab, username, loadPostedTweets]);
 
   // Load more posted tweets (for infinite scroll)
   const loadMorePostedTweets = async () => {
@@ -328,11 +337,6 @@ function App() {
 
         // Reload user info to update lifetime_posts counter
         await loadUserInfo(username);
-
-        // Reload posted tweets to include the newly posted one
-        if (activeTab === 'posted') {
-          await loadPostedTweets(username, true);
-        }
 
         // Remove from local state
         const updatedTweets = tweets.filter(t => t.id !== tweetId);

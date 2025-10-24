@@ -1,5 +1,6 @@
 import asyncio
 import re
+import time
 
 from fastapi import APIRouter, HTTPException, status
 from playwright.async_api import async_playwright
@@ -17,10 +18,12 @@ ensure_standalone_imports(globals())
 
 try:
     from backend.headless_fetch import collect_from_page
-    from backend.utils import error, notify
+    from backend.log_interactions import log_scrape_action
+    from backend.utils import error, notify, read_user_info, write_user_info
 except ImportError:
     from headless_fetch import collect_from_page
-    from utils import error, notify
+    from log_interactions import log_scrape_action
+    from utils import error, notify, read_user_info, write_user_info
 
 # -------- Config --------
 import os
@@ -304,11 +307,30 @@ class ReadTweetsRequest(BaseModel):
 async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None = None) -> dict:
     """Scrape tweets from usernames and queries, save to cache."""
     try:
+        # Track scraping time
+        start_time = time.time()
+
         if payload is None:
             tweets = await read_tweets(username=username)
         else:
             tweets = await read_tweets(username=username, relevant_accounts=payload.usernames, queries=payload.queries, max_scrolls=payload.max_scrolls, max_tweets=payload.max_tweets)
-        return {"message": "Tweets scraped and cached successfully", "count": len(tweets), "tweets": tweets}
+
+        # Calculate time saved (time spent scraping)
+        end_time = time.time()
+        scraping_duration = int(end_time - start_time)  # in seconds
+
+        # Update user's scrolling_time_saved
+        user_info = read_user_info(username)
+        if user_info:
+            current_time_saved = user_info.get("scrolling_time_saved", 0)
+            user_info["scrolling_time_saved"] = current_time_saved + scraping_duration
+            write_user_info(user_info)
+            notify(f"⏱️ Scraping took {scraping_duration}s. Total time saved: {user_info['scrolling_time_saved']}s")
+
+        # Log the scraping action
+        log_scrape_action(username, len(tweets))
+
+        return {"message": "Tweets scraped and cached successfully", "count": len(tweets), "tweets": tweets, "scraping_duration_seconds": scraping_duration}
     except Exception as e:
         print(str(e))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error scraping tweets: {str(e)}") from e

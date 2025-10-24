@@ -17,7 +17,7 @@ Before starting, ensure you have:
 
 2) Build and start all services
 
-    `docker compose up --build -d`
+    `./docker-run.sh`
 
 3) Access the services:
    - **Frontend**: http://localhost:80
@@ -43,8 +43,6 @@ Before starting, ensure you have:
 - **Frontend**: React/Vite app served by Nginx on port 80
 - **Backend**: FastAPI app on port 8000, including:
   - Virtual display (Xvfb) for headless browser automation
-  - VNC server (x11vnc) on port 5900
-  - noVNC web interface on port 6080 for viewing browser sessions
   - Playwright with Chromium for browser automation
 - **Cache-init**: Sets up proper permissions for cache directories
 

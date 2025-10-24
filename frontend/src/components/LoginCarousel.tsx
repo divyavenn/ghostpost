@@ -1,6 +1,5 @@
 import { useMemo, useRef, useEffect, useState } from 'react';
 import { motion, useMotionValue, useTransform, animate } from 'framer-motion';
-import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import type { LoginCard } from '../data/loginCards';
 import { CardLightbox } from './CardLightbox';
 
@@ -120,8 +119,6 @@ export function LoginCarousel({
           cards={cards}
           currentIndex={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
-          onPrevious={() => setLightboxIndex((lightboxIndex - 1 + cards.length) % cards.length)}
-          onNext={() => setLightboxIndex((lightboxIndex + 1) % cards.length)}
         />
       )}
     </>
@@ -169,40 +166,15 @@ function WheelCard({
 
   const { w, h } = cardSize;
 
-  // Scale all dimensions dynamically based on card width
-  // Base reference: w=90 (current size)
+  // Scale border radius dynamically based on card width
   const scale = w / 90;
-  const padding = Math.max(2, Math.round(8 * scale));
-  const animationSize = Math.max(8, Math.round(32 * scale));
-  const numberFontSize = Math.max(6, Math.round(8 * scale));
-  const headingFontSize = Math.max(8, Math.round(10 * scale));
-  const subheadingFontSize = Math.max(6, Math.round(8 * scale));
-  const spacing = Math.max(1, Math.round(4 * scale));
   const borderRadius = Math.max(4, Math.round(8 * scale));
 
-  const getTextStyleClass = (textStyle: string) => {
-    switch (textStyle) {
-      case 'bold':
-        return 'font-black tracking-tight';
-      case 'italic':
-        return 'italic font-light';
-      case 'underline':
-        return 'underline decoration-2 underline-offset-4 font-semibold';
-      case 'gradient':
-        return 'font-bold bg-gradient-to-r from-purple-400 via-pink-400 to-cyan-400 bg-clip-text text-transparent';
-      case 'handwritten':
-        return 'font-serif italic';
-      case 'minimal':
-        return 'font-thin tracking-widest uppercase text-xs';
-      default:
-        return 'font-semibold';
-    }
-  };
-
+  // Wheel view: Show ONLY the image (full bleed, no text or styling)
   return (
     <motion.button
       type="button"
-      className="absolute left-1/2 top-1/2 cursor-pointer bg-slate-800/90 backdrop-blur-sm ring-2 ring-slate-700/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+      className="absolute left-1/2 top-1/2 cursor-pointer focus:outline-none overflow-hidden"
       style={{
         width: w,
         height: h,
@@ -215,53 +187,11 @@ function WheelCard({
       onClick={onClick}
       aria-label={`Focus card ${index + 1}: ${card.heading}`}
     >
-      <div
-        className="relative h-full w-full overflow-hidden flex flex-col items-center justify-center"
-        style={{
-          padding: `${padding}px`,
-          borderRadius: `${borderRadius}px`,
-        }}
-      >
-        {card.animation && (
-          <div style={{
-            width: `${animationSize}px`,
-            height: `${animationSize}px`,
-            marginBottom: `${spacing}px`,
-          }}>
-            <DotLottieReact src={card.animation} loop autoplay />
-          </div>
-        )}
-        <div
-          className="text-gray-500"
-          style={{
-            fontSize: `${numberFontSize}px`,
-            marginBottom: `${spacing}px`,
-          }}
-        >
-          {String(index + 1).padStart(2, '0')}
-        </div>
-        <h3
-          className={`leading-tight text-center ${card.accentColor} ${getTextStyleClass(
-            card.textStyle
-          )}`}
-          style={{
-            fontSize: `${headingFontSize}px`,
-            marginBottom: `${spacing}px`,
-          }}
-        >
-          {card.heading}
-        </h3>
-        {card.subheading && (
-          <p
-            className={`leading-tight text-gray-300 text-center ${getTextStyleClass(card.textStyle)}`}
-            style={{
-              fontSize: `${subheadingFontSize}px`,
-            }}
-          >
-            {card.subheading}
-          </p>
-        )}
-      </div>
+      <img
+        src={card.image}
+        alt={card.heading}
+        className="w-full h-full object-cover"
+      />
     </motion.button>
   );
 }

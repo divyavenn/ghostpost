@@ -82,40 +82,5 @@
       "value": "measure_plan"
     },
     "reply": "cat looks like it just saw God and regrets everything"
-  },
-  {
-    "id": "1981221228372521440",
-    "text": "This is a big deal",
-    "likes": 70,
-    "retweets": 3,
-    "quotes": 0,
-    "replies": 6,
-    "score": 82,
-    "followers": 614686,
-    "created_at": "Thu Oct 23 04:48:44 +0000 2025",
-    "url": "https://x.com/Garrytan/status/1981221228372521440",
-    "username": "Garry Tan",
-    "handle": "Garrytan",
-    "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1922894268403941377/-dGWAt3N_400x400.jpg",
-    "media": [],
-    "quoted_tweet": {
-      "text": "An exciting milestone for AI in science: Our C2S-Scale 27B foundation model, built with @Yale and based on Gemma, generated a novel hypothesis about cancer cellular behavior, which scientists experimentally validated in living cells. \n\nWith more preclinical and clinical tests, this discovery may reveal a promising new pathway for developing therapies to fight cancer.",
-      "author_name": "Sundar Pichai",
-      "author_handle": "sundarpichai",
-      "author_profile_pic_url": "https://pbs.twimg.com/profile_images/1710036756731510784/FyfFgM-B_400x400.jpg",
-      "media": [],
-      "created_at": "Wed Oct 15 17:03:48 +0000 2025",
-      "url": "https://x.com/sundarpichai/status/1978507110477332582"
-    },
-    "cache_id": "e22eca51-79dd-4bb5-8b79-123711f3a2f4",
-    "thread": [
-      "This is a big deal",
-      "https://t.co/od0J73dp8k"
-    ],
-    "scraped_from": {
-      "type": "account",
-      "value": "Garrytan"
-    },
-    "reply": "growing up i read sci fi novels about artificial intelligence making actual scientific discoveries.  now it's real! awe-inspiring and also little unnerving"
   }
 ]

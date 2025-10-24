@@ -2,7 +2,6 @@
   {
     "uid": 0,
     "handle": "proudlurker",
-
     "email": "aalia.vennan@gmail.com",
     "model": "divya-2-bon",
     "username": "Anon Lovelace",
@@ -21,7 +20,7 @@
   },
   {
     "uid": 2,
-    "account_type" : "premium",
+    "account_type": "premium",
     "handle": "nakul",
     "email": "nakul@audacious.co",
     "model": "divya-2-bon",
@@ -93,7 +92,7 @@
   },
   {
     "handle": "_AyushGharat",
-    "account_type" : "premium",
+    "account_type": "premium",
     "username": "Ayush Gharat",
     "profile_pic_url": "https://pbs.twimg.com/profile_images/1602765921394872321/lif8JnGE_normal.jpg",
     "follower_count": 128,
@@ -111,18 +110,16 @@
     ],
     "max_tweets_retrieve": 5
   },
-
-
   {
     "uid": 1,
     "handle": "divya_venn",
     "email": "divyavenkatraman234@gmail.com",
     "model": "divya-2-bon",
     "username": "divya venn",
-    "account_type" : "premium",
+    "account_type": "premium",
     "profile_pic_url": "https://pbs.twimg.com/profile_images/1893333894658727936/rkyIVN4i_normal.jpg",
     "follower_count": 23943,
-    "lifetime_posts": 40,
+    "lifetime_posts": 41,
     "lifetime_new_follows": 618,
     "scrolling_time_saved": 9356,
     "relevant_accounts": {
@@ -154,5 +151,8 @@
       "retrieval augmented generation -filter:links -filter:replies -is:retweet lang:en",
       "applied AI enginering -filter:links -filter:replies -is:retweet lang:en"
     ],
-    "max_tweets_retrieve": 30
+    "max_tweets_retrieve": 30,
+    "scrapes_left": 3,
+    "posts_left": 3
   }
+]

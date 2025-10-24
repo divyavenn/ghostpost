@@ -40,7 +40,7 @@ export default defineConfig(({ command, mode }) => {
       // Only for development - nginx handles this in production
       proxy: isDev ? {
         '/api': {
-          target: env.VITE_APP_BACKEND_URL,
+          target: env.VITE_API_BASE_URL,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, '')
         }
@@ -53,7 +53,7 @@ export default defineConfig(({ command, mode }) => {
     },
     
     define: {
-      VITE_APP_BACKEND_URL : JSON.stringify(env.VITE_APP_BACKEND_URL),
+      VITE_API_BASE_URL: JSON.stringify(env.VITE_API_BASE_URL),
     },
   };
 });

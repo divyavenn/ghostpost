@@ -1,8 +1,14 @@
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+try:  # Python 3.11+
+    from datetime import UTC  # type: ignore[attr-defined]
+except ImportError:  # Python <3.11
+    from datetime import timezone
+    UTC = timezone.utc
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -15,6 +21,7 @@ class TweetAction(str, Enum):
     EDITED = "edited"
     DELETED = "deleted"
     POSTED = "posted"
+    SCRAPED = "scraped"
 
 
 def get_user_log_path(username: str) -> Path:
@@ -57,6 +64,7 @@ def get_log_stats(username: str) -> dict[str, int]:
         TweetAction.EDITED.value: 0,
         TweetAction.DELETED.value: 0,
         TweetAction.POSTED.value: 0,
+        TweetAction.SCRAPED.value: 0,
     }
 
     for entry in entries:
@@ -149,6 +157,30 @@ def log_tweet_action(username: str, action: TweetAction, tweet_id: str, metadata
 
     if metadata:
         entry["metadata"] = metadata
+
+    # Append to JSONL file (each line is a JSON object)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def log_scrape_action(username: str, number_of_tweets_written: int, initiated_by: str = "user") -> None:
+    """
+    Log a scraping action with the number of tweets written.
+
+    Args:
+        username: The user whose tweets were scraped
+        number_of_tweets_written: Number of tweets scraped
+        initiated_by: "user" for manual refresh, "auto" for background scheduler
+    """
+    log_path = get_user_log_path(username)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    entry = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "action": TweetAction.SCRAPED.value,
+        "number_of_tweets_written": number_of_tweets_written,
+        "initiated_by": initiated_by,
+    }
 
     # Append to JSONL file (each line is a JSON object)
     with open(log_path, "a", encoding="utf-8") as f:

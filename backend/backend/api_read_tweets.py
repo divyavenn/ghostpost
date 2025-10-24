@@ -1,17 +1,10 @@
-import os
 import time
 from functools import lru_cache
 
 import requests
 
-BEARER = os.getenv("TWITTER_BEARER_TOKEN", r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi")
-BASE = "https://api.twitter.com/2"
-
-BEARER = os.getenv(
-    "TWITTER_BEARER_TOKEN",
-    r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi",
-)
-BASE = "https://api.twitter.com/2"
+from backend.config import TWITTER_API_V2_BASE as BASE, TWITTER_BEARER_TOKEN as BEARER
+from backend.utils import notify
 
 
 def request_from_x(url, params=None):
@@ -22,7 +15,7 @@ def request_from_x(url, params=None):
     if r.status_code == 429:
         reset = int(r.headers.get("x-rate-limit-reset", "0"))
         sleep = max(reset - time.time(), 1)
-        print(f"rate-limited → sleeping {sleep:.0f}s")
+        notify(f"rate-limited → sleeping {sleep:.0f}s")
         time.sleep(sleep)
         return request_from_x(url, params)
 
@@ -55,4 +48,4 @@ if __name__ == "__main__":
 
     tweets = timeline("divya_venn", max_results=5)
     for t in tweets:
-        print(t)
+        notify(str(t))

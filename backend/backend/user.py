@@ -47,6 +47,7 @@ def get_all_users() -> list[str]:
 def get_user_info(access_token: str) -> dict[str, Any]:
     """Fetch the authenticated user's metadata and persist it locally."""
     import requests
+    from backend.utils import read_user_info
 
     url = "https://api.twitter.com/2/users/me"
     fields = [
@@ -65,14 +66,36 @@ def get_user_info(access_token: str) -> dict[str, Any]:
     data = payload.get("data", {}) if isinstance(payload, dict) else {}
     public_metrics = data.get("public_metrics") or {}
 
+    handle = data.get("username")
+    new_follower_count = public_metrics.get("followers_count", 0)
+
+    # Get existing user info to calculate follower delta
+    existing_user = read_user_info(handle) if handle else None
+    old_follower_count = existing_user.get("follower_count", 0) if existing_user else 0
+
+    # Calculate new follows (only count increases, not decreases)
+    follower_delta = max(0, new_follower_count - old_follower_count)
+
+    # Get existing stats or initialize
+    lifetime_new_follows = existing_user.get("lifetime_new_follows", 0) if existing_user else 0
+    lifetime_posts = existing_user.get("lifetime_posts", 0) if existing_user else 0
+    scrolling_time_saved = existing_user.get("scrolling_time_saved", 0) if existing_user else 0
+
     user_record = {
-        "handle": data.get("username"),
+        "handle": handle,
         "username": data.get("name"),
         "profile_pic_url": data.get("profile_image_url"),
-        "follower_count": public_metrics.get("followers_count"),
+        "follower_count": new_follower_count,
+        "lifetime_new_follows": lifetime_new_follows + follower_delta,
+        "lifetime_posts": lifetime_posts,
+        "scrolling_time_saved": scrolling_time_saved,
     }
 
     write_user_info(user_record)
+
+    if follower_delta > 0:
+        notify(f"🎉 +{follower_delta} new followers for @{handle}! Total new follows: {user_record['lifetime_new_follows']}")
+
     return user_record
 
 

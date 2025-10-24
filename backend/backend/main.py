@@ -7,7 +7,9 @@ from backend.auth_routes import router as auth_router
 from backend.browser_auth_routes import router as browser_auth_router
 from backend.generate_replies import router as generate_router
 from backend.log_interactions import router as logging_router
+from backend.performance_check import router as performance_router
 from backend.post_takes import router as post_router
+from backend.posted_tweets import router as posted_router
 from backend.read_tweets import router as read_router
 from backend.scheduler import router as scheduler_router
 from backend.scheduler import start_scheduler, stop_scheduler
@@ -33,6 +35,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",  # Local dev (Vite)
         "http://localhost:3000",  # Local dev
+        "http://localhost",  # Docker frontend (port 80)
         "http://192.168.8.57:3000",  # Production server
     ],
     allow_credentials=True,
@@ -44,6 +47,8 @@ app.include_router(auth_router)
 app.include_router(browser_auth_router)
 app.include_router(tweets_router)
 app.include_router(post_router)
+app.include_router(posted_router)
+app.include_router(performance_router)
 app.include_router(read_router)
 app.include_router(generate_router)
 app.include_router(logging_router)

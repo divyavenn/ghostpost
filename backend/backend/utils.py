@@ -5,24 +5,28 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-BACKEND_DIR = Path(__file__).resolve().parent
-# Cache is one level up from backend/backend/ -> backend/cache/
-CACHE_DIR = BACKEND_DIR.parent / "cache"
-ARCHIVE_DIR = CACHE_DIR / "archive"
-AUTH_COOKIE = "auth_token"
-BROWSER_STATE_FILE = CACHE_DIR / "storage_state.json"
-TOKEN_FILE = CACHE_DIR / "tokens.json"
-USER_INFO_FILE = CACHE_DIR / "user_info.json"
+from backend.config import (
+    ARCHIVE_DIR,
+    AUTH_COOKIE,
+    BROWSER_STATE_FILE,
+    CACHE_DIR,
+    DEFAULT_TWITTER_USERNAME as USERNAME,
+    TOKEN_FILE,
+    USER_INFO_FILE,
+)
+
+# Ensure cache directory exists
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
-USERNAME = "proudlurker"
 
 
 def notify(msg: str):
-    print(msg)
+    #print(msg)
+    pass
 
 
 def error(msg: str):
     raise RuntimeError(f"❌ {msg}")
+    
 
 
 def cookie_still_valid(state: dict[str, Any]) -> bool:
@@ -41,7 +45,9 @@ def _cache_key(username: str | None) -> str:
     return sanitized or "default"
 
 
-def get_user_interactions_log(username=USERNAME) -> Path:
+def get_user_interactions_log(username: str | None = None) -> Path:
+    if username is None:
+        username = USERNAME
     return CACHE_DIR / f"{_cache_key(username)}_log.json"
 
 
@@ -100,6 +106,8 @@ async def store_browser_state(username: str, context) -> None:
         except Exception:
             pass
 
+    # Add timestamp to track when the state was last updated
+    state["timestamp"] = datetime.utcnow().isoformat() + "Z"
     cache[username] = state
 
     atomic_file_update(path, cache)

@@ -153,7 +153,7 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
 
   return (
     <div
-      className={`w-full px-[2%] py-[1%] rounded-2xl bg-black text-white shadow-2xl transition-all ${
+      className={`w-full px-[2%] pb-[4%] rounded-2xl bg-black text-white shadow-2xl transition-all ${
         isDeleting
           ? 'duration-300 scale-95 opacity-0'
           : isPosting
@@ -168,31 +168,20 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
             onClick={onSkip}
             onMouseEnter={() => setIsDeleteHovered(true)}
             onMouseLeave={() => setIsDeleteHovered(false)}
-            className={`relative flex items-center gap-2 rounded-full transition-colors ${
-              readOnly 
-                ? 'px-3 h-10 hover:bg-red-600/20' 
-                : 'h-10 w-10 justify-center hover:bg-neutral-800'
-            }`}
+            className="relative flex items-center gap-2 rounded-full transition-colors h-10 w-10 justify-center hover:bg-neutral-800"
             aria-label={readOnly ? "Delete tweet from Twitter" : "Delete"}
             title={readOnly ? "Delete tweet from Twitter" : "Delete"}
           >
-            {readOnly ? (
-              <>
-                <i className="fa-solid fa-trash text-red-400 text-base flex-shrink-0" />
-                <span className="text-sm font-semibold text-red-400 uppercase tracking-wide whitespace-nowrap">Delete Tweet</span>
-              </>
+            {isDeleteHovered ? (
+              <div className="w-8 h-8 flex items-center justify-center">
+                <DotLottieReact
+                  src={xLottie}
+                  loop
+                  autoplay
+                />
+              </div>
             ) : (
-              isDeleteHovered ? (
-                <div className="w-8 h-8 flex items-center justify-center">
-                  <DotLottieReact
-                    src={xLottie}
-                    loop
-                    autoplay
-                  />
-                </div>
-              ) : (
-                <span className="text-xl text-white">×</span>
-              )
+              <span className="text-xl text-white">×</span>
             )}
           </button>
         )}

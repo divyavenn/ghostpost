@@ -7,12 +7,11 @@ import time
 
 from playwright.async_api import BrowserContext, Page, async_playwright
 
+from backend.config import SESSION_TIMEOUT
+
 # Store active browser sessions
 # Key: session_id, Value: {browser, context, page, username, created_at}
 active_sessions: dict[str, dict] = {}
-
-# Session timeout (5 minutes)
-SESSION_TIMEOUT = 300
 
 
 async def cleanup_expired_sessions():
@@ -39,11 +38,14 @@ async def create_browser_session(username: str) -> dict:
 
     # OAuth/login sessions MUST be visible so user can interact
     # Launch browser with remote debugging enabled
+    # Browser will appear on virtual display (DISPLAY=:99) accessible via noVNC
     browser = await playwright.chromium.launch(
-        headless=False,  # User needs to see browser to log in
+        headless=False,  # User needs to see browser via noVNC
         args=[
             '--remote-debugging-port=9222',  # Enable CDP
             '--disable-blink-features=AutomationControlled',  # Hide automation
+            '--no-sandbox',  # Required for Docker
+            '--disable-dev-shm-usage',  # Overcome limited resource problems
         ])
 
     context = await browser.new_context(viewport={'width': 1280, 'height': 720}, user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')
@@ -153,7 +155,7 @@ async def close_session(session_id: str):
         await session["browser"].close()
         await session["playwright"].stop()
     except Exception as e:
-        print(f"Error closing session: {e}")
+        notify(f"Error closing session: {e}")
     finally:
         del active_sessions[session_id]
 

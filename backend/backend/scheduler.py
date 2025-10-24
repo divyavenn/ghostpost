@@ -15,6 +15,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter
 
 from backend.generate_replies import generate_replies
+from backend.log_interactions import log_scrape_action
 from backend.read_tweets import read_tweets
 from backend.tweets_cache import cleanup_old_tweets
 from backend.utils import BROWSER_STATE_FILE, cookie_still_valid, notify
@@ -68,6 +69,11 @@ async def auto_scrape_for_user(username: str):
     Args:
         username: Twitter handle of the user
     """
+    import time
+    from backend.utils import read_user_info, write_user_info
+
+    start_time = time.time()
+
     try:
         notify(f"🤖 [Auto-scrape] Starting for user: {username}")
 
@@ -90,10 +96,26 @@ async def auto_scrape_for_user(username: str):
         reply_count = sum(1 for t in result if t.get('reply'))
         notify(f"✅ [Auto-scrape] Generated {reply_count} new replies for {username}")
 
+        # Log the scraping action (auto-initiated)
+        log_scrape_action(username, len(tweets), initiated_by="auto")
+
         notify(f"🎉 [Auto-scrape] Completed for {username}")
 
     except Exception as e:
         notify(f"❌ [Auto-scrape] Failed for {username}: {e}")
+
+    finally:
+        # Update scrolling_time_saved regardless of success/failure
+        elapsed_seconds = int(time.time() - start_time)
+        try:
+            user_info = read_user_info(username)
+            if user_info:
+                current_time_saved = user_info.get("scrolling_time_saved", 0)
+                user_info["scrolling_time_saved"] = current_time_saved + elapsed_seconds
+                write_user_info(user_info)
+                notify(f"⏱️ Added {elapsed_seconds}s to scrolling time for @{username} (total: {user_info['scrolling_time_saved']}s)")
+        except Exception as e:
+            notify(f"⚠️ Failed to update scrolling time for {username}: {e}")
 
 
 async def auto_scrape_all_users():

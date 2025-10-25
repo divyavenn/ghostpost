@@ -5,7 +5,7 @@ import requests
 from dotenv import load_dotenv
 
 from .read_tweets import USERNAME
-from .utils import notify
+from .utils import notify, read_user_info
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -28,7 +28,7 @@ except ImportError:
     from read_tweets import scraping_status
 
 
-def ask_model(prompt: str, image_urls: list[str] = None, model: str = "divya-2-bon", has_quoted_tweet: bool = False):
+def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False):
     """
     Generate a reply using the VLM.
     
@@ -183,6 +183,11 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
                 notify(f"🤖 Generating reply for tweet {tweet_id} with {len(image_urls)} image(s)... ({processed_count}/{len(tweets)})")
             else:
                 notify(f"🤖 Generating reply for tweet {tweet_id}... ({processed_count}/{len(tweets)})")
+                
+            # user_info = read_user_info(username)
+            # model = user_info.get("model")
+            
+            # print(f"Model: {model}")
 
             # Pass has_quoted_tweet flag to enable appropriate system prompt
             response = ask_model(prompt=text_prompt, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)

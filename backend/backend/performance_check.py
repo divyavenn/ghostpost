@@ -26,16 +26,6 @@ class CheckPerformanceRequest(BaseModel):
 
 
 async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[str]) -> dict[str, TweetMetrics]:
-    """
-    Fetch metrics for multiple tweets from Twitter API.
-
-    Args:
-        access_token: Twitter OAuth access token
-        tweet_ids: List of tweet IDs to fetch metrics for
-
-    Returns:
-        Dict mapping tweet_id to TweetMetrics
-    """
     if not tweet_ids:
         return {}
 

@@ -5,7 +5,7 @@ import requests
 from dotenv import load_dotenv
 
 from .read_tweets import USERNAME
-from .utils import notify, read_user_info
+from .utils import notify, error, read_user_info
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -84,6 +84,70 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1",
     return {"message": message}
 
 
+def build_prompt(tweet, overwrite=False):
+    tweet_id = tweet.get('id') or tweet.get('tweet_id')
+    
+    print(tweet)
+
+    # Skip if reply already exists and we're not overwriting
+    if "reply" in tweet and tweet["reply"] and not overwrite:
+        return None
+    # Get thread content for prompt
+    thread = tweet.get('thread', [])
+    if not thread:
+        notify(f"⚠️ Tweet {tweet_id} has no thread content, skipping")
+        return None
+
+    # Build structured text prompt with quoted tweet context if present
+    text_prompt = ""
+    image_urls = []
+
+    # Extract quoted tweet if present
+    quoted_tweet = tweet.get('quoted_tweet')
+    has_quoted_tweet = bool(quoted_tweet and quoted_tweet.get('text'))
+
+    if has_quoted_tweet:
+         # Add quoted tweet context first
+        qt_author = quoted_tweet.get('author_handle', 'unknown')
+        qt_name = quoted_tweet.get('author_name', qt_author)
+        qt_text = quoted_tweet.get('text', '')
+
+        text_prompt += f"[QUOTED TWEET by @{qt_author} ({qt_name})]\n"
+        text_prompt += f"{qt_text}\n"
+
+            # Add QT images first
+        qt_media = quoted_tweet.get('media', [])
+        qt_images = [item['url'] for item in qt_media if item.get('type') == 'photo']
+        if qt_images:
+            image_urls.extend(qt_images)
+            text_prompt += f"[This quoted tweet contains {len(qt_images)} image(s)]\n"
+
+        text_prompt += "\n---\n\n"
+
+    # Add main tweet/thread
+    username_display = tweet.get('username', tweet.get('handle', 'User'))
+    if has_quoted_tweet:
+        text_prompt += f"[{username_display}'s RESPONSE]\n"
+
+    text_prompt += str(thread)
+
+    # Add main tweet images after QT images
+    media = tweet.get('media', [])
+    main_images = [item['url'] for item in media if item.get('type') == 'photo']
+    if main_images:
+        image_urls.extend(main_images)
+        if has_quoted_tweet:
+            text_prompt += f"\n[Response contains {len(main_images)} image(s)]"
+
+    # Add alt text context if available (for all images)
+    all_media = (quoted_tweet.get('media', []) if quoted_tweet else []) + media
+    alt_texts = [item.get('alt_text', '') for item in all_media if item.get('alt_text')]
+    if alt_texts:
+        text_prompt += f"\n\n[Image descriptions: {'; '.join(alt_texts)}]"
+        
+    return text_prompt, image_urls, has_quoted_tweet, tweet_id
+    
+
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     import time
 
@@ -91,10 +155,12 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
     # Check if API key is configured
     if not OBELISK_KEY:
-        notify("❌ OBELISK_KEY environment variable is not set")
-        raise RuntimeError("OBELISK_KEY environment variable is not set")
+        error("❌ OBELISK_KEY environment variable is not set")
 
     tweets = await read_from_cache(username=username)
+    user_info = read_user_info(username)
+    print(user_info)
+    model = getattr(read_user_info(username), "model", "nakul-1")
 
     if not tweets:
         notify("⚠️ No tweets found in cache")
@@ -107,71 +173,25 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     total_to_process = len([t for t in tweets if not (t.get('reply') and not overwrite) and t.get('thread')])
 
     for idx, tweet in enumerate(tweets, 1):
-        tweet_id = tweet.get('id') or tweet.get('tweet_id')
 
-        # Skip if reply already exists and we're not overwriting
-        if "reply" in tweet and tweet["reply"] and not overwrite:
+        prompt = build_prompt(tweet)
+        if prompt is None:
             skipped += 1
             continue
+        text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt
+        
+        response = ask_model(prompt=text_prompt, model = model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
 
-        # Get thread content for prompt
-        thread = tweet.get('thread', [])
-        if not thread:
-            notify(f"⚠️ Tweet {tweet_id} has no thread content, skipping")
-            skipped += 1
-            continue
-
-        # Build structured text prompt with quoted tweet context if present
-        text_prompt = ""
-        image_urls = []
-
-        # Extract quoted tweet if present
-        quoted_tweet = tweet.get('quoted_tweet')
-        has_quoted_tweet = bool(quoted_tweet and quoted_tweet.get('text'))
-
-        if has_quoted_tweet:
-            # Add quoted tweet context first
-            qt_author = quoted_tweet.get('author_handle', 'unknown')
-            qt_name = quoted_tweet.get('author_name', qt_author)
-            qt_text = quoted_tweet.get('text', '')
-
-            # Truncate QT text to 280 chars if needed
-            if len(qt_text) > 280:
-                qt_text = qt_text[:280] + "... [truncated]"
-
-            text_prompt += f"[QUOTED TWEET by @{qt_author} ({qt_name})]\n"
-            text_prompt += f"{qt_text}\n"
-
-            # Add QT images first
-            qt_media = quoted_tweet.get('media', [])
-            qt_images = [item['url'] for item in qt_media if item.get('type') == 'photo']
-            if qt_images:
-                image_urls.extend(qt_images)
-                text_prompt += f"[This quoted tweet contains {len(qt_images)} image(s)]\n"
-
-            text_prompt += "\n---\n\n"
-
-        # Add main tweet/thread
-        username_display = tweet.get('username', tweet.get('handle', 'User'))
-        if has_quoted_tweet:
-            text_prompt += f"[{username_display}'s RESPONSE]\n"
-
-        text_prompt += str(thread)
-
-        # Add main tweet images after QT images
-        media = tweet.get('media', [])
-        main_images = [item['url'] for item in media if item.get('type') == 'photo']
-        if main_images:
-            image_urls.extend(main_images)
-            if has_quoted_tweet:
-                text_prompt += f"\n[Response contains {len(main_images)} image(s)]"
-
-        # Add alt text context if available (for all images)
-        all_media = (quoted_tweet.get('media', []) if quoted_tweet else []) + media
-        alt_texts = [item.get('alt_text', '') for item in all_media if item.get('alt_text')]
-        if alt_texts:
-            text_prompt += f"\n\n[Image descriptions: {'; '.join(alt_texts)}]"
-
+        reply = response.get('message', '')
+        if reply:
+            tweet['reply'] = reply
+            notify(f"✅ Generated reply for tweet {tweet_id}")
+            # Progressive write: save immediately after generating each reply
+            await write_to_cache([tweet], f"Generated reply for tweet {tweet_id}", username=username)
+        else:
+            notify(f"No reply received for tweet {tweet_id}")
+        
+        
         # Get model's reply with appropriate delay for rate limiting
         try:
             # Update status to show progress
@@ -180,23 +200,13 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
                 scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{len(tweets)}", "phase": "generating"}
 
             if image_urls:
-                notify(f"🤖 Generating reply for tweet {tweet_id} with {len(image_urls)} image(s)... ({processed_count}/{len(tweets)})")
+                notify(f"🤖 Generating reply for {tweet_id} using {model} with {len(image_urls)} image(s)... ({processed_count}/{len(tweets)})")
             else:
-                notify(f"🤖 Generating reply for tweet {tweet_id}... ({processed_count}/{len(tweets)})")
+                notify(f"🤖 Generating reply for {tweet_id} using {model} ... ({processed_count}/{len(tweets)})")
                 
-            # user_info = read_user_info(username)
-            # model = user_info.get("model")
-            
-            # print(f"Model: {model}")
 
             # Pass has_quoted_tweet flag to enable appropriate system prompt
-            response = ask_model(prompt=text_prompt, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
-
-            # Check for errors in response
-            if "error" in response:
-                notify(f"❌ API error for tweet {tweet_id}: {response['error']}")
-                errors += 1
-                continue
+            response = ask_model(prompt=text_prompt, model = model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
 
             reply = response.get('message', '')
             if reply:
@@ -264,7 +274,7 @@ async def generate_replies_endpoint(username: str, payload: GenerateRepliesReque
 
         return {"message": "Replies generated successfully", "total_tweets": len(tweets), "replies_generated": reply_count}
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error generating replies: {str(e)}")
+        error(f"Error generating replies: {str(e)}")
 
 
 @router.post("/{username}/replies/{tweet_id}")
@@ -272,59 +282,54 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     """Regenerate AI reply for a single tweet."""
     from backend.tweets_cache import read_from_cache, write_to_cache
 
-    try:
-        # Check if API key is configured
-        if not OBELISK_KEY:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="OBELISK_KEY environment variable is not set")
+    tweets = await read_from_cache(username=username)
+    user_info = read_user_info(username)
+    print(user_info)
+    model = getattr(read_user_info(username), "model", "nakul-1")
+    
+    
+    # Check if API key is configured
+    if not OBELISK_KEY:
+        error("Oblelisk API key not configured")
 
-        # Read tweets from cache
-        tweets = await read_from_cache(username=username)
+    # Read tweets from cache
+    tweets = await read_from_cache(username=username)
 
-        if not tweets:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No tweets found in cache")
+    if not tweets:
+        error("No tweets found in cache")
 
-        # Find the specific tweet
-        tweet = None
-        for t in tweets:
-            if t.get('id') == tweet_id or t.get('tweet_id') == tweet_id:
-                tweet = t
-                break
+    # Find the specific tweet
+    tweet = None
+    for t in tweets:
+        if t.get('id') == tweet_id or t.get('tweet_id') == tweet_id:
+            tweet = t
+            break
 
-        if not tweet:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Tweet {tweet_id} not found in cache")
+    if not tweet:
+        error("Tweet not found in cache")
 
-        # Get thread content for prompt
-        thread = tweet.get('thread', [])
-        if not thread:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tweet has no thread content")
+    prompt = build_prompt(tweet, overwrite=True)
+    if prompt is None:
+        error("COuld not build prompt for tweet")
 
-        prompt = str(thread)
+    text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt
+        
+    response = ask_model(prompt=text_prompt, model = model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
 
-        # Generate new reply
-        notify(f"🤖 Regenerating reply for tweet {tweet_id}...")
-        response = ask_model(prompt=prompt)
-
-        # Check for errors in response
-        if "error" in response:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"API error: {response['error']}")
-
-        reply = response.get('message', '')
-        if not reply:
-            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Empty reply received from model")
-
-        # Update the tweet with the new reply
+    reply = response.get('message', '')
+    if reply:
         tweet['reply'] = reply
+        notify(f"✅ Generated reply for tweet {tweet_id}")
+        # Progressive write: save immediately after generating each reply
+        await write_to_cache([tweet], f"Generated reply for tweet {tweet_id}", username=username)
+    else:
+        notify(f"No reply received for tweet {tweet_id}")
 
-        # Save back to cache
-        await write_to_cache(tweets, f"Regenerated reply for tweet {tweet_id}", username=username)
+    reply = response.get('message', '')
+    if not reply:
+        error(f"Recieved empty reply for tweet {tweet_id}")
 
-        notify(f"✅ Regenerated reply for tweet {tweet_id}")
-
-        return {"message": "Reply regenerated successfully", "tweet_id": tweet_id, "new_reply": reply}
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error regenerating reply: {str(e)}")
+    return {"message": "Reply regenerated successfully", "tweet_id": tweet_id, "new_reply": reply}
 
 
 if __name__ == "__main__":

@@ -20,11 +20,10 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def notify(msg: str):
-    #print(msg)
-    pass
+    print(msg)
 
 
-def error(msg: str):
+def error(msg: str, status_code: int = 500):
     raise RuntimeError(f"❌ {msg}")
     
 

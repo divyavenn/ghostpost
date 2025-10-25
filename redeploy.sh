@@ -15,20 +15,20 @@ if ! docker compose version &> /dev/null; then
     exit 1
 fi
 
-echo "📦 Committing cache files (except user_info.json)..."
+#echo "📦 Committing cache files (except user_info.json)..."
 # Commit cache files EXCEPT user_info.json
-git add backend/cache/*.jsonl backend/cache/*.json 2>/dev/null || true
-git restore --staged backend/cache/user_info.json 2>/dev/null || true
-git commit -m "Update cache from server" || true
+#git add backend/cache/*.jsonl backend/cache/*.json 2>/dev/null || true
+#git restore --staged backend/cache/user_info.json 2>/dev/null || true
+#git commit -m "Update cache from server" || true
 
 # Discard changes to user_info.json so dev version wins
-git restore backend/cache/user_info.json 2>/dev/null || true
+#git restore backend/cache/user_info.json 2>/dev/null || true
 
 echo "⬇️  Fetching latest code..."
 # Fetch latest code
 git fetch origin
 
-echo "🔀 Rebasing local commits..."
+#echo "🔀 Rebasing local commits..."
 # Rebase local commits on top of remote
 git rebase origin/main
 
@@ -39,16 +39,12 @@ docker compose down
 echo "🏗️  Building and starting containers..."
 # Build and start containers in detached mode
 
-docker compose up --build --no-cache -d
+docker compose build --no-cache
+
+docker compose up -d
 
 echo ""
 echo "✅ Deployment complete!"
 echo ""
 echo "📊 Container status:"
 docker compose ps
-echo ""
-echo "🌐 Access points:"
-echo "   - Backend API: http://localhost:8000"
-echo "   - noVNC (Browser): http://localhost:6080/vnc.html"
-echo ""
-echo "📝 View logs with: docker compose logs -f"

@@ -2,7 +2,7 @@ import asyncio
 import re
 from asyncio import sleep
 
-from .full_thread import get_thread
+from .full_thread import get_thread, scroll
 from backend.utils import notify
 
 try:  # Python 3.11+
@@ -154,7 +154,7 @@ def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
     return find_any_screen_name(tweet_res)
 
 
-async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *, username=None, write_callback=None):
+async def collect_from_page(ctx, url: str, handle: str | None, *, username=None, write_callback=None):
     """
     Collect tweets from a page with progressive writing.
 
@@ -170,7 +170,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
     page = await ctx.new_page()
     min_likes = 5
     pending = set()
-
+    max_scrolls = 5
     def engagement_score(legacy: dict) -> int:
         likes = int(legacy.get("favorite_count", 0))
         rts = int(legacy.get("retweet_count", 0))
@@ -730,11 +730,8 @@ async def collect_from_page(ctx, url: str, handle: str | None, max_scrolls=10, *
         timeout=30_000,
     )
 
-    for _ in range(max_scrolls):
-        await sleep(5)
-        await page.mouse.wheel(0, 4000)
-
-    await asyncio.sleep(1.0)
+    await scroll(page, scrolls=max_scrolls, delay=1.8)
+    
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
 

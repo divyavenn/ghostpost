@@ -61,7 +61,20 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
         tweet_id = tweet.get("id") or tweet.get("tweet_id")
         cache_id = tweet.get("cache_id")
         if tweet_id and cache_id:
-            log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id), metadata={"cache_id": cache_id})
+            metadata = {"cache_id": cache_id}
+
+            # If this tweet has a reply, include first 250 chars of original tweet + the reply
+            reply = tweet.get("reply")
+            if reply:
+                thread = tweet.get("thread", [])
+                # Join thread parts and get first 250 characters
+                original_text = " ".join(thread) if isinstance(thread, list) else str(thread)
+                original_text_preview = original_text[:250]
+
+                metadata["original_tweet_preview"] = original_text_preview
+                metadata["generated_reply"] = reply
+
+            log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id), metadata=metadata)
 
     return path
 

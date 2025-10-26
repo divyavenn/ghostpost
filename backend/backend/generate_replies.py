@@ -86,9 +86,6 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1",
 
 def build_prompt(tweet, overwrite=False):
     tweet_id = tweet.get('id') or tweet.get('tweet_id')
-    
-    print(tweet)
-
     # Skip if reply already exists and we're not overwriting
     if "reply" in tweet and tweet["reply"] and not overwrite:
         return None
@@ -159,8 +156,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
-    print(user_info)
-    model = getattr(read_user_info(username), "model", "nakul-1")
+    model = user_info["model"]
 
     if not tweets:
         notify("⚠️ No tweets found in cache")
@@ -173,40 +169,26 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     total_to_process = len([t for t in tweets if not (t.get('reply') and not overwrite) and t.get('thread')])
 
     for idx, tweet in enumerate(tweets, 1):
-
         prompt = build_prompt(tweet)
         if prompt is None:
             skipped += 1
             continue
         text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt
-        
-        response = ask_model(prompt=text_prompt, model = model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
 
-        reply = response.get('message', '')
-        if reply:
-            tweet['reply'] = reply
-            notify(f"✅ Generated reply for tweet {tweet_id}")
-            # Progressive write: save immediately after generating each reply
-            await write_to_cache([tweet], f"Generated reply for tweet {tweet_id}", username=username)
-        else:
-            notify(f"No reply received for tweet {tweet_id}")
-        
-        
+        # Update status to show progress (1-indexed for display)
+        processed_count = count + skipped + errors + 1
+        if username:
+            scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{total_to_process}", "phase": "generating"}
+
         # Get model's reply with appropriate delay for rate limiting
         try:
-            # Update status to show progress
-            processed_count = count + skipped + errors + 1
-            if username:
-                scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{len(tweets)}", "phase": "generating"}
-
             if image_urls:
-                notify(f"🤖 Generating reply for {tweet_id} using {model} with {len(image_urls)} image(s)... ({processed_count}/{len(tweets)})")
+                notify(f"🤖 Generating reply for {tweet_id} using {model} with {len(image_urls)} image(s)... ({processed_count}/{total_to_process})")
             else:
-                notify(f"🤖 Generating reply for {tweet_id} using {model} ... ({processed_count}/{len(tweets)})")
-                
+                notify(f"🤖 Generating reply for {tweet_id} using {model} ... ({processed_count}/{total_to_process})")
 
             # Pass has_quoted_tweet flag to enable appropriate system prompt
-            response = ask_model(prompt=text_prompt, model = model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
+            response = ask_model(prompt=text_prompt, model=model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
 
             reply = response.get('message', '')
             if reply:
@@ -284,8 +266,7 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
 
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
-    print(user_info)
-    model = getattr(read_user_info(username), "model", "nakul-1")
+    model = user_info["model"]
     
     
     # Check if API key is configured
@@ -321,7 +302,7 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
         tweet['reply'] = reply
         notify(f"✅ Generated reply for tweet {tweet_id}")
         # Progressive write: save immediately after generating each reply
-        await write_to_cache([tweet], f"Generated reply for tweet {tweet_id}", username=username)
+        await write_to_cache([tweet], f"Generated reply for tweet {tweet_id} with model {model}", username=username)
     else:
         notify(f"No reply received for tweet {tweet_id}")
 

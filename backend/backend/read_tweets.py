@@ -119,14 +119,13 @@ async def fetch_search(ctx, query: str, username=None, write_callback=None, **kw
 
 
 # -------- Orchestration --------
-async def gather_trending(usernames, queries, max_scrolls=3, username=None, write_callback=None, use_browserbase=False):
+async def gather_trending(usernames, queries, username=None, write_callback=None, use_browserbase=False):
     """
     Gather trending tweets with progressive writing and Browserbase fallback.
 
     Args:
         usernames: List of Twitter handles to scrape
         queries: List of search queries
-        max_scrolls: Number of scrolls per page
         username: Username for cache writes
         write_callback: Async function to call for incremental writes
         use_browserbase: If True, skip local scraping and use Browserbase directly
@@ -150,7 +149,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                     scraping_status[username] = {"type": "account", "value": u, "phase": "scraping_browserbase"}
                     notify(f"📍 Status: Scraping from @{u} via Browserbase")
 
-                tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback, max_scrolls=max_scrolls)
+                tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback)
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "account", "value": u}
                 results.update(tweets)
@@ -164,7 +163,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                     scraping_status[username] = {"type": "query", "value": q, "phase": "scraping_browserbase"}
                     notify(f"📍 Status: Scraping query [{q}] via Browserbase")
 
-                tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback, max_scrolls=max_scrolls)
+                tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "query", "value": q}
                 results.update(tweets)
@@ -188,7 +187,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                     scraping_status[username] = {"type": "account", "value": u, "phase": "scraping"}
                     notify(f"📍 Status updated: Scraping from @{u}")
 
-                tweets = await fetch_user_tweets(ctx, u, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
+                tweets = await fetch_user_tweets(ctx, u, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "account", "value": u}
@@ -199,7 +198,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                 notify(f"🔄 Falling back to Browserbase for @{u}...")
 
                 try:
-                    tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback, max_scrolls=max_scrolls)
+                    tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback)
                     for tweet_data in tweets.values():
                         tweet_data["scraped_from"] = {"type": "account", "value": u}
                     results.update(tweets)
@@ -217,7 +216,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                     scraping_status[username] = {"type": "query", "value": q, "phase": "scraping"}
                     notify(f"📍 Status updated: Scraping query [{q}]")
 
-                tweets = await fetch_search(ctx, q, max_scrolls=max_scrolls, username=username, write_callback=write_callback)
+                tweets = await fetch_search(ctx, q, username=username, write_callback=write_callback)
                 # Add source metadata to each tweet
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "query", "value": q}
@@ -228,7 +227,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
                 notify(f"🔄 Falling back to Browserbase for query [{q}]...")
 
                 try:
-                    tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback, max_scrolls=max_scrolls)
+                    tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
                     for tweet_data in tweets.values():
                         tweet_data["scraped_from"] = {"type": "query", "value": q}
                     results.update(tweets)
@@ -247,7 +246,7 @@ async def gather_trending(usernames, queries, max_scrolls=3, username=None, writ
         return results
 
 
-async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_scrolls=3, max_tweets=None):
+async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
     from backend.tweets_cache import cleanup_old_tweets, write_to_cache
     from backend.user import read_user_settings
 
@@ -283,7 +282,7 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
         notify("💻 Using local scraping with Browserbase fallback on bot detection")
 
     # Gather tweets with progressive writing enabled
-    trending = await gather_trending(relevant_accounts, queries, max_scrolls=max_scrolls, username=username, write_callback=progressive_write, use_browserbase=use_browserbase)
+    trending = await gather_trending(relevant_accounts, queries, username=username, write_callback=progressive_write, use_browserbase=use_browserbase)
     # sort by score desc
     sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
     if max_tweets:
@@ -301,7 +300,6 @@ router = APIRouter(prefix="/read", tags=["read"])
 class ReadTweetsRequest(BaseModel):
     usernames: list[str] | None = None
     queries: list[str] | None = None
-    max_scrolls: int = 3
     max_tweets: int | None = None
 
 
@@ -315,7 +313,7 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
         if payload is None:
             tweets = await read_tweets(username=username)
         else:
-            tweets = await read_tweets(username=username, relevant_accounts=payload.usernames, queries=payload.queries, max_scrolls=payload.max_scrolls, max_tweets=payload.max_tweets)
+            tweets = await read_tweets(username=username, relevant_accounts=payload.usernames, queries=payload.queries, max_tweets=payload.max_tweets)
 
         # Calculate time saved (time spent scraping)
         end_time = time.time()
@@ -366,7 +364,7 @@ if __name__ == "__main__":
             "immigrant careers -filter:links -filter:replies -is:retweet lang:en", "entreprise software -filter:links -filter:replies -is:retweet lang:en"
         ]
 
-        trending = await gather_trending(relevant_accounts, queries, max_scrolls=3)
+        trending = await gather_trending(relevant_accounts, queries)
         # sort by score desc
         sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
         sorted_items = sorted_items[:10]

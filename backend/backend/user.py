@@ -71,22 +71,30 @@ def get_user_info(access_token: str) -> dict[str, Any]:
 
     # Get existing user info to calculate follower delta
     existing_user = read_user_info(handle) if handle else None
+    is_first_time_user = existing_user is None
+
     old_follower_count = existing_user.get("follower_count", 0) if existing_user else 0
 
     # Calculate new follows (only count increases, not decreases)
     follower_delta = max(0, new_follower_count - old_follower_count)
 
     # Get existing stats or initialize
-    lifetime_new_follows = existing_user.get("lifetime_new_follows", 0) if existing_user else 0
-    lifetime_posts = existing_user.get("lifetime_posts", 0) if existing_user else 0
-    scrolling_time_saved = existing_user.get("scrolling_time_saved", 0) if existing_user else 0
+    # For first-time users, set lifetime_new_follows to 0 to start tracking from now
+    if is_first_time_user:
+        lifetime_new_follows = 0
+        lifetime_posts = 0
+        scrolling_time_saved = 0
+    else:
+        lifetime_new_follows = existing_user.get("lifetime_new_follows", 0) + follower_delta
+        lifetime_posts = existing_user.get("lifetime_posts", 0)
+        scrolling_time_saved = existing_user.get("scrolling_time_saved", 0)
 
     user_record = {
         "handle": handle,
         "username": data.get("name"),
         "profile_pic_url": data.get("profile_image_url"),
         "follower_count": new_follower_count,
-        "lifetime_new_follows": lifetime_new_follows + follower_delta,
+        "lifetime_new_follows": lifetime_new_follows,
         "lifetime_posts": lifetime_posts,
         "scrolling_time_saved": scrolling_time_saved,
     }
@@ -223,7 +231,6 @@ async def get_validation_delay_endpoint() -> dict:
 @router.put("/{handle}/settings")
 async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) -> dict:
     """Update scraping settings for a user."""
-    print(payload)
     try:
         write_user_settings(handle=handle, queries=payload.queries, relevant_accounts=payload.relevant_accounts, max_tweets_retrieve=payload.max_tweets_retrieve)
         return {"message": "Settings updated successfully", "settings": read_user_settings(handle)}

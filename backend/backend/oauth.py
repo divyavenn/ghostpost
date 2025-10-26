@@ -28,13 +28,6 @@ redirect_uri = BACKEND_URL + "/auth/callback"
 
 # Check if we should use headless browser for SCRAPING (not OAuth)
 def is_headless_mode_for_scraping() -> bool:
-    """
-    Return True if browser should run in headless mode for AUTOMATED SCRAPING.
-    Uses SHOW_BROWSER config variable (can be overridden by HEADLESS_BROWSER env var).
-
-    NOTE: OAuth/login flows should NEVER use headless mode - users need to see
-    the browser to enter credentials and authorize the app!
-    """
     headless_env = os.getenv("HEADLESS_BROWSER")
     if headless_env is not None:
         # Environment variable override

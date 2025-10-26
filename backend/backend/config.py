@@ -21,12 +21,6 @@ BROWSER_STATE_FILE = CACHE_DIR / "storage_state.json"
 TOKEN_FILE = CACHE_DIR / "tokens.json"
 USER_INFO_FILE = CACHE_DIR / "user_info.json"
 
-# =============================================================================
-# BROWSER CONFIGURATION
-# =============================================================================
-# Set to True to show browser during scraping (useful for debugging)
-# Set to False to run browser in headless mode (production mode)
-# Can be overridden by HEADLESS_BROWSER environment variable
 SHOW_BROWSER = False
 
 # Session timeout for browser sessions (seconds)
@@ -61,7 +55,7 @@ BROWSERBASE_PROJECT_ID = os.getenv("BROWSERBASE_PROJECT_ID")
 
 # Whether to use Browserbase for scraping instead of local browser
 # Can be overridden by USE_BROWSERBASE_FOR_SCRAPING environment variable
-USE_BROWSERBASE_FOR_SCRAPING = os.getenv("USE_BROWSERBASE_FOR_SCRAPING", "false").lower() in ("true", "1", "yes")
+USE_BROWSERBASE_FOR_SCRAPING = False
 
 # =============================================================================
 # AI/LLM CONFIGURATION

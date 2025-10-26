@@ -4,7 +4,20 @@ import re
 # Match TweetDetail GraphQL calls
 TWEET_DETAIL_RE = re.compile(r"/i/api/graphql/[^/]+/TweetDetail")
 
-
+# it will scroll randomly slightly more or less than delay
+async def scroll(page, delay: float = 1.5, scrolls: int = 3, distance: int = 2000):
+    import random
+    rand_scrolls = int(random.random() * 2.5) + scrolls - 1
+    rand_distance = int(random.random() * 500) + distance - 250
+    rand_time = random.random() * delay/10 - delay/20 + delay
+    print(f"scrolling {rand_scrolls} times, {rand_distance} distance, {rand_time:.2f}s delay")
+    for _ in range(rand_scrolls):
+        try:
+            await page.mouse.wheel(0, rand_distance)
+        except Exception:
+            pass
+        await asyncio.sleep(rand_time)
+        
 async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
     """
     Return all tweets in the thread authored by the original poster (self-thread only).
@@ -137,17 +150,10 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None):
         except Exception:
             pass
 
-        # More aggressive scrolling to load entire thread
-        # Scroll down multiple times to ensure all thread content loads
-        for i in range(8):  # Increased from 4 to 8 scrolls
-            try:
-                await page.mouse.wheel(0, 3000)  # Increased scroll distance
-            except Exception:
-                pass
-            await asyncio.sleep(0.8)  # Slightly longer wait between scrolls
+        await scroll(page, scrolls=2)
+            
+        asyncio.sleep(1)
 
-        # Final wait to let any pending responses complete
-        await asyncio.sleep(1.0)
     finally:
         await page.close()
 

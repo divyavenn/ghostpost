@@ -378,7 +378,7 @@ function App() {
 
     try {
       const result = await api.regenerateSingleReply(username, tweetId);
-      // Update local state with the new generated_replies (now an array)
+      // Update local state with the new generated_replies (array of tuples)
       setTweets(tweets.map(t =>
         t.id === tweetId ? { ...t, generated_replies: result.new_replies } : t
       ));

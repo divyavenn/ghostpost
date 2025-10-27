@@ -221,7 +221,7 @@ export const api = {
     return response.json();
   },
 
-  regenerateSingleReply: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; new_replies: string[] }> => {
+  regenerateSingleReply: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; new_replies: Array<[string, string]> }> => {
     const response = await fetch(`${API_BASE_URL}/generate/${encodeURIComponent(username)}/replies/${encodeURIComponent(tweetId)}`, {
       method: 'POST',
       headers: {

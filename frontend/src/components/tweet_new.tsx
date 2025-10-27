@@ -66,12 +66,6 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
   // Limit replies to maxReplies from user settings
   const generatedReplies = maxReplies ? allReplies.slice(0, maxReplies) : allReplies;
 
-  // Extract model names from tuples (also limited by maxReplies)
-  const allReplyModels = tweet.generated_replies
-    ? tweet.generated_replies.map(r => Array.isArray(r) && r.length >= 2 ? r[1] : 'unknown')
-    : [];
-  const replyModels = maxReplies ? allReplyModels.slice(0, maxReplies) : allReplyModels;
-
   const [editedTexts, setEditedTexts] = useState<string[]>(generatedReplies);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean[]>(generatedReplies.map(() => false));
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);

@@ -84,13 +84,11 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1",
     return {"message": message}
 
 
-def build_prompt(tweet, overwrite=False):
-    tweet_id = tweet.get('id') or tweet.get('tweet_id')
-    # Skip if reply already exists and we're not overwriting
-    if "reply" in tweet and tweet["reply"] and not overwrite:
-        return None
-    # Get thread content for prompt
-    thread = tweet.get('thread', [])
+def build_prompt(tweet):
+    tweet_id = tweet['id'] if 'id' in tweet else (tweet['tweet_id'] if 'tweet_id' in tweet else None)
+
+
+    thread = tweet['thread'] if 'thread' in tweet else []
     if not thread:
         notify(f"⚠️ Tweet {tweet_id} has no thread content, skipping")
         return None
@@ -100,21 +98,21 @@ def build_prompt(tweet, overwrite=False):
     image_urls = []
 
     # Extract quoted tweet if present
-    quoted_tweet = tweet.get('quoted_tweet')
-    has_quoted_tweet = bool(quoted_tweet and quoted_tweet.get('text'))
+    quoted_tweet = tweet['quoted_tweet'] if 'quoted_tweet' in tweet else None
+    has_quoted_tweet = bool(quoted_tweet and ('text' in quoted_tweet and quoted_tweet['text']))
 
     if has_quoted_tweet:
          # Add quoted tweet context first
-        qt_author = quoted_tweet.get('author_handle', 'unknown')
-        qt_name = quoted_tweet.get('author_name', qt_author)
-        qt_text = quoted_tweet.get('text', '')
+        qt_author = quoted_tweet['author_handle'] if 'author_handle' in quoted_tweet else 'unknown'
+        qt_name = quoted_tweet['author_name'] if 'author_name' in quoted_tweet else qt_author
+        qt_text = quoted_tweet['text'] if 'text' in quoted_tweet else ''
 
         text_prompt += f"[QUOTED TWEET by @{qt_author} ({qt_name})]\n"
         text_prompt += f"{qt_text}\n"
 
             # Add QT images first
-        qt_media = quoted_tweet.get('media', [])
-        qt_images = [item['url'] for item in qt_media if item.get('type') == 'photo']
+        qt_media = quoted_tweet['media'] if 'media' in quoted_tweet else []
+        qt_images = [item['url'] for item in qt_media if 'type' in item and item['type'] == 'photo']
         if qt_images:
             image_urls.extend(qt_images)
             text_prompt += f"[This quoted tweet contains {len(qt_images)} image(s)]\n"
@@ -122,28 +120,74 @@ def build_prompt(tweet, overwrite=False):
         text_prompt += "\n---\n\n"
 
     # Add main tweet/thread
-    username_display = tweet.get('username', tweet.get('handle', 'User'))
+    username_display = tweet['username'] if 'username' in tweet else (tweet['handle'] if 'handle' in tweet else 'User')
     if has_quoted_tweet:
         text_prompt += f"[{username_display}'s RESPONSE]\n"
 
     text_prompt += str(thread)
 
     # Add main tweet images after QT images
-    media = tweet.get('media', [])
-    main_images = [item['url'] for item in media if item.get('type') == 'photo']
+    media = tweet['media'] if 'media' in tweet else []
+    main_images = [item['url'] for item in media if 'type' in item and item['type'] == 'photo']
     if main_images:
         image_urls.extend(main_images)
         if has_quoted_tweet:
             text_prompt += f"\n[Response contains {len(main_images)} image(s)]"
 
     # Add alt text context if available (for all images)
-    all_media = (quoted_tweet.get('media', []) if quoted_tweet else []) + media
-    alt_texts = [item.get('alt_text', '') for item in all_media if item.get('alt_text')]
+    all_media = (quoted_tweet['media'] if quoted_tweet and 'media' in quoted_tweet else []) + media
+    alt_texts = [item['alt_text'] for item in all_media if 'alt_text' in item and item['alt_text']]
     if alt_texts:
         text_prompt += f"\n\n[Image descriptions: {'; '.join(alt_texts)}]"
         
     return text_prompt, image_urls, has_quoted_tweet, tweet_id
     
+
+def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=1):
+    import random
+    import time
+
+    replies = []
+
+    if needed_generations > 0:
+        prompt = build_prompt(tweet)
+        if prompt is None:
+            return []
+
+        text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt
+
+        for gen_idx in range(needed_generations):
+            # Model selection logic:
+            # - If fewer models than replies: cycle through models
+            # - If more models than replies: randomly select a model for each reply
+            if len(models) < (needed_generations):
+                # Cycle through models
+                selected_model = models[gen_idx % len(models)]
+            else:
+                # Randomly select from available models
+                selected_model = random.choice(models)
+
+            if image_urls:
+                notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} with {len(image_urls)} image(s)...")
+            else:
+                notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model}...")
+
+            # Pass has_quoted_tweet flag to enable appropriate system prompt
+            response = ask_model(prompt=text_prompt, model=selected_model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
+
+            reply = response.get('message', '')
+            if reply:
+                replies.append((reply, selected_model))
+                notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
+            else:
+                notify(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}")
+
+            # Delay between generations to avoid rate limiting
+            if gen_idx < needed_generations - 1:
+                time.sleep(delay_seconds)
+
+    return replies
+
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     import time
@@ -156,56 +200,71 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
-    model = user_info["model"]
+
+    # Get models array - use bracket notation to ensure we get the value
+    models = user_info["models"] if "models" in user_info and user_info["models"] else ["claude-3-5-sonnet-20241022"]
+    number_of_generations = user_info["number_of_generations"] if "number_of_generations" in user_info else 1
 
     if not tweets:
         notify("⚠️ No tweets found in cache")
         return []
 
-    notify(f"📝 Processing {len(tweets)} tweets for user {username}...")
+    notify(f"📝 Processing {len(tweets)} tweets for user {username} using models: {models}...")
     count = 0
     skipped = 0
     errors = 0
-    total_to_process = len([t for t in tweets if not (t.get('reply') and not overwrite) and t.get('thread')])
+    total_to_process = len([t for t in tweets if not (('generated_replies' in t and t['generated_replies']) and not overwrite) and ('thread' in t and t['thread'])])
 
     for idx, tweet in enumerate(tweets, 1):
-        prompt = build_prompt(tweet)
-        if prompt is None:
+        needed_generations = number_of_generations - len(tweet.get('generated_replies', []))
+        if overwrite:
+                needed_generations = number_of_generations
+                
+        if needed_generations <= 0:
             skipped += 1
             continue
-        text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt
 
-        # Update status to show progress (1-indexed for display)
-        processed_count = count + skipped + errors + 1
-        if username:
-            scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{total_to_process}", "phase": "generating"}
+        if 'thread' not in tweet or not tweet['thread']:
+            tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
+            notify(f"⚠️ Tweet {tweet_id} has no thread content, skipping")
+            skipped += 1
+            continue
 
-        # Get model's reply with appropriate delay for rate limiting
+        # Generate replies using the reusable function
         try:
-            if image_urls:
-                notify(f"🤖 Generating reply for {tweet_id} using {model} with {len(image_urls)} image(s)... ({processed_count}/{total_to_process})")
-            else:
-                notify(f"🤖 Generating reply for {tweet_id} using {model} ... ({processed_count}/{total_to_process})")
+            # Update status BEFORE generation to show current progress
+            processed_count = count + skipped + errors + 1
+            if username:
+                scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{total_to_process}", "phase": "generating"}
+                
+            replies = generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds)
 
-            # Pass has_quoted_tweet flag to enable appropriate system prompt
-            response = ask_model(prompt=text_prompt, model=model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
+            # Store all replies as array of tuples (reply_text, model_name)
+            if replies:
+                if overwrite:
+                    # Replace all replies
+                    tweet['generated_replies'] = replies
+                else:
+                    # Append new replies to existing ones
+                    existing_replies = tweet.get('generated_replies', [])
+                    tweet['generated_replies'] = existing_replies + replies
 
-            reply = response.get('message', '')
-            if reply:
-                tweet['reply'] = reply
                 count += 1
-                notify(f"✅ Generated reply for tweet {tweet_id}")
+                tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
+                notify(f"✅ Generated {len(replies)} replies for tweet {tweet_id}")
 
-                # Progressive write: save immediately after generating each reply
-                await write_to_cache([tweet], f"Generated reply for tweet {tweet_id}", username=username)
+                # Progressive write: save immediately after generating all replies
+                await write_to_cache([tweet], f"Generated {len(replies)} replies for tweet {tweet_id}", username=username)
             else:
-                notify(f"⚠️ Empty reply received for tweet {tweet_id}")
+                tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
+                notify(f"⚠️ No replies generated for tweet {tweet_id}")
                 errors += 1
 
             time.sleep(delay_seconds)
 
         except Exception as e:
-            notify(f"❌ Exception generating reply for tweet {tweet_id}: {e}")
+            tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
+            notify(f"❌ Exception generating replies for tweet {tweet_id}: {e}")
             errors += 1
 
     # Note: No final write_to_cache needed - already saved incrementally
@@ -252,7 +311,7 @@ async def generate_replies_endpoint(username: str, payload: GenerateRepliesReque
             tweets = await generate_replies(username=username, delay_seconds=payload.delay_seconds, overwrite=payload.overwrite)
 
         # Count tweets with replies
-        reply_count = sum(1 for t in tweets if t.get('reply'))
+        reply_count = sum(1 for t in tweets if t.get('replies'))
 
         return {"message": "Replies generated successfully", "total_tweets": len(tweets), "replies_generated": reply_count}
     except Exception as e:
@@ -264,17 +323,15 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     """Regenerate AI reply for a single tweet."""
     from backend.tweets_cache import read_from_cache, write_to_cache
 
-    tweets = await read_from_cache(username=username)
-    user_info = read_user_info(username)
-    model = user_info["model"]
-    
-    
     # Check if API key is configured
     if not OBELISK_KEY:
-        error("Oblelisk API key not configured")
+        error("Obelisk API key not configured")
 
     # Read tweets from cache
     tweets = await read_from_cache(username=username)
+    user_info = read_user_info(username)
+    models = user_info["models"] if "models" in user_info and user_info["models"] else ["claude-3-5-sonnet-20241022"]
+    number_of_generations = user_info["number_of_generations"] if "number_of_generations" in user_info else 1
 
     if not tweets:
         error("No tweets found in cache")
@@ -282,35 +339,29 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     # Find the specific tweet
     tweet = None
     for t in tweets:
-        if t.get('id') == tweet_id or t.get('tweet_id') == tweet_id:
+        if ('id' in t and t['id'] == tweet_id) or ('tweet_id' in t and t['tweet_id'] == tweet_id):
             tweet = t
             break
 
     if not tweet:
         error("Tweet not found in cache")
 
-    prompt = build_prompt(tweet, overwrite=True)
-    if prompt is None:
-        error("COuld not build prompt for tweet")
+    # Generate replies using the reusable function
+    replies = generate_replies_for_tweet(
+        tweet=tweet,
+        models=models,
+        needed_generations=number_of_generations,
+        delay_seconds=0  # No delay for single tweet regeneration
+    )
 
-    text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt
-        
-    response = ask_model(prompt=text_prompt, model = model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
+    if not replies:
+        error(f"Received no replies for tweet {tweet_id}")
 
-    reply = response.get('message', '')
-    if reply:
-        tweet['reply'] = reply
-        notify(f"✅ Generated reply for tweet {tweet_id}")
-        # Progressive write: save immediately after generating each reply
-        await write_to_cache([tweet], f"Generated reply for tweet {tweet_id} with model {model}", username=username)
-    else:
-        notify(f"No reply received for tweet {tweet_id}")
+    # Store all regenerated replies as array of tuples (reply_text, model_name)
+    tweet['generated_replies'] = replies
+    await write_to_cache([tweet], f"Regenerated {len(replies)} replies for tweet {tweet_id}", username=username)
 
-    reply = response.get('message', '')
-    if not reply:
-        error(f"Recieved empty reply for tweet {tweet_id}")
-
-    return {"message": "Reply regenerated successfully", "tweet_id": tweet_id, "new_reply": reply}
+    return {"message": "Replies regenerated successfully", "tweet_id": tweet_id, "new_replies": replies}
 
 
 if __name__ == "__main__":

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.tweets_cache import remove_user_cache
-from backend.utils import BROWSER_STATE_FILE, TOKEN_FILE, _archive_interactions_log, _cache_key, notify, remove_entry_from_map, write_user_info
+from backend.utils import BROWSER_STATE_FILE, TOKEN_FILE, _archive_interactions_log, _cache_key, notify, read_user_info, remove_entry_from_map, write_user_info
 
 
 def get_validation_delay() -> int:
@@ -158,11 +158,13 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     return {
         "queries": topics,  # Return topics, not full queries
         "relevant_accounts": relevant_accounts,
-        "max_tweets_retrieve": user_info.get("max_tweets_retrieve", 30)
+        "max_tweets_retrieve": user_info.get("max_tweets_retrieve", 30),
+        "number_of_generations": user_info.get("number_of_generations", 1),
+        "models": user_info.get("models", ["claude-3-5-sonnet-20241022"])  # Default to single model
     }
 
 
-def write_user_settings(handle: str, queries: list[str] | None = None, relevant_accounts: dict[str, bool] | None = None, max_tweets_retrieve: int | None = None) -> None:
+def write_user_settings(handle: str, queries: list[str] | None = None, relevant_accounts: dict[str, bool] | None = None, max_tweets_retrieve: int | None = None, number_of_generations: int | None = None, models: list[str] | None = None) -> None:
     """Update scraping settings for a user in user_info.json."""
     from backend.utils import read_user_info, write_user_info
 
@@ -181,6 +183,16 @@ def write_user_settings(handle: str, queries: list[str] | None = None, relevant_
         user_info["relevant_accounts"] = relevant_accounts
     if max_tweets_retrieve is not None:
         user_info["max_tweets_retrieve"] = max_tweets_retrieve
+    if number_of_generations is not None:
+        # Validate range 1-5
+        if not 1 <= number_of_generations <= 5:
+            raise ValueError("number_of_generations must be between 1 and 5")
+        user_info["number_of_generations"] = number_of_generations
+    if models is not None:
+        # Validate models list is not empty
+        if not models or not isinstance(models, list):
+            raise ValueError("models must be a non-empty list of strings")
+        user_info["models"] = models
 
     write_user_info(user_info)
     notify(f"✅ Updated settings for {handle}")
@@ -199,6 +211,8 @@ class UpdateSettingsRequest(BaseModel):
     queries: list[str] | None = None
     relevant_accounts: dict[str, bool] | None = None
     max_tweets_retrieve: int | None = None
+    number_of_generations: int | None = None
+    models: list[str] | None = None
 
 
 @router.get("/{handle}/info")
@@ -232,8 +246,114 @@ async def get_validation_delay_endpoint() -> dict:
 async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) -> dict:
     """Update scraping settings for a user."""
     try:
-        write_user_settings(handle=handle, queries=payload.queries, relevant_accounts=payload.relevant_accounts, max_tweets_retrieve=payload.max_tweets_retrieve)
-        return {"message": "Settings updated successfully", "settings": read_user_settings(handle)}
+        # Get the old settings to check for changes in number_of_generations
+        old_settings = read_user_settings(handle)
+        old_num_generations = old_settings.get("number_of_generations", 1) if old_settings else 1
+        new_num_generations = payload.number_of_generations if payload.number_of_generations is not None else old_num_generations
+
+        notify(f"🔍 Settings update: old_num_generations={old_num_generations}, new_num_generations={new_num_generations}, payload.number_of_generations={payload.number_of_generations}")
+
+        # Update the settings
+        write_user_settings(handle=handle, queries=payload.queries, relevant_accounts=payload.relevant_accounts, max_tweets_retrieve=payload.max_tweets_retrieve, number_of_generations=payload.number_of_generations, models=payload.models)
+
+        # Handle changes in number_of_generations
+        generation_happened = False
+        if payload.number_of_generations is not None and new_num_generations != old_num_generations:
+            notify("✅ Number of generations changed! Starting automatic reply adjustment...")
+            from backend.generate_replies import generate_replies_for_tweet
+            from backend.tweets_cache import read_from_cache, write_to_cache
+
+            tweets = await read_from_cache(username=handle)
+
+            if tweets:
+                if new_num_generations > old_num_generations:
+                    generation_happened = True
+                    # Generate additional replies for existing tweets
+                    notify(f"📝 Generating additional replies (from {old_num_generations} to {new_num_generations})...")
+
+                    user_info = read_user_info(handle)
+                    models = user_info["models"] if "models" in user_info and user_info["models"] else ["claude-3-5-sonnet-20241022"]
+
+                    tweets_to_update = 0
+                    for tweet in tweets:
+                        if "generated_replies" not in tweet or not tweet["generated_replies"]:
+                            continue
+
+                        current_reply_count = len(tweet.get("generated_replies", []))
+                        needed_replies = new_num_generations - current_reply_count
+
+                        if needed_replies <= 0:
+                            continue
+
+                        tweets_to_update += 1
+
+                    notify(f"📊 Found {tweets_to_update} tweets that need additional replies")
+
+                    # Initialize scraping status before starting generation
+                    from backend.generate_replies import scraping_status
+                    scraping_status[handle] = {
+                        "type": "generating",
+                        "value": f"0/{tweets_to_update}",
+                        "phase": "generating"
+                    }
+
+                    updated_count = 0
+                    for idx, tweet in enumerate(tweets):
+                        if "generated_replies" not in tweet or not tweet["generated_replies"]:
+                            continue
+
+                        current_reply_count = len(tweet.get("generated_replies", []))
+                        needed_replies = new_num_generations - current_reply_count
+
+                        if needed_replies <= 0:
+                            continue
+
+                        # Update scraping status for frontend polling
+                        from backend.generate_replies import scraping_status
+                        scraping_status[handle] = {
+                            "type": "generating",
+                            "value": f"{updated_count + 1}/{tweets_to_update}",
+                            "phase": "generating"
+                        }
+
+                        tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
+                        notify(f"🔄 Generating {needed_replies} additional replies for tweet {tweet_id} (currently has {current_reply_count})")
+
+                        # Generate additional replies using the reusable function
+                        new_replies = generate_replies_for_tweet(
+                            tweet=tweet,
+                            models=models,
+                            needed_generations=needed_replies,
+                            delay_seconds=1
+                        )
+
+                        # Append new replies to existing ones (new_replies is array of tuples)
+                        if new_replies:
+                            tweet["generated_replies"].extend(new_replies)
+                            updated_count += 1
+                            notify(f"✅ Updated tweet {tweet_id} - now has {len(tweet['generated_replies'])} replies")
+
+                    notify(f"✅ Updated {updated_count} tweets with additional replies")
+
+                    # Save updated cache
+                    await write_to_cache(tweets, f"Updated replies (increased to {new_num_generations})", username=handle)
+
+                    # Mark generation as complete
+                    from backend.generate_replies import scraping_status
+                    scraping_status[handle] = {"type": "complete", "value": "", "phase": "complete"}
+
+                elif new_num_generations < old_num_generations:
+                    # Note: We don't actually delete replies when count is reduced
+                    # The frontend will just display fewer of them based on user settings
+                    # This preserves all generated replies in the cache
+                    notify(f"✂️ Settings reduced replies (from {old_num_generations} to {new_num_generations}) - existing replies preserved")
+                    generation_happened = False  # No actual generation needed
+
+        return {
+            "message": "Settings updated successfully",
+            "settings": read_user_settings(handle),
+            "generation_happened": generation_happened
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}") from e
 

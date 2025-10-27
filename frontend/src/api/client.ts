@@ -37,6 +37,8 @@ export interface UserSettings {
   queries: string[];
   relevant_accounts: Record<string, boolean>; // {handle: validated}
   max_tweets_retrieve: number;
+  number_of_generations: number;
+  models: string[];
 }
 
 export interface UserInfo {
@@ -48,7 +50,7 @@ export interface UserInfo {
   lifetime_new_follows: number;
   scrolling_time_saved: number;
   email?: string;
-  model?: string;
+  models?: string[];
 }
 
 export interface ValidationDelayConfig {
@@ -135,13 +137,13 @@ export const api = {
     return response.json();
   },
 
-  editTweetReply: async (username: string, tweetId: string, newReply: string): Promise<void> => {
+  editTweetReply: async (username: string, tweetId: string, newReply: string, replyIndex: number = 0): Promise<void> => {
     const response = await fetch(`${API_BASE_URL}/tweets/${username}/${tweetId}/reply`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ new_reply: newReply }),
+      body: JSON.stringify({ new_reply: newReply, reply_index: replyIndex }),
     });
     if (!response.ok) throw new Error('Failed to edit reply');
   },
@@ -153,7 +155,7 @@ export const api = {
     if (!response.ok) throw new Error('Failed to delete tweet');
   },
 
-  postReply: async (username: string, text: string, tweetId: string, cacheId?: string): Promise<{ data: { id: string }; posted_tweet_id?: string }> => {
+  postReply: async (username: string, text: string, tweetId: string, cacheId?: string, replyIndex?: number): Promise<{ data: { id: string }; posted_tweet_id?: string }> => {
     const response = await fetch(`${API_BASE_URL}/post/reply?username=${encodeURIComponent(username)}`, {
       method: 'POST',
       headers: {
@@ -163,6 +165,7 @@ export const api = {
         text,
         tweet_id: tweetId,
         cache_id: cacheId,
+        reply_index: replyIndex,
       }),
     });
     if (!response.ok) throw new Error('Failed to post reply');
@@ -218,7 +221,7 @@ export const api = {
     return response.json();
   },
 
-  regenerateSingleReply: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; new_reply: string }> => {
+  regenerateSingleReply: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; new_replies: string[] }> => {
     const response = await fetch(`${API_BASE_URL}/generate/${encodeURIComponent(username)}/replies/${encodeURIComponent(tweetId)}`, {
       method: 'POST',
       headers: {

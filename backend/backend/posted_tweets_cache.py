@@ -177,3 +177,30 @@ def get_tweets_needing_metrics_update(username: str, limit: int | None = None) -
         tweets = tweets[:limit]
 
     return tweets
+
+
+def delete_posted_tweet_from_cache(username: str, posted_tweet_id: str) -> bool:
+    """
+    Delete a posted tweet from the cache.
+
+    Args:
+        username: User's Twitter handle
+        posted_tweet_id: Twitter's ID for the posted tweet to delete
+
+    Returns:
+        True if tweet was found and deleted, False otherwise
+    """
+    tweets = read_posted_tweets_cache(username)
+
+    # Find and remove the tweet
+    original_count = len(tweets)
+    tweets = [t for t in tweets if t.get("id") != posted_tweet_id]
+
+    if len(tweets) < original_count:
+        # Tweet was found and removed
+        write_posted_tweets_cache(username, tweets)
+        notify(f"✅ Deleted posted tweet {posted_tweet_id} from cache for @{username}")
+        return True
+    else:
+        notify(f"⚠️ Tweet {posted_tweet_id} not found in posted tweets cache for @{username}")
+        return False

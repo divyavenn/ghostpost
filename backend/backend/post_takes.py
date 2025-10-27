@@ -31,9 +31,10 @@ class ReplyTweet(BaseModel):
     text: str
     tweet_id: str
     cache_id: str | None = None
+    reply_index: int | None = None
 
 
-async def post(username, payload: dict, cache_id: str | None = None) -> dict:
+async def post(username, payload: dict, cache_id: str | None = None, reply_index: int | None = None) -> dict:
     from backend.log_interactions import TweetAction, log_tweet_action
     from backend.posted_tweets_cache import add_posted_tweet
     from backend.tweets_cache import get_user_tweet_cache
@@ -71,15 +72,16 @@ async def post(username, payload: dict, cache_id: str | None = None) -> dict:
         if "quote_tweet_id" in payload:
             metadata["quote_tweet_id"] = payload["quote_tweet_id"]
 
-        # Log using the original tweet ID as the key if available, otherwise use posted_tweet_id
-        log_key = original_tweet_id or posted_tweet_id
-        log_tweet_action(username, TweetAction.POSTED, str(log_key), metadata=metadata)
+        # Include reply_index to track which reply was chosen for posting
+        if reply_index is not None:
+            metadata["reply_index"] = reply_index
 
-        # Get original tweet data from cache for posted_tweets.json
+        # Get original tweet data from cache for posted_tweets.json and model info
         response_to_thread = []
         responding_to_handle = ""
         replying_to_pfp = ""
         original_tweet_url = ""
+        model_name = "unknown"
 
         if cache_id:
             try:
@@ -95,9 +97,26 @@ async def post(username, payload: dict, cache_id: str | None = None) -> dict:
                             responding_to_handle = tweet.get("handle", "")
                             replying_to_pfp = tweet.get("author_profile_pic_url", "")
                             original_tweet_url = tweet.get("url", "")
+
+                            # Get model information for the posted reply
+                            # generated_replies is now an array of tuples: [(reply_text, model_name), ...]
+                            if reply_index is not None:
+                                generated_replies = tweet.get("generated_replies", [])
+                                if reply_index < len(generated_replies):
+                                    # Extract model name from tuple (reply_text, model_name)
+                                    if isinstance(generated_replies[reply_index], tuple) and len(generated_replies[reply_index]) >= 2:
+                                        model_name = generated_replies[reply_index][1]
+
                             break
             except Exception as e:
                 notify(f"⚠️ Could not fetch original tweet data from cache: {e}")
+
+        # Add model name to metadata
+        metadata["model"] = model_name
+
+        # Log using the original tweet ID as the key if available, otherwise use posted_tweet_id
+        log_key = original_tweet_id or posted_tweet_id
+        log_tweet_action(username, TweetAction.POSTED, str(log_key), metadata=metadata)
 
         # Add to posted_tweets.json cache
         try:
@@ -137,7 +156,7 @@ async def post_tweet(username: str, payload: Tweet) -> dict:
 @router.post("/reply")
 async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
     data = {"text": payload.text, "reply": {"in_reply_to_tweet_id": payload.tweet_id}}
-    return await post(username, data, cache_id=payload.cache_id)
+    return await post(username, data, cache_id=payload.cache_id, reply_index=payload.reply_index)
 
 
 @router.post("/quote")
@@ -170,6 +189,13 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
     if response.status_code == 200:
         # Successfully deleted - log the action
         log_tweet_action(username, TweetAction.DELETED, tweet_id, metadata={"deleted_from_twitter": True, "posted_tweet_id": tweet_id})
+
+        # Delete from posted_tweets.json cache
+        try:
+            from backend.posted_tweets_cache import delete_posted_tweet_from_cache
+            delete_posted_tweet_from_cache(username, tweet_id)
+        except Exception as e:
+            notify(f"⚠️ Failed to delete tweet from posted tweets cache: {e}")
 
         # Decrement lifetime_posts
         try:

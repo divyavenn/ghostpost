@@ -30,6 +30,7 @@ function App() {
   const [scrapingStatusText, setScrapingStatusText] = useState<string>('Scraping tweets');
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
   const [isLoadingMorePosted, setIsLoadingMorePosted] = useState(false);
+  const [numberOfGenerations, setNumberOfGenerations] = useState<number>(1); // User setting for how many replies to display
   const postedTweetsOffsetRef = useRef(0); // Track offset with ref to avoid re-creating callback
 
   // Load posted tweets from backend
@@ -164,13 +165,16 @@ function App() {
       const hasInvalid = Object.values(settings.relevant_accounts).some(validated => validated === false);
       setHasInvalidAccounts(hasInvalid);
 
+      // Store number of generations setting
+      setNumberOfGenerations(settings.number_of_generations || 1);
+
       // Check if first-time setup is needed (both queries and accounts are empty)
       const hasNoQueries = !settings.queries || settings.queries.length === 0;
       const hasNoAccounts = !settings.relevant_accounts || Object.keys(settings.relevant_accounts).length === 0;
       const needsSetup = hasNoQueries && hasNoAccounts;
-      
+
       setIsFirstTimeSetup(needsSetup);
-      
+
       // Auto-open settings modal for first-time users
       if (needsSetup) {
         setIsSettingsOpen(true);
@@ -207,7 +211,8 @@ function App() {
     }
   };
 
-  const handleRefresh = async () => {
+  // Handle scraping + generation (full refresh)
+  const handleScrape = async () => {
     if (!username) return;
 
     setIsLoading(true);
@@ -276,6 +281,63 @@ function App() {
     }
   };
 
+  // Handle generation only (no scraping)
+  const handleGenerate = async () => {
+    if (!username) return;
+
+    setIsLoading(true);
+
+    // Start polling for generation status
+    const pollInterval = setInterval(async () => {
+      if (!username) return;
+      try {
+        // Poll scraping status (reuses same endpoint)
+        const status = await api.getScrapingStatus(username);
+
+        // Update status text based on current phase
+        if (status.type === 'generating') {
+          setScrapingStatusText(`Generating replies (${status.value})`);
+        } else if (status.type === 'complete') {
+          setScrapingStatusText('Done!');
+        }
+
+        // Poll tweets to show updated replies
+        const data = await api.getTweetsCache(username);
+        const tweetsWithThreads = data.filter(tweet => {
+          const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
+          return hasThread;
+        });
+        const sorted = tweetsWithThreads.sort((a, b) => {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        });
+        setTweets(sorted);
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 2000); // Poll every 2 seconds
+
+    try {
+      // Only generate AI replies for existing cached tweets (with overwrite)
+      setLoadingPhase('generating');
+      setScrapingStatusText('Generating replies');
+      const generateResult = await api.generateReplies(username, { overwrite: true });
+      console.log(`Generated ${generateResult.replies_generated} replies`);
+
+      // Stop polling and do final reload
+      clearInterval(pollInterval);
+      setLoadingPhase(null);
+      setScrapingStatusText('Generating replies'); // Reset
+      await loadTweets(username);
+    } catch (error) {
+      clearInterval(pollInterval);
+      console.error('Failed to generate replies:', error);
+      alert('Failed to generate replies. Please try again.');
+      setIsLoading(false);
+      setLoadingPhase(null);
+      setScrapingStatusText('Generating replies'); // Reset
+    }
+  };
+
 
   const handleLogout = () => {
     setUsername(null);
@@ -283,15 +345,26 @@ function App() {
     localStorage.removeItem('username');
   };
 
-  const handleEditReply = async (tweetId: string, newReply: string) => {
+  const handleEditReply = async (tweetId: string, newReply: string, replyIndex: number = 0) => {
     if (!username) return;
 
     try {
-      await api.editTweetReply(username, tweetId, newReply);
-      // Update local state
-      setTweets(tweets.map(t =>
-        t.id === tweetId ? { ...t, reply: newReply } : t
-      ));
+      await api.editTweetReply(username, tweetId, newReply, replyIndex);
+      // Update local state - update the specific reply in the generated_replies array
+      // Preserve tuple format: [(text, model), ...]
+      setTweets(tweets.map(t => {
+        if (t.id === tweetId) {
+          const generatedReplies: Array<[string, string]> = t.generated_replies || (t.reply ? [[t.reply, 'unknown']] : []);
+          const updatedReplies: Array<[string, string]> = [...generatedReplies];
+          // Update the text while preserving the model name
+          const currentModel = Array.isArray(updatedReplies[replyIndex]) && updatedReplies[replyIndex].length >= 2
+            ? updatedReplies[replyIndex][1]
+            : 'unknown';
+          updatedReplies[replyIndex] = [newReply, currentModel];
+          return { ...t, generated_replies: updatedReplies };
+        }
+        return t;
+      }));
     } catch (error) {
       console.error('Failed to edit reply:', error);
     }
@@ -305,9 +378,9 @@ function App() {
 
     try {
       const result = await api.regenerateSingleReply(username, tweetId);
-      // Update local state with the new reply
+      // Update local state with the new generated_replies (now an array)
       setTweets(tweets.map(t =>
-        t.id === tweetId ? { ...t, reply: result.new_reply } : t
+        t.id === tweetId ? { ...t, generated_replies: result.new_replies } : t
       ));
     } catch (error) {
       console.error('Failed to regenerate reply:', error);
@@ -322,7 +395,7 @@ function App() {
     }
   };
 
-  const handlePublish = async (tweetId: string, text: string) => {
+  const handlePublish = async (tweetId: string, text: string, replyIndex: number = 0) => {
     if (!username) return;
 
     // Mark as posting to trigger animation
@@ -334,7 +407,7 @@ function App() {
       if (!tweet) return;
 
       try {
-        await api.postReply(username, text, tweet.id, tweet.cache_id);
+        await api.postReply(username, text, tweet.id, tweet.cache_id, replyIndex);
 
         // Remove tweet from cache backend without logging (since we already logged the post)
         await api.deleteTweet(username, tweet.id, false);
@@ -466,24 +539,79 @@ function App() {
     <Background className="flex flex-col p-20">
       <Header
         onSettingsClick={() => setIsSettingsOpen(true)}
-        onRefreshClick={handleRefresh}
+        onScrapeClick={handleScrape}
+        onGenerateClick={handleGenerate}
         hasInvalidAccounts={hasInvalidAccounts}
       />
 
       {userInfo && (
         <UserSettingsModal
           isOpen={isSettingsOpen}
-          onClose={async () => {
+          onClose={async (generationHappened?: boolean) => {
             const wasFirstTimeSetup = isFirstTimeSetup;
             setIsSettingsOpen(false);
 
-            // Reload user info to check for invalid accounts after closing settings
-            await loadUserInfo(username!);
+            // If generation will happen, show loading overlay and poll for completion
+            if (generationHappened) {
+              setIsLoading(true);
+              setLoadingPhase('generating');
+              setScrapingStatusText('Generating additional replies');
 
-            // If we just completed first-time setup, auto-trigger refresh
+              // Start polling for status immediately
+              const pollInterval = setInterval(async () => {
+                if (!username) return;
+                try {
+                  const status = await api.getScrapingStatus(username);
+
+                  if (status.type === 'generating') {
+                    setScrapingStatusText(`Generating replies (${status.value})`);
+                  } else if (status.type === 'complete') {
+                    setScrapingStatusText('Done!');
+                    // Stop polling when complete
+                    clearInterval(pollInterval);
+
+                    // Wait a moment then reload and hide overlay
+                    setTimeout(async () => {
+                      setIsLoading(false);
+                      setLoadingPhase(null);
+                      await loadTweets(username!);
+                      await loadUserInfo(username!);
+                    }, 1000);
+                  }
+
+                  // Also poll tweets to show them updating in real-time
+                  const data = await api.getTweetsCache(username);
+                  const tweetsWithThreads = data.filter(tweet => {
+                    const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
+                    return hasThread;
+                  });
+                  const sorted = tweetsWithThreads.sort((a, b) => {
+                    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+                  });
+                  setTweets(sorted);
+                } catch (error) {
+                  console.error('Polling error:', error);
+                }
+              }, 1000); // Poll every second
+
+              // Safety timeout - if status never becomes 'complete', stop after 60 seconds
+              setTimeout(() => {
+                clearInterval(pollInterval);
+                setIsLoading(false);
+                setLoadingPhase(null);
+                loadTweets(username!).catch(console.error);
+                loadUserInfo(username!).catch(console.error);
+              }, 60000);
+            } else {
+              // No generation, just reload normally
+              await loadUserInfo(username!);
+              await loadTweets(username!);
+            }
+
+            // If we just completed first-time setup, auto-trigger scrape
             if (wasFirstTimeSetup) {
               setTimeout(() => {
-                handleRefresh();
+                handleScrape();
               }, 100);
             }
           }}
@@ -511,7 +639,7 @@ function App() {
 
       {/* Content Area - Show tweets or empty state */}
       {activeTab === 'generated' && tweets.length === 0 ? (
-        <EmptyState onRefresh={handleRefresh} />
+        <EmptyState onRefresh={handleScrape} />
       ) : (
         <div
           className="flex-1 overflow-y-auto scrollbar-hide"
@@ -535,11 +663,11 @@ function App() {
                     <TweetDisplay
                       key={tweet.id}
                       tweet={tweet}
-                      replyText={tweet.reply || ''}
                       myProfilePicUrl={userInfo!.profile_pic_url}
-                      onPublish={(text) => handlePublish(tweet.id, text)}
+                      maxReplies={numberOfGenerations}
+                      onPublish={(text, replyIndex) => handlePublish(tweet.id, text, replyIndex)}
                       onSkip={() => handleDelete(tweet.id)}
-                      onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
+                      onEditReply={(newReply, replyIndex) => handleEditReply(tweet.id, newReply, replyIndex)}
                       onRegenerate={() => handleRegenerate(tweet.id)}
                       isDeleting={deletingTweetIds.has(tweet.id)}
                       isPosting={postingTweetIds.has(tweet.id)}
@@ -553,11 +681,11 @@ function App() {
                     <TweetDisplay
                       key={tweet.id}
                       tweet={tweet}
-                      replyText={tweet.reply || ''}
                       myProfilePicUrl={userInfo!.profile_pic_url}
-                      onPublish={(text) => handlePublish(tweet.id, text)}
+                      maxReplies={numberOfGenerations}
+                      onPublish={(text, replyIndex) => handlePublish(tweet.id, text, replyIndex)}
                       onSkip={() => handleDelete(tweet.id)}
-                      onEditReply={(newReply) => handleEditReply(tweet.id, newReply)}
+                      onEditReply={(newReply, replyIndex) => handleEditReply(tweet.id, newReply, replyIndex)}
                       onRegenerate={() => handleRegenerate(tweet.id)}
                       isDeleting={deletingTweetIds.has(tweet.id)}
                       isPosting={postingTweetIds.has(tweet.id)}

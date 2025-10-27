@@ -63,16 +63,35 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
         if tweet_id and cache_id:
             metadata = {"cache_id": cache_id}
 
-            # If this tweet has a reply, include first 250 chars of original tweet + the reply
-            reply = tweet.get("reply")
-            if reply:
+            # If this tweet has generated_replies, include first 250 chars of original tweet + all replies with model info
+            # generated_replies is now an array of tuples: [(reply_text, model_name), ...]
+            generated_replies = tweet.get("generated_replies")
+            if generated_replies:
                 thread = tweet.get("thread", [])
                 # Join thread parts and get first 250 characters
                 original_text = " ".join(thread) if isinstance(thread, list) else str(thread)
                 original_text_preview = original_text[:250]
 
                 metadata["original_tweet_preview"] = original_text_preview
-                metadata["generated_reply"] = reply
+
+                # Include model information for each reply
+                replies_with_models = []
+                for idx, reply_data in enumerate(generated_replies):
+                    # Handle tuple format: (reply_text, model_name)
+                    if isinstance(reply_data, tuple) and len(reply_data) >= 2:
+                        reply_text, model_name = reply_data[0], reply_data[1]
+                    else:
+                        # Fallback for any legacy format
+                        reply_text = reply_data
+                        model_name = "unknown"
+
+                    replies_with_models.append({
+                        "reply_index": idx,
+                        "model": model_name,
+                        "text": reply_text
+                    })
+
+                metadata["generated_replies"] = replies_with_models
 
             log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id), metadata=metadata)
 
@@ -217,8 +236,8 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
     return True
 
 
-async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool:
-    """Edit the reply text for a specific tweet in the cache."""
+async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str, reply_index: int = 0) -> bool:
+    """Edit the reply text for a specific tweet in the cache at a specific index."""
     import difflib
 
     from backend.log_interactions import TweetAction, log_tweet_action
@@ -229,22 +248,52 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str) -> bool
     if not tweet:
         return False
 
-    old_reply = tweet.get("reply", "")
+    # Handle tuple format: [(reply_text, model_name), ...]
+    generated_replies = tweet.get("generated_replies", [])
+    if not generated_replies:
+        # Backward compatibility: check for old "reply" field
+        old_single_reply = tweet.get("reply")
+        if old_single_reply:
+            generated_replies = [(old_single_reply, "unknown")]
+        else:
+            return False
+
+    if reply_index < 0 or reply_index >= len(generated_replies):
+        return False
+
+    # Extract old reply and model from tuple
+    reply_data = generated_replies[reply_index]
+    if isinstance(reply_data, tuple) and len(reply_data) >= 2:
+        old_reply, model_name = reply_data[0], reply_data[1]
+    else:
+        # Fallback for legacy format
+        old_reply = reply_data
+        model_name = "unknown"
+
     cache_id = tweet.get("cache_id")
     original_tweet_id = tweet.get("id")  # The tweet this reply is responding to
 
     # Generate diff
     diff = list(difflib.unified_diff(old_reply.splitlines(keepends=True), new_reply.splitlines(keepends=True), lineterm='', fromfile='old_reply', tofile='new_reply'))
 
-    tweet["reply"] = new_reply
+    # Update the specific reply - keep the model name, update the text
+    generated_replies[reply_index] = (new_reply, model_name)
+    tweet["generated_replies"] = generated_replies
 
     # Write to cache without logging (to avoid duplicate WRITTEN logs)
     path = get_user_tweet_cache(username)
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
-    notify(f"💾 Edited reply for tweet {tweet_id}")
+    notify(f"💾 Edited reply {reply_index} for tweet {tweet_id}")
 
-    # Log the edit with comprehensive metadata
-    metadata = {"cache_id": cache_id, "new_reply": new_reply, "diff": "".join(diff), "replying_to_tweet_id": original_tweet_id}
+    # Log the edit with comprehensive metadata including reply index and model
+    metadata = {
+        "cache_id": cache_id,
+        "reply_index": reply_index,
+        "model": model_name,
+        "new_reply": new_reply,
+        "diff": "".join(diff),
+        "replying_to_tweet_id": original_tweet_id
+    }
 
     log_tweet_action(username, TweetAction.EDITED, tweet_id, metadata=metadata)
     return True
@@ -297,6 +346,7 @@ router = APIRouter(prefix="/tweets", tags=["tweets"])
 
 class EditReplyRequest(BaseModel):
     new_reply: str
+    reply_index: int = 0
 
 
 @router.get("/{username}")
@@ -324,15 +374,15 @@ async def delete_tweet_endpoint(username: str, tweet_id: str, log_deletion: bool
 
 
 @router.patch("/{username}/{tweet_id}/reply")
-async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRequest) -> dict[str, str]:
-    """Edit the reply text for a specific tweet."""
-    updated = await edit_tweet_reply(username, tweet_id, payload.new_reply)
+async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRequest) -> dict[str, Any]:
+    """Edit the reply text for a specific tweet at a specific index."""
+    updated = await edit_tweet_reply(username, tweet_id, payload.new_reply, payload.reply_index)
     if not updated:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Tweet {tweet_id} not found for user {username}",
+            detail=f"Tweet {tweet_id} not found for user {username} or invalid reply index",
         )
-    return {"message": "Reply updated successfully", "tweet_id": tweet_id}
+    return {"message": "Reply updated successfully", "tweet_id": tweet_id, "reply_index": payload.reply_index}
 
 
 @router.get("/{username}/{tweet_id}")

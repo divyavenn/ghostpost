@@ -11,12 +11,13 @@ export interface TweetData {
   likes: number;
   retweets: number;
   quotes: number;
-  replies: number;
+  replies: number;  // Count of replies to the original tweet
   handle: string;
   score: number;
   username: string;
   followers: number;
-  reply?: string;
+  reply?: string; // Deprecated - kept for backward compatibility
+  generated_replies?: Array<[string, string]>; // Array of tuples: [reply_text, model_name]
   created_at: string;
   url: string;
   thread?: string[];
@@ -43,11 +44,11 @@ export interface TweetData {
 
 interface TweetDisplayProps {
   tweet: TweetData;
-  replyText: string;
   myProfilePicUrl: string;
-  onPublish: (text: string) => void;
+  maxReplies?: number; // Maximum number of replies to display (from user settings)
+  onPublish: (text: string, replyIndex: number) => void;
   onSkip: () => void;
-  onEditReply?: (newReply: string) => void;
+  onEditReply?: (newReply: string, replyIndex: number) => void;
   onRegenerate?: () => void;
   isDeleting?: boolean;
   isPosting?: boolean;
@@ -56,9 +57,23 @@ interface TweetDisplayProps {
   showDeleteButton?: boolean;  // Explicit control over delete button visibility
 }
 
-export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
-  const [editedText, setEditedText] = useState(tweet.reply || '');
-  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
+  // Handle both tuple format [(text, model), ...] and old format
+  const allReplies = tweet.generated_replies
+    ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
+    : (tweet.reply ? [tweet.reply] : []);
+
+  // Limit replies to maxReplies from user settings
+  const generatedReplies = maxReplies ? allReplies.slice(0, maxReplies) : allReplies;
+
+  // Extract model names from tuples (also limited by maxReplies)
+  const allReplyModels = tweet.generated_replies
+    ? tweet.generated_replies.map(r => Array.isArray(r) && r.length >= 2 ? r[1] : 'unknown')
+    : [];
+  const replyModels = maxReplies ? allReplyModels.slice(0, maxReplies) : allReplyModels;
+
+  const [editedTexts, setEditedTexts] = useState<string[]>(generatedReplies);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean[]>(generatedReplies.map(() => false));
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -70,55 +85,58 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
 
   const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
 
-  // Update editedText when tweet changes
+  // Update editedTexts when tweet or maxReplies changes
   useEffect(() => {
-    setEditedText(tweet.reply || '');
-    setHasUnsavedChanges(false);
-  }, [tweet.id, tweet.reply]);
+    const allNewReplies = tweet.generated_replies
+      ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
+      : (tweet.reply ? [tweet.reply] : []);
+    const newReplies = maxReplies ? allNewReplies.slice(0, maxReplies) : allNewReplies;
+    setEditedTexts(newReplies);
+    setHasUnsavedChanges(newReplies.map(() => false));
+  }, [tweet.id, tweet.reply, tweet.generated_replies, maxReplies]);
 
-  // Auto-resize textarea
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
+  // Handle text change for a specific reply index
+  const handleTextChange = (index: number, newText: string) => {
+    const newEditedTexts = [...editedTexts];
+    newEditedTexts[index] = newText;
+    setEditedTexts(newEditedTexts);
 
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [editedText]);
+    // Mark as having unsaved changes if different from original (limited by maxReplies)
+    const allOriginalReplies = tweet.generated_replies
+      ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
+      : (tweet.reply ? [tweet.reply] : []);
+    const originalReplies = maxReplies ? allOriginalReplies.slice(0, maxReplies) : allOriginalReplies;
+    const newHasUnsavedChanges = [...hasUnsavedChanges];
+    newHasUnsavedChanges[index] = newText !== originalReplies[index];
+    setHasUnsavedChanges(newHasUnsavedChanges);
+  };
 
-  // Handle text change and mark as unsaved
-  const handleTextChange = (newText: string) => {
-    setEditedText(newText);
-
-    // Mark as having unsaved changes if different from original
-    if (newText !== tweet.reply) {
-      setHasUnsavedChanges(true);
-    } else {
-      setHasUnsavedChanges(false);
-    }
-
-    // Clear existing debounce timer
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
+  // Save changes for a specific reply
+  const handleSave = async (index: number) => {
+    const allOriginalReplies = tweet.generated_replies
+      ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
+      : (tweet.reply ? [tweet.reply] : []);
+    const originalReplies = maxReplies ? allOriginalReplies.slice(0, maxReplies) : allOriginalReplies;
+    if (onEditReply && editedTexts[index] !== originalReplies[index]) {
+      await onEditReply(editedTexts[index], index);
+      const newHasUnsavedChanges = [...hasUnsavedChanges];
+      newHasUnsavedChanges[index] = false;
+      setHasUnsavedChanges(newHasUnsavedChanges);
     }
   };
 
-  // Save changes manually
-  const handleSave = async () => {
-    if (onEditReply && editedText !== tweet.reply) {
-      await onEditReply(editedText);
-      setHasUnsavedChanges(false);
-    }
-  };
-
-  // Handle publish - save first if needed, then publish
-  const handlePublish = async () => {
+  // Handle publish for a specific reply
+  const handlePublish = async (index: number) => {
     // Save changes first if there are any
-    if (hasUnsavedChanges && onEditReply && editedText !== tweet.reply) {
-      await onEditReply(editedText);
-      setHasUnsavedChanges(false);
+    const allOriginalReplies = tweet.generated_replies
+      ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
+      : (tweet.reply ? [tweet.reply] : []);
+    const originalReplies = maxReplies ? allOriginalReplies.slice(0, maxReplies) : allOriginalReplies;
+    if (hasUnsavedChanges[index] && onEditReply && editedTexts[index] !== originalReplies[index]) {
+      await onEditReply(editedTexts[index], index);
     }
     // Then publish
-    onPublish(editedText);
+    onPublish(editedTexts[index], index);
   };
 
   // Cleanup timer on unmount
@@ -325,38 +343,84 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
             <p className="text-sm text-neutral-500 pt-7">
               Replying to <span className="text-sky-400">{'@' + handle}</span>
             </p>
-            <div className="flex gap-3 pt-6">
-              <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
-              <div className="flex-1">
-                {isRegenerating ? (
+            {isRegenerating ? (
+              <div className="flex gap-3 pt-6">
+                <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
+                <div className="flex-1">
                   <div className="w-full min-h-[6rem] flex items-start pt-2">
                     <AnimatedText
-                      text="Regenerating reply"
+                      text="Regenerating replies"
                       className="text-lg"
                     />
                   </div>
-                ) : (
-                  <textarea
-                    ref={textareaRef}
-                    placeholder="Post your reply"
-                    value={editedText}
-                    onChange={(e) => handleTextChange(e.target.value)}
-                    className="w-full min-h-[6rem] resize-none overflow-hidden bg-transparent text-lg text-white outline-none placeholder:text-neutral-600"
-                  />
-                )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="pt-6">
+                {/* Single profile picture at the top */}
+                <div className="flex gap-3">
+                  <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full flex-shrink-0" />
+                  <div className="flex-1 space-y-4">
+                    {editedTexts.map((text, index) => (
+                      <div
+                        key={index}
+                        className="group"
+                      >
+                        {index > 0 && <div className="border-t border-neutral-700 mb-4" />}
+                        <div className="flex items-center gap-8">
+                          <div className="relative flex-1">
+                            <textarea
+                              ref={index === 0 ? textareaRef : undefined}
+                              placeholder="Post your reply"
+                              value={text}
+                              onChange={(e) => handleTextChange(index, e.target.value)}
+                              className="w-full min-h-[6rem] max-h-[12rem] resize-none overflow-y-auto bg-transparent text-lg text-white outline-none placeholder:text-neutral-600 pr-2 scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent hover:scrollbar-thumb-neutral-600"
+                              style={{
+                                maskImage: 'linear-gradient(to bottom, black calc(100% - 20px), transparent 100%)',
+                                WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 20px), transparent 100%)'
+                              }}
+                            />
+                            {/* Fade overlay at bottom */}
+                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-9 bg-gradient-to-t from-black to-transparent" />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handlePublish(index)}
+                            className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-600 self-start mt-7 flex-shrink-0"
+                          >
+                            Post
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </>
         ) : (
-          editedText && (
+          editedTexts.length > 0 && editedTexts.some(text => text) && (
             <>
               <p className="text-sm text-neutral-500 pt-7">
                 Your reply to <span className="text-sky-400">{'@' + handle}</span>
               </p>
-              <div className="flex gap-3 pt-6">
-                <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full" />
-                <div className="flex-1">
-                  <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{editedText}</p>
+              <div className="pt-6">
+                <div className="flex gap-3">
+                  <img src={myAvatar} alt="Your avatar" className="h-12 w-12 rounded-full flex-shrink-0" />
+                  <div className="flex-1 space-y-4">
+                    {editedTexts.map((text, index) => (
+                      text && (
+                        <div key={index}>
+                          {index > 0 && <div className="border-t border-neutral-700 mb-4" />}
+                          <div className="relative max-h-[12rem] overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent hover:scrollbar-thumb-neutral-600">
+                            <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{text}</p>
+                            {/* Fade overlay at bottom */}
+                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-black to-transparent" />
+                          </div>
+                        </div>
+                      )
+                    ))}
+                  </div>
                 </div>
               </div>
             </>
@@ -365,18 +429,25 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
       </div>
 
       {!readOnly && (
-        <div className="flex items-center justify-end gap-3 px-5 pb-8 pt-0">
+        <div className="flex items-center justify-center gap-3 px-5 pb-8 pt-4">
           <button
             type="button"
-            onClick={handleSave}
-            disabled={!hasUnsavedChanges}
+            onClick={async () => {
+              // Save all replies that have unsaved changes
+              for (let i = 0; i < editedTexts.length; i++) {
+                if (hasUnsavedChanges[i]) {
+                  await handleSave(i);
+                }
+              }
+            }}
+            disabled={!hasUnsavedChanges.some(changed => changed)}
             className={`rounded-full px-5 py-2 text-sm font-semibold transition ${
-              hasUnsavedChanges
+              hasUnsavedChanges.some(changed => changed)
                 ? 'bg-neutral-700 text-white hover:bg-neutral-600'
                 : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
             }`}
           >
-            Save
+            Save All
           </button>
           {onRegenerate && (
             <button
@@ -385,15 +456,9 @@ export function TweetDisplay({ tweet, myProfilePicUrl, onPublish, onSkip, onEdit
               className="rounded-full bg-neutral-700 px-5 py-2 text-sm font-semibold text-white transition hover:bg-neutral-600 flex items-center gap-2"
             >
               <i className="fa-solid fa-rotate-right" />
+              Regenerate
             </button>
           )}
-          <button
-            type="button"
-            onClick={handlePublish}
-            className="rounded-full bg-sky-500 px-5 py-2 text-sm font-semibold text-white transition hover:bg-sky-600"
-          >
-            Reply
-          </button>
         </div>
       )}
     </div>

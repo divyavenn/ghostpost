@@ -4,7 +4,7 @@ import { AnimatedText } from './AnimatedText';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
-  onClose: () => void;
+  onClose: (generationHappened?: boolean) => void;
   username: string;
   userInfo: {
     profile_pic_url: string;
@@ -71,12 +71,16 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     queries: [],
     relevant_accounts: {},
     max_tweets_retrieve: 30,
+    number_of_generations: 1,
+    models: ['claude-3-5-sonnet-20241022'],
   });
-  
+  const [originalSettings, setOriginalSettings] = useState<UserSettings | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [newAccount, setNewAccount] = useState('');
   const [newQuery, setNewQuery] = useState('');
+  const [newModel, setNewModel] = useState('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -94,6 +98,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     try {
       const userSettings = await api.getUserSettings(username);
       setSettings(userSettings);
+      setOriginalSettings(userSettings); // Store original for comparison
       setMaxTweetsInput(userSettings.max_tweets_retrieve.toString());
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -196,16 +201,67 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     }
   };
 
+  const handleAddModel = () => {
+    if (!newModel.trim()) return;
+    if (settings.models.includes(newModel.trim())) {
+      setNewModel('');
+      return;
+    }
+
+    setSettings(prev => ({
+      ...prev,
+      models: [...prev.models, newModel.trim()],
+    }));
+    setNewModel('');
+  };
+
+  const handleRemoveModel = (model: string) => {
+    // Prevent removing the last model
+    if (settings.models.length <= 1) {
+      showError('You must have at least one model configured.');
+      return;
+    }
+
+    setSettings(prev => ({
+      ...prev,
+      models: prev.models.filter(m => m !== model),
+    }));
+  };
+
+  const handleEditModel = (oldModel: string, newModel: string) => {
+    if (!newModel.trim() || newModel === oldModel) {
+      return;
+    }
+
+    setSettings(prev => ({
+      ...prev,
+      models: prev.models.map(m => m === oldModel ? newModel.trim() : m),
+    }));
+  };
 
   const handleSave = async () => {
     setSaving(true);
+
+    // Check if generation will happen (number_of_generations INCREASED)
+    const willGenerate = originalSettings &&
+                        settings.number_of_generations > originalSettings.number_of_generations;
+
+    // If generation will happen, signal parent to show loading overlay BEFORE API call
+    if (willGenerate) {
+      onClose(true); // This will start the loading overlay and polling
+    }
+
     try {
       await api.updateUserSettings(username, settings);
-      onClose();
+
+      // If no generation happened, just close normally
+      if (!willGenerate) {
+        onClose(false);
+      }
+      // If generation happened, parent is already handling the loading state
     } catch (error) {
       console.error('Failed to save settings:', error);
       alert('Failed to save settings. Please try again.');
-    } finally {
       setSaving(false);
     }
   };
@@ -375,6 +431,54 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
                 max="100"
                 className="w-full bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition"
               />
+            </div>
+
+            {/* Number of Generations */}
+            <div>
+              <SectionTitle text="Reply Generation" />
+              <div className="flex items-center gap-4">
+                <label className="text-neutral-400 text-sm">Number of replies to generate per tweet:</label>
+                <select
+                  value={settings.number_of_generations}
+                  onChange={(e) => setSettings({...settings, number_of_generations: parseInt(e.target.value)})}
+                  className="bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition"
+                >
+                  {[1, 2, 3, 4, 5].map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Models */}
+            <div>
+              <SectionTitle text="Models" />
+              <input
+                type="text"
+                value={newModel}
+                onChange={(e) => setNewModel(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddModel()}
+                placeholder="Add model (e.g., claude-3-5-sonnet-20241022)"
+                className="w-full bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition mb-4"
+              />
+              <div className="flex flex-wrap gap-2">
+                {settings.models.map((model, index) => (
+                  <Bubble key={index}>
+                    <EditableText
+                      text={model}
+                      onSave={(newText) => handleEditModel(model, newText)}
+                    />
+                    <button
+                      onClick={() => handleRemoveModel(model)}
+                      className="text-neutral-400 hover:text-white transition"
+                      disabled={settings.models.length <= 1}
+                      title={settings.models.length <= 1 ? "Cannot remove the last model" : "Remove model"}
+                    >
+                      ×
+                    </button>
+                  </Bubble>
+                ))}
+              </div>
             </div>
           </div>
         )}

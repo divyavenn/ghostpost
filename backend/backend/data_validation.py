@@ -4,6 +4,12 @@ from typing import Literal
 from pydantic import BaseModel
 
 
+class MediaItem(BaseModel):
+  type: str  # "photo", "video", "animated_gif"
+  url: str
+  alt_text: str = ""
+
+
 class User(BaseModel):
   # account info
   uid: int | None = None  # Auto-generated on first creation
@@ -53,7 +59,7 @@ class ScrapedTweet(BaseModel):
   quoted_tweet: str | None = None  # Actual field name in data
 
   # attachments
-  media: list[str]  # List of media URLs as strings
+  media: list[MediaItem] = []  # List of media items with type, url, and alt_text
 
   # performance
   likes: int

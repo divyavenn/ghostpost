@@ -226,16 +226,16 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
 
     code = params.get("code", [""])[0]
     if not code:
-        error("Authorization code missing from callback response.", status_code=400, function_name="oauth_dance", username=username)
+        error("Authorization code missing from callback response.", status_code=400, function_name="oauth_dance", username=username, critical=True)
 
     token_response = exchange_code_for_token(code, code_verifier)
     access_token = token_response.get("access_token")
     if not access_token:
-        error("Access token not returned by X API.", status_code=500, function_name="oauth_dance", username=username)
+        error("Access token not returned by X API.", status_code=500, function_name="oauth_dance", username=username, critical=True)
 
     refresh_token = token_response.get("refresh_token")
     if not refresh_token:
-        error("Refresh token not returned by X API.", status_code=500, function_name="oauth_dance", username=username)
+        error("Refresh token not returned by X API.", status_code=500, function_name="oauth_dance", username=username, critical=True)
 
     expires_in = token_response.get("expires_in", 7200)  # Default 2 hours
     store_token(username, refresh_token, access_token, expires_in)

@@ -180,7 +180,7 @@ def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=
                 replies.append((reply, selected_model))
                 notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
             else:
-                notify(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}")
+                error(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}", status_code=500, function_name="generate_replies_for_tweet", username=tweet.get('handle', 'unknown'), critical=False)
 
             # Delay between generations to avoid rate limiting
             if gen_idx < needed_generations - 1:
@@ -196,7 +196,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
     # Check if API key is configured
     if not OBELISK_KEY:
-        error("❌ OBELISK_KEY environment variable is not set", status_code=500, function_name="generate_replies_endpoint", username=username)
+        error("❌ OBELISK_KEY environment variable is not set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
 
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
@@ -264,7 +264,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
         except Exception as e:
             tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
-            notify(f"❌ Exception generating replies for tweet {tweet_id}: {e}")
+            error(f"❌ Exception generating replies for tweet {tweet_id}: {e}",status_code=500, exception_text=str(e), function_name="generate_replies", username=username, critical=False)
             errors += 1
 
     # Note: No final write_to_cache needed - already saved incrementally
@@ -325,7 +325,7 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
 
     # Check if API key is configured
     if not OBELISK_KEY:
-        error("Obelisk API key not configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username)
+        error("Obelisk API key not configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Read tweets from cache
     tweets = await read_from_cache(username=username)
@@ -334,7 +334,7 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     number_of_generations = user_info["number_of_generations"] if "number_of_generations" in user_info else 1
 
     if not tweets:
-        error("No tweets found in cache", status_code=404, function_name="regenerate_single_reply_endpoint", username=username)
+        error("No tweets found in cache", status_code=404, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Find the specific tweet
     tweet = None
@@ -344,7 +344,7 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
             break
 
     if not tweet:
-        error("Tweet not found in cache", status_code=404, function_name="regenerate_single_reply_endpoint", username=username)
+        error("Tweet not found in cache", status_code=404, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Generate replies using the reusable function
     replies = generate_replies_for_tweet(
@@ -355,7 +355,7 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     )
 
     if not replies:
-        error(f"Received no replies for tweet {tweet_id}", status_code=500, function_name="regenerate_single_reply_endpoint", username=username)
+        error(f"Received no replies for tweet {tweet_id}", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Store all regenerated replies as array of tuples (reply_text, model_name)
     tweet['generated_replies'] = replies

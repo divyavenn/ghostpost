@@ -97,11 +97,11 @@ async def start_browser_login() -> dict[str, str]:
     browserbase_project_id = BROWSERBASE_PROJECT_ID
 
     if not browserbase_api_key:
-        error("BROWSERBASE_API_KEY environment variable not set", status_code=500, function_name="oauth_browserbase")
+        error("BROWSERBASE_API_KEY environment variable not set", status_code=500, function_name="oauth_browserbase", critical=True)
         raise ValueError("BROWSERBASE_API_KEY environment variable not set")
 
     if not browserbase_project_id:
-        error("BROWSERBASE_PROJECT_ID environment variable not set", status_code=500, function_name="oauth_browserbase")
+        error("BROWSERBASE_PROJECT_ID environment variable not set", status_code=500, function_name="oauth_browserbase", critical=True)
         raise ValueError("BROWSERBASE_PROJECT_ID environment variable not set")
 
     # Generate session ID for tracking

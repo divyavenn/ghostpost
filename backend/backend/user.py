@@ -425,7 +425,7 @@ async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> di
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error adding account", status_code=500, exception_text=str(e), function_name="add_account_endpoint", username=handle)
+        error(f"Error adding account", status_code=500, exception_text=str(e), function_name="add_account_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail=f"Error adding account: {str(e)}") from e
 
 
@@ -483,7 +483,7 @@ async def remove_account_endpoint(handle: str, account: str) -> dict:
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error removing account", status_code=500, exception_text=str(e), function_name="remove_account_endpoint", username=handle)
+        error(f"Error removing account", status_code=500, exception_text=str(e), function_name="remove_account_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail=f"Error removing account: {str(e)}") from e
 
 
@@ -515,7 +515,7 @@ async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dic
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error removing query", status_code=500, exception_text=str(e), function_name="remove_query_endpoint", username=handle)
+        error(f"Error removing query", status_code=500, exception_text=str(e), function_name="remove_query_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail=f"Error removing query: {str(e)}") from e
 
 
@@ -553,7 +553,7 @@ async def update_models_endpoint(handle: str, payload: UpdateModelsRequest) -> d
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error updating models", status_code=500, exception_text=str(e), function_name="update_models_endpoint", username=handle)
+        error(f"Error updating models", status_code=500, exception_text=str(e), function_name="update_models_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail="Error updating models: " + str(e)) from e
 
 

@@ -409,7 +409,7 @@ async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRe
     from backend.utils import error
     updated = await edit_tweet_reply(username, tweet_id, payload.new_reply, payload.reply_index)
     if not updated:
-        error(f"Tweet {tweet_id} not found for user {username} or invalid reply index", status_code=404, function_name="edit_reply_endpoint", username=username)
+        error(f"Tweet {tweet_id} not found for user {username} or invalid reply index", status_code=404, function_name="edit_reply_endpoint", username=username, critical=True)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Tweet {tweet_id} not found for user {username} or invalid reply index",

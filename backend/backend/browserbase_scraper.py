@@ -29,11 +29,11 @@ async def get_browserbase_session(username: str):
     """
     from backend.utils import error
     if not BROWSERBASE_API_KEY:
-        error("BROWSERBASE_API_KEY environment variable not set", status_code=500, function_name="scrape_with_browserbase", username=username)
+        error("BROWSERBASE_API_KEY environment variable not set", status_code=500, function_name="scrape_with_browserbase", username=username, critical=True)
         raise ValueError("BROWSERBASE_API_KEY environment variable not set")
 
     if not BROWSERBASE_PROJECT_ID:
-        error("BROWSERBASE_PROJECT_ID environment variable not set", status_code=500, function_name="scrape_with_browserbase", username=username)
+        error("BROWSERBASE_PROJECT_ID environment variable not set", status_code=500, function_name="scrape_with_browserbase", username=username, critical=True)
         raise ValueError("BROWSERBASE_PROJECT_ID environment variable not set")
 
     notify(f"🌐 Creating Browserbase session for {username}...")

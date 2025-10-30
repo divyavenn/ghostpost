@@ -98,7 +98,7 @@ async def get_home(browser=None, username=None):
     session = await read_browser_state(browser, user)
     if session:
         return session
-    error("No authorization found; user needs to log in.")
+    error("No authorization found; user needs to log in.", critical=True)
 
 
 # -------- Core collectors --------
@@ -254,7 +254,7 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
 
     # Check if user settings exist (required for per-user configuration)
     if not user_settings:
-        error(f"No settings found for user {username}. Please configure settings first.")
+        error(f"No settings found for user {username}. Please configure settings first.", critical=True)
 
     if relevant_accounts is None:
         # Extract only accounts where validated is True, as a list of handles

@@ -14,7 +14,7 @@ async def _get_access_token_for_user(username: str) -> str:
     from backend.oauth import ensure_access_token
     access_token = await ensure_access_token(username)
     if not access_token:
-        error(f"No token found for user {username}", status_code=404, function_name="_get_access_token_for_user", username=username)
+        error(f"No token found for user {username}", status_code=404, function_name="_get_access_token_for_user", username=username, critical=True)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No token found for user {username}. User needs to authenticate first.")
     return access_token
 

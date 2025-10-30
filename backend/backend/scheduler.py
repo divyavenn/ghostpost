@@ -18,7 +18,7 @@ from backend.generate_replies import generate_replies
 from backend.log_interactions import log_scrape_action
 from backend.read_tweets import read_tweets
 from backend.tweets_cache import cleanup_old_tweets
-from backend.utils import BROWSER_STATE_FILE, cookie_still_valid, notify
+from backend.utils import BROWSER_STATE_FILE, cookie_still_valid, log_background_task, notify
 
 # Global scheduler instance
 scheduler = AsyncIOScheduler()
@@ -100,6 +100,15 @@ async def auto_scrape_for_user(username: str):
 
         # Log the scraping action (auto-initiated)
         log_scrape_action(username, len(tweets), initiated_by="auto")
+
+        # Log to background tasks log
+        log_background_task(
+            username=username,
+            task_type="tweet_scraping",
+            tweets_scraped=len(tweets),
+            replies_generated=reply_count,
+            initiated_by="auto"
+        )
 
         notify(f"🎉 [Auto-scrape] Completed for {username}")
 

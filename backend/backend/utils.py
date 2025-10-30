@@ -498,6 +498,53 @@ def _cache_key(username: str | None) -> str:
     sanitized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in key)
     return sanitized or "default"
 
- 
+
+def log_background_task(
+    username: str,
+    task_type: str,
+    tweets_scraped: int = 0,
+    replies_generated: int = 0,
+    **extra_data
+):
+    """
+    Log background task execution to append-only log file.
+
+    Args:
+        username: Twitter handle of the user
+        task_type: Type of task (e.g., "tweet_scraping", "reply_generation")
+        tweets_scraped: Number of tweets scraped
+        replies_generated: Number of replies generated
+        **extra_data: Any additional data to log
+    """
+    log_file = CACHE_DIR / "background_tasks.jsonl"
+
+    # Create log entry
+    log_entry = {
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "username": username,
+        "task_type": task_type,
+        "tweets_scraped": tweets_scraped,
+        "replies_generated": replies_generated,
+        **extra_data
+    }
+
+    try:
+        # Append to log file (create if doesn't exist)
+        with open(log_file, "a") as f:
+            f.write(json.dumps(log_entry) + "\n")
+
+        notify(f"📝 Logged background task: {task_type} for @{username}")
+
+    except Exception as e:
+        error(
+            "Failed to log background task",
+            status_code=500,
+            exception_text=str(e),
+            function_name="log_background_task",
+            username=username
+        )
+        notify(f"⚠️ Failed to log background task: {e}")
+
+
 if __name__ == "__main__":
     message_devs("This is a test message to developers.")

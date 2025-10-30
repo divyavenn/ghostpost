@@ -38,7 +38,7 @@ export interface UserSettings {
   relevant_accounts: Record<string, boolean>; // {handle: validated}
   max_tweets_retrieve: number;
   number_of_generations: number;
-  models: string[];
+  models?: string[]; // Read-only, managed via dedicated endpoint
 }
 
 export interface UserInfo {
@@ -51,6 +51,10 @@ export interface UserInfo {
   scrolling_time_saved: number;
   email?: string;
   models?: string[];
+  account_type?: 'trial' | 'poster' | 'premium';
+  uid?: number;
+  scrapes_left?: number;
+  posts_left?: number;
 }
 
 export interface ValidationDelayConfig {
@@ -236,6 +240,18 @@ export const api = {
   getUserInfo: async (handle: string): Promise<UserInfo> => {
     const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/info`);
     if (!response.ok) throw new Error('Failed to get user info');
+    return response.json();
+  },
+
+  updateUserEmail: async (handle: string, email: string): Promise<{ message: string; email: string }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/email`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email }),
+    });
+    if (!response.ok) throw new Error('Failed to update user email');
     return response.json();
   },
 

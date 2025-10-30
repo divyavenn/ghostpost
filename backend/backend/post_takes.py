@@ -3,7 +3,7 @@ import requests
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
-from backend.utils import notify
+from backend.utils import error, notify
 
 
 # --- config ---
@@ -14,6 +14,7 @@ async def _get_access_token_for_user(username: str) -> str:
     from backend.oauth import ensure_access_token
     access_token = await ensure_access_token(username)
     if not access_token:
+        error(f"No token found for user {username}", status_code=404, function_name="_get_access_token_for_user", username=username)
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No token found for user {username}. User needs to authenticate first.")
     return access_token
 
@@ -48,9 +49,10 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
     data = payload
 
     response = requests.post(url, headers=headers, json=data, timeout=30)
-
-    if response.status_code >= 400:
-        raise HTTPException(status_code=response.status_code, detail=f"Twitter API error: {response.text}")
+    if response.status_code == 403:
+        error(f"Tweet has been deleted, cannot reply", status_code=response.status_code, exception_text=response.text, function_name="post", username=username)
+    elif response.status_code >= 400:
+        error(f"Twitter API error when posting tweet", status_code=response.status_code, exception_text=response.text, function_name="post", username=username)
 
     result = response.json()
 
@@ -109,6 +111,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
 
                             break
             except Exception as e:
+                error(f"Could not fetch original tweet data from cache", status_code=500, exception_text=str(e), function_name="post", username=username)
                 notify(f"⚠️ Could not fetch original tweet data from cache: {e}")
 
         # Add model name to metadata
@@ -130,6 +133,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                 response_to_thread=response_to_thread
             )
         except Exception as e:
+            error(f"Failed to add to posted_tweets cache", status_code=500, exception_text=str(e), function_name="post", username=username)
             notify(f"⚠️ Failed to add to posted_tweets cache: {e}")
 
         # Increment lifetime_posts
@@ -141,6 +145,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                 write_user_info(user_info)
                 notify(f"📝 Post count incremented for @{username} (total: {user_info['lifetime_posts']})")
         except Exception as e:
+            error(f"Failed to update post count", status_code=500, exception_text=str(e), function_name="post", username=username)
             notify(f"⚠️ Failed to update post count for {username}: {e}")
 
     # Return result with posted_tweet_id explicitly for frontend tracking
@@ -195,6 +200,7 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
             from backend.posted_tweets_cache import delete_posted_tweet_from_cache
             delete_posted_tweet_from_cache(username, tweet_id)
         except Exception as e:
+            error(f"Failed to delete tweet from posted tweets cache", status_code=500, exception_text=str(e), function_name="delete_posted_tweet", username=username)
             notify(f"⚠️ Failed to delete tweet from posted tweets cache: {e}")
 
         # Decrement lifetime_posts
@@ -208,6 +214,7 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
                     write_user_info(user_info)
                     notify(f"📝 Post count decremented for @{username} (total: {user_info['lifetime_posts']})")
         except Exception as e:
+            error(f"Failed to update post count", status_code=500, exception_text=str(e), function_name="delete_posted_tweet", username=username)
             notify(f"⚠️ Failed to update post count for {username}: {e}")
 
         return {"message": "Tweet deleted successfully", "tweet_id": tweet_id, "deleted": True}
@@ -216,6 +223,7 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
         return {"message": "Tweet not found (may already be deleted)", "tweet_id": tweet_id, "deleted": False}
     else:
         # Other error
+        error(f"Twitter API error when deleting tweet", status_code=response.status_code, exception_text=response.text, function_name="delete_posted_tweet", username=username)
         raise HTTPException(status_code=response.status_code, detail=f"Twitter API error: {response.text}")
 
 

@@ -72,7 +72,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     relevant_accounts: {},
     max_tweets_retrieve: 30,
     number_of_generations: 1,
-    models: ['claude-3-5-sonnet-20241022'],
+    models: [], // Read-only, not editable in settings modal
   });
   const [originalSettings, setOriginalSettings] = useState<UserSettings | null>(null);
 
@@ -80,7 +80,6 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const [saving, setSaving] = useState(false);
   const [newAccount, setNewAccount] = useState('');
   const [newQuery, setNewQuery] = useState('');
-  const [newModel, setNewModel] = useState('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
@@ -201,44 +200,6 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     }
   };
 
-  const handleAddModel = () => {
-    if (!newModel.trim()) return;
-    if (settings.models.includes(newModel.trim())) {
-      setNewModel('');
-      return;
-    }
-
-    setSettings(prev => ({
-      ...prev,
-      models: [...prev.models, newModel.trim()],
-    }));
-    setNewModel('');
-  };
-
-  const handleRemoveModel = (model: string) => {
-    // Prevent removing the last model
-    if (settings.models.length <= 1) {
-      showError('You must have at least one model configured.');
-      return;
-    }
-
-    setSettings(prev => ({
-      ...prev,
-      models: prev.models.filter(m => m !== model),
-    }));
-  };
-
-  const handleEditModel = (oldModel: string, newModel: string) => {
-    if (!newModel.trim() || newModel === oldModel) {
-      return;
-    }
-
-    setSettings(prev => ({
-      ...prev,
-      models: prev.models.map(m => m === oldModel ? newModel.trim() : m),
-    }));
-  };
-
   const handleSave = async () => {
     setSaving(true);
 
@@ -252,7 +213,10 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     }
 
     try {
-      await api.updateUserSettings(username, settings);
+      // Send settings without models (models managed via dedicated endpoint)
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { models, ...settingsToUpdate } = settings;
+      await api.updateUserSettings(username, settingsToUpdate);
 
       // If no generation happened, just close normally
       if (!willGenerate) {
@@ -315,10 +279,9 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
           <div className="p-6 space-y-6">
             {/* Welcome banner for first-time setup */}
             {isFirstTimeSetup && (
-              <div className="bg-sky-900/30 border border-sky-500/50 rounded-lg p-4">
+              <div className="bg-sky-900/30 rounded-lg p-4">
                 <h4 className="text-white font-semibold mb-2 flex items-center gap-2">
-                  <span>👋</span>
-                  <span>Welcome to GhostPoster</span>
+                  <span>Welcome to GhostPoster!</span>
                 </h4>
                 <p className="text-neutral-300 text-sm">
                   To get started, please add Twitter accounts and topics you want to engage with.
@@ -449,42 +412,11 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
                 </select>
               </div>
             </div>
-
-            {/* Models */}
-            <div>
-              <SectionTitle text="Models" />
-              <input
-                type="text"
-                value={newModel}
-                onChange={(e) => setNewModel(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleAddModel()}
-                placeholder="Add model (e.g., claude-3-5-sonnet-20241022)"
-                className="w-full bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition mb-4"
-              />
-              <div className="flex flex-wrap gap-2">
-                {settings.models.map((model, index) => (
-                  <Bubble key={index}>
-                    <EditableText
-                      text={model}
-                      onSave={(newText) => handleEditModel(model, newText)}
-                    />
-                    <button
-                      onClick={() => handleRemoveModel(model)}
-                      className="text-neutral-400 hover:text-white transition"
-                      disabled={settings.models.length <= 1}
-                      title={settings.models.length <= 1 ? "Cannot remove the last model" : "Remove model"}
-                    >
-                      ×
-                    </button>
-                  </Bubble>
-                ))}
-              </div>
-            </div>
           </div>
         )}
 
         {/* Footer */}
-        <div className="sticky bottom-0 bg-neutral-900 border-t border-neutral-800 p-6 flex justify-between items-center">
+        <div className="sticky bottom-0 bg-neutral-900 p-6 flex justify-between items-center">
           <button
             onClick={onLogout}
             className="px-6 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition"

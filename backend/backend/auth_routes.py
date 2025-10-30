@@ -92,13 +92,16 @@ async def start_browser_login() -> dict[str, str]:
     from browserbase import Browserbase
 
     # Get Browserbase API key from config
+    from backend.utils import error
     browserbase_api_key = BROWSERBASE_API_KEY
     browserbase_project_id = BROWSERBASE_PROJECT_ID
 
     if not browserbase_api_key:
+        error("BROWSERBASE_API_KEY environment variable not set", status_code=500, function_name="oauth_browserbase")
         raise ValueError("BROWSERBASE_API_KEY environment variable not set")
 
     if not browserbase_project_id:
+        error("BROWSERBASE_PROJECT_ID environment variable not set", status_code=500, function_name="oauth_browserbase")
         raise ValueError("BROWSERBASE_PROJECT_ID environment variable not set")
 
     # Generate session ID for tracking

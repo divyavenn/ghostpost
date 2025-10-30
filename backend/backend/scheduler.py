@@ -58,6 +58,8 @@ def get_users_with_valid_sessions() -> list[str]:
         return valid_users
 
     except Exception as e:
+        from backend.utils import error
+        error(f"Error reading browser states", status_code=500, exception_text=str(e), function_name="get_users_with_valid_sessions")
         notify(f"❌ Error reading browser states: {e}")
         return []
 
@@ -102,6 +104,8 @@ async def auto_scrape_for_user(username: str):
         notify(f"🎉 [Auto-scrape] Completed for {username}")
 
     except Exception as e:
+        from backend.utils import error
+        error(f"Auto-scrape failed for {username}", status_code=500, exception_text=str(e), function_name="auto_scrape_for_user", username=username)
         notify(f"❌ [Auto-scrape] Failed for {username}: {e}")
 
     finally:
@@ -115,6 +119,8 @@ async def auto_scrape_for_user(username: str):
                 write_user_info(user_info)
                 notify(f"⏱️ Added {elapsed_seconds}s to scrolling time for @{username} (total: {user_info['scrolling_time_saved']}s)")
         except Exception as e:
+            from backend.utils import error
+            error(f"Failed to update scrolling time", status_code=500, exception_text=str(e), function_name="auto_scrape_for_user", username=username)
             notify(f"⚠️ Failed to update scrolling time for {username}: {e}")
 
 
@@ -140,12 +146,16 @@ async def auto_scrape_all_users():
             try:
                 await auto_scrape_for_user(username)
             except Exception as e:
+                from backend.utils import error
+                error(f"Error processing auto-scrape", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users", username=username)
                 notify(f"❌ [Auto-scrape] Error processing {username}: {e}")
                 continue
 
         notify(f"✅ [Auto-scrape] Completed batch scraping for {len(users)} user(s)")
 
     except Exception as e:
+        from backend.utils import error
+        error(f"Fatal error in batch scraping", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users")
         notify(f"❌ [Auto-scrape] Fatal error in batch scraping: {e}")
 
 

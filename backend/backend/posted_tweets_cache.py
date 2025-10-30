@@ -25,6 +25,10 @@ def read_posted_tweets_cache(username: str) -> list[dict[str, Any]]:
     Read posted tweets from cache file.
     Returns list of tweet objects sorted by created_at (newest first).
     """
+    from backend.data_validation import PostedTweet
+    from backend.utils import error
+    from pydantic import ValidationError
+
     cache_path = get_posted_tweets_path(username)
 
     if not cache_path.exists():
@@ -36,11 +40,25 @@ def read_posted_tweets_cache(username: str) -> list[dict[str, Any]]:
 
         # Ensure it's a list
         if not isinstance(tweets, list):
+            error(f"Invalid posted tweets cache format: expected list", status_code=500, function_name="read_posted_tweets_cache", username=username)
             return []
 
-        return tweets
+        # Validate each tweet
+        validated_tweets = []
+        for idx, tweet in enumerate(tweets):
+            try:
+                validated = PostedTweet(**tweet)
+                validated_tweets.append(validated.model_dump())
+            except ValidationError as e:
+                tweet_id = tweet.get("id", f"index_{idx}")
+                error(f"Invalid posted tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="read_posted_tweets_cache", username=username)
+                # Include invalid tweet but log the error
+                validated_tweets.append(tweet)
+
+        return validated_tweets
 
     except Exception as e:
+        error(f"Error reading posted tweets cache", status_code=500, exception_text=str(e), function_name="read_posted_tweets_cache", username=username)
         notify(f"❌ Error reading posted tweets cache for {username}: {e}")
         return []
 
@@ -50,13 +68,30 @@ def write_posted_tweets_cache(username: str, tweets: list[dict[str, Any]]) -> No
     Write posted tweets to cache file.
     Overwrites the entire file.
     """
+    from backend.data_validation import PostedTweet
+    from backend.utils import error
+    from pydantic import ValidationError
+
     cache_path = get_posted_tweets_path(username)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Validate each tweet before writing
+    validated_tweets = []
+    for idx, tweet in enumerate(tweets):
+        try:
+            validated = PostedTweet(**tweet)
+            validated_tweets.append(validated.model_dump())
+        except ValidationError as e:
+            tweet_id = tweet.get("id", f"index_{idx}")
+            error(f"Invalid posted tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="write_posted_tweets_cache", username=username)
+            # Still include the tweet but log the error
+            validated_tweets.append(tweet)
+
     try:
         with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(tweets, f, indent=2, ensure_ascii=False)
+            json.dump(validated_tweets, f, indent=2, ensure_ascii=False)
     except Exception as e:
+        error(f"Error writing posted tweets cache", status_code=500, exception_text=str(e), function_name="write_posted_tweets_cache", username=username)
         notify(f"❌ Error writing posted tweets cache for {username}: {e}")
         raise
 

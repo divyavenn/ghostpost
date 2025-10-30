@@ -22,7 +22,9 @@ def get_user_tweet_cache(username=USERNAME) -> Path:
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
     import uuid
 
+    from backend.data_validation import ScrapedTweet
     from backend.log_interactions import TweetAction, log_tweet_action
+    from pydantic import ValidationError
 
     # Read existing cache
     existing_tweets = await read_from_cache(username)
@@ -49,8 +51,17 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
             if tweet_id:
                 existing_map[str(tweet_id)] = tweet
 
-    # Convert back to list
-    all_tweets = list(existing_map.values())
+    # Convert back to list and validate each tweet
+    all_tweets = []
+    for tweet_data in existing_map.values():
+        try:
+            validated = ScrapedTweet(**tweet_data)
+            all_tweets.append(validated.model_dump())
+        except ValidationError as e:
+            tweet_id = tweet_data.get("id", "unknown")
+            error(f"Invalid tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="write_to_cache", username=username)
+            # Still include the tweet but log the error
+            all_tweets.append(tweet_data)
 
     path = get_user_tweet_cache(username)
     atomic_file_update(path, all_tweets, ".tmp", ensure_ascii=False)
@@ -99,14 +110,31 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
 
 
 async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
+    from backend.data_validation import ScrapedTweet
+    from pydantic import ValidationError
+
     path = get_user_tweet_cache(username)
     notify(f"💾 Reading tweets from cache ({path.name})")
     if not path.exists():
         return []
     try:
-        return json.loads(path.read_text())
+        raw_tweets = json.loads(path.read_text())
+
+        # Validate each tweet
+        validated_tweets = []
+        for idx, tweet in enumerate(raw_tweets):
+            try:
+                validated = ScrapedTweet(**tweet)
+                validated_tweets.append(validated.model_dump())
+            except ValidationError as e:
+                tweet_id = tweet.get("id", f"index_{idx}")
+                error(f"Invalid tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="read_from_cache", username=username)
+                # Include invalid tweet but log the error
+                validated_tweets.append(tweet)
+
+        return validated_tweets
     except Exception as exc:
-        error(f"Error reading JSON file: {exc}")
+        error(f"Error reading JSON file", exception_text=str(exc), function_name="read_from_cache")
         return []
 
 
@@ -365,8 +393,10 @@ async def delete_tweet_endpoint(username: str, tweet_id: str, log_deletion: bool
         tweet_id: The ID of the tweet to delete
         log_deletion: Whether to log this deletion (default True, use False when deleting after posting)
     """
+    from backend.utils import error
     deleted = await delete_tweet(username, tweet_id, log_deletion=log_deletion)
     if not deleted:
+        error(f"Tweet {tweet_id} not found for user {username}", status_code=404, function_name="delete_tweet_endpoint", username=username)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Tweet {tweet_id} not found for user {username}",
@@ -376,8 +406,10 @@ async def delete_tweet_endpoint(username: str, tweet_id: str, log_deletion: bool
 @router.patch("/{username}/{tweet_id}/reply")
 async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRequest) -> dict[str, Any]:
     """Edit the reply text for a specific tweet at a specific index."""
+    from backend.utils import error
     updated = await edit_tweet_reply(username, tweet_id, payload.new_reply, payload.reply_index)
     if not updated:
+        error(f"Tweet {tweet_id} not found for user {username} or invalid reply index", status_code=404, function_name="edit_reply_endpoint", username=username)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Tweet {tweet_id} not found for user {username} or invalid reply index",
@@ -388,8 +420,10 @@ async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRe
 @router.get("/{username}/{tweet_id}")
 async def get_single_tweet_endpoint(username: str, tweet_id: str) -> dict[str, Any]:
     """Get a single tweet by ID."""
+    from backend.utils import error
     tweet = await get_single_tweet(username, tweet_id)
     if not tweet:
+        error(f"Tweet {tweet_id} not found for user {username}", status_code=404, function_name="get_single_tweet_endpoint", username=username)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Tweet {tweet_id} not found for user {username}",

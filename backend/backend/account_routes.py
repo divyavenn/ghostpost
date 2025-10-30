@@ -11,6 +11,7 @@ from backend.account_limits import (
     reset_usage,
     update_account_type,
 )
+from backend.utils import error
 
 router = APIRouter(prefix="/account", tags=["account"])
 
@@ -33,6 +34,7 @@ async def get_account_info_endpoint(handle: str) -> dict:
     """Get account type, limits, and usage for a user."""
     account_info = get_account_info(handle)
     if "error" in account_info and account_info["error"] == "user_not_found":
+        error(f"User not found", status_code=404, function_name="get_account_info_endpoint", username=handle)
         raise HTTPException(status_code=404, detail="User not found")
     return account_info
 
@@ -42,6 +44,7 @@ async def check_limit_endpoint(handle: str, payload: CheckLimitRequest) -> dict:
     """Check if user can perform an action."""
     result = check_account_limit(handle, payload.action)
     if "error" in result and result["error"] == "user_not_found":
+        error(f"User not found", status_code=404, function_name="check_limit_endpoint", username=handle)
         raise HTTPException(status_code=404, detail="User not found")
     return result
 
@@ -51,6 +54,7 @@ async def increment_usage_endpoint(handle: str, payload: IncrementUsageRequest) 
     """Increment usage counter for an action."""
     result = increment_usage(handle, payload.action)
     if "error" in result:
+        error(f"User not found", status_code=404, function_name="increment_usage_endpoint", username=handle)
         raise HTTPException(status_code=404, detail="User not found")
     return {"usage": result}
 
@@ -60,6 +64,7 @@ async def reset_usage_endpoint(handle: str) -> dict:
     """Reset usage counters (admin only)."""
     result = reset_usage(handle)
     if "error" in result:
+        error(f"User not found", status_code=404, function_name="reset_usage_endpoint", username=handle)
         raise HTTPException(status_code=404, detail="User not found")
     return {"usage": result}
 
@@ -70,7 +75,9 @@ async def update_account_type_endpoint(handle: str, payload: UpdateAccountTypeRe
     result = update_account_type(handle, payload.account_type, payload.model)
     if "error" in result:
         if result["error"] == "user_not_found":
+            error(f"User not found", status_code=404, function_name="update_account_type_endpoint", username=handle)
             raise HTTPException(status_code=404, detail="User not found")
         else:
+            error(f"Invalid request: {result.get('message', 'Unknown error')}", status_code=400, function_name="update_account_type_endpoint", username=handle)
             raise HTTPException(status_code=400, detail=result.get("message", "Invalid request"))
     return result

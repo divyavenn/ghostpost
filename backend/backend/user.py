@@ -186,11 +186,15 @@ def write_user_settings(handle: str, queries: list[str] | None = None, relevant_
     if number_of_generations is not None:
         # Validate range 1-5
         if not 1 <= number_of_generations <= 5:
+            from backend.utils import error
+            error(f"Invalid number_of_generations: must be between 1 and 5", status_code=400, function_name="write_user_settings", username=handle)
             raise ValueError("number_of_generations must be between 1 and 5")
         user_info["number_of_generations"] = number_of_generations
     if models is not None:
         # Validate models list is not empty
         if not models or not isinstance(models, list):
+            from backend.utils import error
+            error(f"Invalid models: must be a non-empty list of strings", status_code=400, function_name="write_user_settings", username=handle)
             raise ValueError("models must be a non-empty list of strings")
         user_info["models"] = models
 
@@ -212,25 +216,60 @@ class UpdateSettingsRequest(BaseModel):
     relevant_accounts: dict[str, bool] | None = None
     max_tweets_retrieve: int | None = None
     number_of_generations: int | None = None
-    models: list[str] | None = None
+    # models are NOT accepted here - use dedicated model management endpoint
 
 
 @router.get("/{handle}/info")
 async def get_user_info_endpoint(handle: str) -> dict:
     """Get user information."""
-    from backend.utils import read_user_info as get_cached_user_info
+    from backend.utils import error, read_user_info as get_cached_user_info
 
     user_info = get_cached_user_info(handle)
     if not user_info:
+        error(f"User {handle} not found", status_code=404, function_name="get_user_info_endpoint", username=handle)
         raise HTTPException(status_code=404, detail=f"User {handle} not found")
     return user_info
+
+
+class UpdateEmailRequest(BaseModel):
+    email: str
+
+
+@router.patch("/{handle}/email")
+async def update_user_email_endpoint(handle: str, payload: UpdateEmailRequest) -> dict:
+    """Update user email address (typically used by first-time users)."""
+    from backend.utils import error, read_user_info, write_user_info
+
+    try:
+        user_info = read_user_info(handle)
+        if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="update_user_email_endpoint", username=handle)
+            raise HTTPException(status_code=404, detail=f"User {handle} not found")
+
+        # Update email
+        user_info["email"] = payload.email
+        write_user_info(user_info)
+
+        notify(f"✅ Updated email for @{handle}")
+
+        return {
+            "message": "Email updated successfully",
+            "email": payload.email
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error(f"Error updating email", status_code=500, exception_text=str(e), function_name="update_user_email_endpoint", username=handle)
+        raise HTTPException(status_code=500, detail=f"Error updating email: {str(e)}") from e
 
 
 @router.get("/{handle}/settings")
 async def get_settings_endpoint(handle: str) -> dict:
     """Get scraping settings for a user."""
+    from backend.utils import error
     settings = read_user_settings(handle)
     if settings is None:
+        error(f"User {handle} not found", status_code=404, function_name="get_settings_endpoint", username=handle)
         raise HTTPException(status_code=404, detail=f"User {handle} not found")
     return settings
 
@@ -253,8 +292,8 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
 
         notify(f"🔍 Settings update: old_num_generations={old_num_generations}, new_num_generations={new_num_generations}, payload.number_of_generations={payload.number_of_generations}")
 
-        # Update the settings
-        write_user_settings(handle=handle, queries=payload.queries, relevant_accounts=payload.relevant_accounts, max_tweets_retrieve=payload.max_tweets_retrieve, number_of_generations=payload.number_of_generations, models=payload.models)
+        # Update the settings (models parameter removed - use dedicated endpoint)
+        write_user_settings(handle=handle, queries=payload.queries, relevant_accounts=payload.relevant_accounts, max_tweets_retrieve=payload.max_tweets_retrieve, number_of_generations=payload.number_of_generations, models=None)
 
         # Handle changes in number_of_generations
         generation_happened = False
@@ -355,17 +394,20 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
             "generation_happened": generation_happened
         }
     except Exception as e:
+        from backend.utils import error
+        error(f"Error updating settings", status_code=500, exception_text=str(e), function_name="update_settings_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}") from e
 
 
 @router.post("/{handle}/settings/account")
 async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> dict:
     """Add a new account to relevant_accounts."""
-    from backend.utils import read_user_info, write_user_info
+    from backend.utils import error, read_user_info, write_user_info
 
     try:
         user_info = read_user_info(handle)
         if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="add_account_endpoint", username=handle)
             raise HTTPException(status_code=404, detail=f"User {handle} not found")
 
         relevant_accounts = user_info.get("relevant_accounts", {})
@@ -383,23 +425,26 @@ async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> di
     except HTTPException:
         raise
     except Exception as e:
+        error(f"Error adding account", status_code=500, exception_text=str(e), function_name="add_account_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error adding account: {str(e)}") from e
 
 
 @router.patch("/{handle}/settings/account/{account}/validation")
 async def update_account_validation_endpoint(handle: str, account: str, validated: bool) -> dict:
     """Update the validation status of a specific account."""
-    from backend.utils import read_user_info, write_user_info
+    from backend.utils import error, read_user_info, write_user_info
 
     try:
         user_info = read_user_info(handle)
         if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="update_account_validation_endpoint", username=handle)
             raise HTTPException(status_code=404, detail=f"User {handle} not found")
 
         relevant_accounts = user_info.get("relevant_accounts", {})
 
         # Check if account exists
         if account not in relevant_accounts:
+            error(f"Account @{account} not found", status_code=404, function_name="update_account_validation_endpoint", username=handle)
             raise HTTPException(status_code=404, detail=f"Account @{account} not found")
 
         # Update validation status
@@ -411,17 +456,19 @@ async def update_account_validation_endpoint(handle: str, account: str, validate
     except HTTPException:
         raise
     except Exception as e:
+        error(f"Error updating account validation", status_code=500, exception_text=str(e), function_name="update_account_validation_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error updating account validation: {str(e)}") from e
 
 
 @router.delete("/{handle}/settings/account/{account}")
 async def remove_account_endpoint(handle: str, account: str) -> dict:
     """Remove a specific account from relevant_accounts."""
-    from backend.utils import read_user_info, write_user_info
+    from backend.utils import error, read_user_info, write_user_info
 
     try:
         user_info = read_user_info(handle)
         if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="remove_account_endpoint", username=handle)
             raise HTTPException(status_code=404, detail=f"User {handle} not found")
 
         relevant_accounts = user_info.get("relevant_accounts", {})
@@ -436,6 +483,7 @@ async def remove_account_endpoint(handle: str, account: str) -> dict:
     except HTTPException:
         raise
     except Exception as e:
+        error(f"Error removing account", status_code=500, exception_text=str(e), function_name="remove_account_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error removing account: {str(e)}") from e
 
 
@@ -446,11 +494,12 @@ class RemoveQueryRequest(BaseModel):
 @router.delete("/{handle}/settings/query")
 async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dict:
     """Remove a specific query from queries (accepts topic, converts to query internally)."""
-    from backend.utils import read_user_info, write_user_info
+    from backend.utils import error, read_user_info, write_user_info
 
     try:
         user_info = read_user_info(handle)
         if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="remove_query_endpoint", username=handle)
             raise HTTPException(status_code=404, detail=f"User {handle} not found")
 
         # Convert the topic to full query for matching
@@ -466,7 +515,69 @@ async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dic
     except HTTPException:
         raise
     except Exception as e:
+        error(f"Error removing query", status_code=500, exception_text=str(e), function_name="remove_query_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error removing query: {str(e)}") from e
+
+
+# Model Management Endpoints
+class UpdateModelsRequest(BaseModel):
+    models: list[str]
+
+
+@router.put("/{handle}/models")
+async def update_models_endpoint(handle: str, payload: UpdateModelsRequest) -> dict:
+    """Update the list of models for content generation. Admin-only endpoint."""
+    from backend.utils import error, read_user_info, write_user_info
+
+    try:
+        user_info = read_user_info(handle)
+        if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="update_models_endpoint", username=handle)
+            raise HTTPException(status_code=404, detail=f"User {handle} not found")
+
+        # Validate models list
+        if not payload.models or not isinstance(payload.models, list):
+            error("Invalid models: must be a non-empty list", status_code=400, function_name="update_models_endpoint", username=handle)
+            raise HTTPException(status_code=400, detail="models must be a non-empty list of strings")
+
+        # Update models
+        user_info["models"] = payload.models
+        write_user_info(user_info)
+
+        notify(f"✅ Updated models for @{handle}: {payload.models}")
+
+        return {
+            "message": "Models updated successfully",
+            "models": payload.models
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error(f"Error updating models", status_code=500, exception_text=str(e), function_name="update_models_endpoint", username=handle)
+        raise HTTPException(status_code=500, detail="Error updating models: " + str(e)) from e
+
+
+@router.get("/{handle}/models")
+async def get_models_endpoint(handle: str) -> dict:
+    """Get the list of models configured for a user."""
+    from backend.utils import error, read_user_info
+
+    try:
+        user_info = read_user_info(handle)
+        if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="get_models_endpoint", username=handle)
+            raise HTTPException(status_code=404, detail=f"User {handle} not found")
+
+        models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
+
+        return {
+            "models": models
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        error(f"Error getting models", status_code=500, exception_text=str(e), function_name="get_models_endpoint", username=handle)
+        raise HTTPException(status_code=500, detail="Error getting models: " + str(e)) from e
 
 
 @router.get("/{username}/validate/{twitter_handle}")
@@ -477,6 +588,7 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
     import requests
 
     from backend.oauth import ensure_access_token
+    from backend.utils import error
 
     try:
         # Remove @ if present
@@ -486,6 +598,7 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
         access_token = await ensure_access_token(username)
 
         if not access_token:
+            error(f"User not authenticated", status_code=403, function_name="validate_twitter_handle", username=username)
             raise HTTPException(status_code=403, detail="User not authenticated")
 
         # Check if user exists with retry logic for rate limiting

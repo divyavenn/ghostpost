@@ -63,6 +63,16 @@ USE_BROWSERBASE_FOR_SCRAPING = False
 OBELISK_KEY = os.getenv("OBELISK_KEY")
 
 # =============================================================================
+# EMAIL CONFIGURATION
+# =============================================================================
+# Email settings for developer notifications
+DEV_EMAIL = os.getenv("DEV_EMAIL")
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+
+# =============================================================================
 # SCRAPING CONFIGURATION
 # =============================================================================
 # Default maximum tweets to retrieve per user or query

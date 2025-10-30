@@ -125,7 +125,7 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTP
     """
     parsed = urlparse(redirect_uri)
     if parsed.scheme != "http":
-        error("Redirect URI must use http scheme for local testing.")
+        error("Redirect URI must use http scheme for local testing.", status_code=400, function_name="oauth_dance")
 
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 80
@@ -213,7 +213,7 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
             await page.goto(auth_url)
 
             if not auth_event.wait(timeout=300):
-                error("OAuth browser flow timed out")
+                error("OAuth browser flow timed out", status_code=408, function_name="oauth_dance", username=username)
 
             await store_browser_state(username, context)
             await context.close()
@@ -226,16 +226,16 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
 
     code = params.get("code", [""])[0]
     if not code:
-        error("Authorization code missing from callback response.")
+        error("Authorization code missing from callback response.", status_code=400, function_name="oauth_dance", username=username)
 
     token_response = exchange_code_for_token(code, code_verifier)
     access_token = token_response.get("access_token")
     if not access_token:
-        error("Access token not returned by X API.")
+        error("Access token not returned by X API.", status_code=500, function_name="oauth_dance", username=username)
 
     refresh_token = token_response.get("refresh_token")
     if not refresh_token:
-        error("Refresh token not returned by X API.")
+        error("Refresh token not returned by X API.", status_code=500, function_name="oauth_dance", username=username)
 
     expires_in = token_response.get("expires_in", 7200)  # Default 2 hours
     store_token(username, refresh_token, access_token, expires_in)
@@ -281,7 +281,7 @@ def main() -> None:
         if handle:
             notify(f"Authenticated as @{handle}")
     except Exception as exc:  # pragma: no cover - network required
-        error(f"Warning: could not fetch user info ({exc})")
+        error(f"Warning: could not fetch user info", exception_text=str(exc), status_code=500, function_name="oauth_dance", username=username)
 
 
 if __name__ == "__main__":

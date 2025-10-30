@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSetRecoilState } from 'recoil';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
 import {PostedTweetDisplay, type PostedTweetData } from './components/posted_tweet';
 import { api, type UserInfo } from './api/client';
@@ -10,9 +11,24 @@ import { Header } from './components/Header';
 import { EmptyState } from './components/EmptyState';
 import { LoadingOverlay } from './components/LoadingOverlay';
 import { TabNavigation } from './components/TabNavigation';
+import FirstTimeUserModal from './components/FirstTimeUserModal';
+import { PremiumFeatureModal } from './components/PremiumFeatureModal';
+import { PaidFeatureModal } from './components/PaidFeatureModal';
+import {
+  usernameState,
+  userInfoState,
+  isSettingsOpenState,
+  showFirstTimeModalState,
+  activeTabState,
+  isLoadingState,
+  loadingPhaseState,
+  scrapingStatusTextState,
+} from './atoms';
 
 function App() {
   const navigate = useNavigate();
+
+  // Local state
   const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
   const [tweets, setTweets] = useState<TweetData[]>([]);
   const [currentTweetIndex, setCurrentTweetIndex] = useState(0);
@@ -31,7 +47,58 @@ function App() {
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
   const [isLoadingMorePosted, setIsLoadingMorePosted] = useState(false);
   const [numberOfGenerations, setNumberOfGenerations] = useState<number>(1); // User setting for how many replies to display
+  const [showFirstTimeModal, setShowFirstTimeModal] = useState(false);
+  const [showPremiumModal, setShowPremiumModal] = useState(false);
+  const [showPaidModal, setShowPaidModal] = useState(false);
+  const [paidModalConfig, setPaidModalConfig] = useState<{
+    actionType: 'scrape' | 'post';
+    remaining: number;
+    onAction: () => void;
+  } | null>(null);
   const postedTweetsOffsetRef = useRef(0); // Track offset with ref to avoid re-creating callback
+
+  // Recoil state setters - sync local state to global Recoil atoms
+  const setRecoilUsername = useSetRecoilState(usernameState);
+  const setRecoilUserInfo = useSetRecoilState(userInfoState);
+  const setRecoilIsSettingsOpen = useSetRecoilState(isSettingsOpenState);
+  const setRecoilShowFirstTimeModal = useSetRecoilState(showFirstTimeModalState);
+  const setRecoilActiveTab = useSetRecoilState(activeTabState);
+  const setRecoilIsLoading = useSetRecoilState(isLoadingState);
+  const setRecoilLoadingPhase = useSetRecoilState(loadingPhaseState);
+  const setRecoilScrapingStatusText = useSetRecoilState(scrapingStatusTextState);
+
+  // Sync local state to Recoil atoms whenever they change
+  useEffect(() => {
+    setRecoilUsername(username);
+  }, [username, setRecoilUsername]);
+
+  useEffect(() => {
+    setRecoilUserInfo(userInfo);
+  }, [userInfo, setRecoilUserInfo]);
+
+  useEffect(() => {
+    setRecoilIsSettingsOpen(isSettingsOpen);
+  }, [isSettingsOpen, setRecoilIsSettingsOpen]);
+
+  useEffect(() => {
+    setRecoilShowFirstTimeModal(showFirstTimeModal);
+  }, [showFirstTimeModal, setRecoilShowFirstTimeModal]);
+
+  useEffect(() => {
+    setRecoilActiveTab(activeTab);
+  }, [activeTab, setRecoilActiveTab]);
+
+  useEffect(() => {
+    setRecoilIsLoading(isLoading);
+  }, [isLoading, setRecoilIsLoading]);
+
+  useEffect(() => {
+    setRecoilLoadingPhase(loadingPhase);
+  }, [loadingPhase, setRecoilLoadingPhase]);
+
+  useEffect(() => {
+    setRecoilScrapingStatusText(scrapingStatusText);
+  }, [scrapingStatusText, setRecoilScrapingStatusText]);
 
   // Load posted tweets from backend
   const loadPostedTweets = useCallback(async (user: string, reset: boolean = true) => {
@@ -160,6 +227,11 @@ function App() {
       const info = await api.getUserInfo(user);
       setUserInfo(info);
 
+      // Check if user needs to provide email (first-time users)
+      if (!info.email || info.email.trim() === '') {
+        setShowFirstTimeModal(true);
+      }
+
       // Check for invalid accounts
       const settings = await api.getUserSettings(user);
       const hasInvalid = Object.values(settings.relevant_accounts).some(validated => validated === false);
@@ -175,8 +247,8 @@ function App() {
 
       setIsFirstTimeSetup(needsSetup);
 
-      // Auto-open settings modal for first-time users
-      if (needsSetup) {
+      // Auto-open settings modal for first-time users (after email modal is closed)
+      if (needsSetup && info.email) {
         setIsSettingsOpen(true);
       }
     } catch (error) {
@@ -212,7 +284,7 @@ function App() {
   };
 
   // Handle scraping + generation (full refresh)
-  const handleScrape = async () => {
+  const handleScrapeInternal = async () => {
     if (!username) return;
 
     setIsLoading(true);
@@ -281,9 +353,50 @@ function App() {
     }
   };
 
+  // Wrapper for scraping with trial limit check
+  const handleScrape = async () => {
+    if (!username) return;
+
+    // Check if user is trial and has scrapes remaining
+    const accountType = userInfo?.account_type;
+    if (accountType === 'trial') {
+      const scrapesRemaining = userInfo?.scrapes_left ?? 0;
+
+      if (scrapesRemaining <= 0) {
+        // No scrapes left - show upgrade message
+        setPaidModalConfig({
+          actionType: 'scrape',
+          remaining: 0,
+          onAction: () => {} // No action if no scrapes left
+        });
+        setShowPaidModal(true);
+        return;
+      }
+
+      // Has scrapes left - show confirmation modal
+      setPaidModalConfig({
+        actionType: 'scrape',
+        remaining: scrapesRemaining,
+        onAction: handleScrapeInternal
+      });
+      setShowPaidModal(true);
+      return;
+    }
+
+    // Non-trial users can scrape directly
+    await handleScrapeInternal();
+  };
+
   // Handle generation only (no scraping)
   const handleGenerate = async () => {
     if (!username) return;
+
+    // Check if user has premium account (regenerate all is premium-only)
+    const accountType = userInfo?.account_type;
+    if (accountType === 'trial' || accountType === 'poster') {
+      setShowPremiumModal(true);
+      return;
+    }
 
     setIsLoading(true);
 
@@ -373,6 +486,13 @@ function App() {
   const handleRegenerate = async (tweetId: string) => {
     if (!username) return;
 
+    // Check if user has premium account (regenerate is premium-only)
+    const accountType = userInfo?.account_type;
+    if (accountType === 'trial' || accountType === 'poster') {
+      setShowPremiumModal(true);
+      return;
+    }
+
     // Mark as regenerating
     setRegeneratingTweetIds(prev => new Set(prev).add(tweetId));
 
@@ -395,7 +515,7 @@ function App() {
     }
   };
 
-  const handlePublish = async (tweetId: string, text: string, replyIndex: number = 0) => {
+  const handlePublishInternal = async (tweetId: string, text: string, replyIndex: number = 0) => {
     if (!username) return;
 
     // Mark as posting to trigger animation
@@ -441,6 +561,40 @@ function App() {
         });
       }
     }, 400); // Match animation duration
+  };
+
+  // Wrapper for publishing with trial limit check
+  const handlePublish = async (tweetId: string, text: string, replyIndex: number = 0) => {
+    if (!username) return;
+
+    // Check if user is trial and has posts remaining
+    const accountType = userInfo?.account_type;
+    if (accountType === 'trial') {
+      const postsRemaining = userInfo?.posts_left ?? 0;
+
+      if (postsRemaining <= 0) {
+        // No posts left - show upgrade message
+        setPaidModalConfig({
+          actionType: 'post',
+          remaining: 0,
+          onAction: () => {} // No action if no posts left
+        });
+        setShowPaidModal(true);
+        return;
+      }
+
+      // Has posts left - show confirmation modal
+      setPaidModalConfig({
+        actionType: 'post',
+        remaining: postsRemaining,
+        onAction: () => handlePublishInternal(tweetId, text, replyIndex)
+      });
+      setShowPaidModal(true);
+      return;
+    }
+
+    // Non-trial users can post directly
+    await handlePublishInternal(tweetId, text, replyIndex);
   };
 
   const handleDelete = async (tweetId: string) => {
@@ -525,6 +679,26 @@ function App() {
   if (!username) {
     return null;
   }
+
+  const handleFirstTimeModalComplete = async (email: string) => {
+    if (!username) return;
+
+    try {
+      if (email) {
+        await api.updateUserEmail(username, email);
+        console.log('Email saved successfully');
+      }
+
+      // Close the modal
+      setShowFirstTimeModal(false);
+
+      // Reload user info to get updated data
+      await loadUserInfo(username);
+    } catch (error) {
+      console.error('Failed to save email:', error);
+      throw error; // Re-throw to let modal show error
+    }
+  };
 
   if (isLoading && !loadingPhase) {
     return (
@@ -747,6 +921,29 @@ function App() {
 
       {/* Loading overlay */}
       {loadingPhase && <LoadingOverlay phase={loadingPhase} statusText={scrapingStatusText} />}
+
+      {/* First-time user email modal */}
+      {showFirstTimeModal && username && (
+        <FirstTimeUserModal
+          username={username}
+          onComplete={handleFirstTimeModalComplete}
+        />
+      )}
+
+      {/* Premium feature modal */}
+      <PremiumFeatureModal
+        isOpen={showPremiumModal}
+        onClose={() => setShowPremiumModal(false)}
+      />
+
+      {/* Paid feature modal (trial limits) */}
+      <PaidFeatureModal
+        isOpen={showPaidModal}
+        onClose={() => setShowPaidModal(false)}
+        actionType={paidModalConfig?.actionType}
+        remaining={paidModalConfig?.remaining}
+        onAction={paidModalConfig?.onAction}
+      />
 
       <style>{`
         .scrollbar-hide::-webkit-scrollbar {

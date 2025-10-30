@@ -101,8 +101,10 @@ async def save_and_close_session(session_id: str) -> dict:
     from backend.oauth import exchange_code_for_token
     from backend.utils import store_browser_state
 
+    from backend.utils import error
     session = active_sessions.get(session_id)
     if not session:
+        error(f"Session not found", status_code=404, function_name="save_and_close_session")
         raise ValueError("Session not found")
 
     username = session["username"]
@@ -155,7 +157,8 @@ async def close_session(session_id: str):
         await session["browser"].close()
         await session["playwright"].stop()
     except Exception as e:
-        notify(f"Error closing session: {e}")
+        from backend.utils import error
+        error("Error closing session", exception_text=str(e), function_name="close_session")
     finally:
         del active_sessions[session_id]
 

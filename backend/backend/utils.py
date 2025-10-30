@@ -86,7 +86,9 @@ def message_devs(text: str):
     if not SMTP_USER or not SMTP_PASSWORD:
         notify("⚠️ Email not configured (missing SMTP_USER or SMTP_PASSWORD)")
         return
-
+    if not DEV_EMAIL:
+        notify("⚠️ Developer email not configured (missing DEV_EMAIL)")
+        return
     try:
         # Create message
         msg = MIMEMultipart()

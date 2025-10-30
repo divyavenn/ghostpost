@@ -83,3 +83,48 @@ you will be using
 ```
 
 
+## Error/ Crash Diagnosis Guide
+
+ How FastAPI Handles Errors:
+
+  FastAPI processes each request independently. If a Pydantic validation error (or most runtime errors) occurs:
+
+  1. Only that specific request fails - Returns a 422/500 error to that one user
+  2. Other concurrent requests continue normally - Users A, B, and C can still be using the app while User D hits an error
+  3. The server stays running - No restart happens for handled exceptions
+
+
+  ✅ Individual Request Failures (No Impact on Others):
+
+  When User A hits a Pydantic validation error:
+  - User A's request: Gets a 422 error response
+  - User B's concurrent scraping: Continues normally
+  - User C's concurrent reply generation: Continues normally
+  - Server: Keeps running, no restart
+
+  Example from your code - each endpoint handles its own errors:
+
+  # backend/tweets_cache.py:387-403
+  @router.delete("/{username}/{tweet_id}")
+  async def delete_tweet_endpoint(username: str, tweet_id: str):
+      deleted = await delete_tweet(username, tweet_id)
+      if not deleted:
+          # Only THIS request fails - other users unaffected
+          raise HTTPException(status_code=404, detail="Tweet not found")
+
+  ❌ What WOULD Interrupt All Users:
+
+  1. Background Scheduler Crashes (main.py:25)
+  - The scheduler runs once every 24 hours for all users
+  - If it crashes during execution, it could stop processing for everyone in that batch
+  - But it won't crash the web server - API requests would still work
+
+  2. Startup Code Failures (main.py:22-28)
+  - If start_scheduler() throws an uncaught exception during app startup
+  - This would prevent the container from starting at all
+  - Auto-restart would keep retrying until it succeeds
+
+  3. Memory Exhaustion
+  - If the app uses >2GB RAM (docker-compose.yml:25), Docker kills it
+  - Brief downtime (5-15 seconds) while container restarts
+  - All in-progress requests for all users would fail during restart

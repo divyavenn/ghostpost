@@ -50,9 +50,9 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
 
     response = requests.post(url, headers=headers, json=data, timeout=30)
     if response.status_code == 403:
-        error(f"Tweet has been deleted, cannot reply", status_code=response.status_code, exception_text=response.text, function_name="post", username=username)
+        error(f"Tweet has been deleted, cannot reply", status_code=response.status_code, exception_text=response.text, function_name="post", username=username, critical=True)
     elif response.status_code >= 400:
-        error(f"Twitter API error when posting tweet", status_code=response.status_code, exception_text=response.text, function_name="post", username=username)
+        error(f"Twitter API error when posting tweet", status_code=response.status_code, exception_text=response.text, function_name="post", username=username, critical=True)
 
     result = response.json()
 
@@ -223,7 +223,7 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
         return {"message": "Tweet not found (may already be deleted)", "tweet_id": tweet_id, "deleted": False}
     else:
         # Other error
-        error(f"Twitter API error when deleting tweet", status_code=response.status_code, exception_text=response.text, function_name="delete_posted_tweet", username=username)
+        error(f"Twitter API error when deleting tweet", status_code=response.status_code, exception_text=response.text, function_name="delete_posted_tweet", username=username, critical=True)
         raise HTTPException(status_code=response.status_code, detail=f"Twitter API error: {response.text}")
 
 

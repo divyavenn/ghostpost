@@ -28,7 +28,7 @@ except ImportError:
     from read_tweets import scraping_status
 
 
-def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False):
+def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False, username: str = "unknown") -> dict:
     """
     Generate a reply using the VLM.
     
@@ -71,7 +71,7 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1",
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        return {"error": str(e)}
+        error(f"❌ Error communicating with Obelisk API: {str(e)}", status_code=500, function_name='ask_model', username='unknown', critical=False)
 
     data = response.json()
 
@@ -143,7 +143,7 @@ def build_prompt(tweet):
     return text_prompt, image_urls, has_quoted_tweet, tweet_id
     
 
-def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=1):
+def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=1, batch=False, username="unknown"):
     import random
     import time
 
@@ -173,14 +173,11 @@ def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=
                 notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model}...")
 
             # Pass has_quoted_tweet flag to enable appropriate system prompt
-            response = ask_model(prompt=text_prompt, model=selected_model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet)
+            response = ask_model(prompt=text_prompt, model=selected_model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet, username=username)
 
             reply = response.get('message', '')
             if reply:
                 replies.append((reply, selected_model))
-                notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
-            else:
-                error(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}", status_code=500, function_name="generate_replies_for_tweet", username=tweet.get('handle', 'unknown'), critical=False)
 
             # Delay between generations to avoid rate limiting
             if gen_idx < needed_generations - 1:
@@ -237,7 +234,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
             if username:
                 scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{total_to_process}", "phase": "generating"}
                 
-            replies = generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds)
+            replies = generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds, batch = True, username=username)
 
             # Store all replies as array of tuples (reply_text, model_name)
             if replies:
@@ -267,8 +264,8 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
             error(f"❌ Exception generating replies for tweet {tweet_id}: {e}",status_code=500, exception_text=str(e), function_name="generate_replies", username=username, critical=False)
             errors += 1
 
-    # Note: No final write_to_cache needed - already saved incrementally
-
+    if errors > 0:
+        error(f"{errors} errors batch-generating replies for tweets",status_code=500, function_name="generate_replies", username=username, critical=True)
     # Mark generation as complete
     if username:
         scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}

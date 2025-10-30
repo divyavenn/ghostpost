@@ -10,6 +10,13 @@ class MediaItem(BaseModel):
   alt_text: str = ""
 
 
+class QuotedTweet(BaseModel):
+  text: str
+  author_handle: str
+  author_name: str
+  media: list[MediaItem] = []
+
+
 class User(BaseModel):
   # account info
   uid: int | None = None  # Auto-generated on first creation
@@ -56,7 +63,7 @@ class ScrapedTweet(BaseModel):
   username: str
   handle: str
   author_profile_pic_url: str
-  quoted_tweet: str | None = None  # Actual field name in data
+  quoted_tweet: QuotedTweet | None = None
 
   # attachments
   media: list[MediaItem] = []  # List of media items with type, url, and alt_text

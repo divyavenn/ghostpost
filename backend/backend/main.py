@@ -28,7 +28,12 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(title="FloodMe API", lifespan=lifespan)
+app = FastAPI(
+    title="FloodMe API",
+    version="1.0.0",
+    openapi_version="3.1.0",
+    lifespan=lifespan
+)
 
 # Add CORS middleware to allow frontend to make requests
 app.add_middleware(

@@ -51,10 +51,10 @@ class Source(BaseModel):
 class ScrapedTweet(BaseModel):
   id: str
   text: str
-  thread: list[str]
+  thread: list[str] = []
 
   # retrieval info
-  scraped_from: Source
+  scraped_from: Source | None = None
   cache_id: str
 
   # tweet metadata

@@ -289,6 +289,10 @@ function App() {
 
     setIsLoading(true);
 
+    // Track if we've already triggered reply generation
+    let scrapingComplete = false;
+    let generatingStarted = false;
+
     // Start polling for scraping status and tweets in the background
     const pollInterval = setInterval(async () => {
       if (!username) return;
@@ -298,16 +302,49 @@ function App() {
 
         // Update status text based on current scraping phase
         if (status.type === 'account') {
+          setLoadingPhase('scraping');
           setScrapingStatusText(`Scraping tweets from @${status.value}`);
         } else if (status.type === 'query') {
+          setLoadingPhase('scraping');
           setScrapingStatusText(`Scraping tweets related to "${status.value}"`);
         } else if (status.type === 'generating') {
+          setLoadingPhase('generating');
           setScrapingStatusText(`Generating replies (${status.value})`);
         } else if (status.type === 'complete') {
           setScrapingStatusText('Done!');
+
+          // Stop polling and finish up
+          clearInterval(pollInterval);
+          setLoadingPhase(null);
+          setScrapingStatusText('Scraping tweets'); // Reset
+          await loadUserInfo(username);
+          await loadTweets(username);
+          setIsLoading(false);
+        } else if (status.phase === 'complete' && !scrapingComplete) {
+          // Scraping is done, trigger reply generation
+          scrapingComplete = true;
+
+          if (!generatingStarted) {
+            generatingStarted = true;
+            setLoadingPhase('generating');
+            setScrapingStatusText('Generating replies');
+
+            // Update user info to reflect new scrolling_time_saved
+            await loadUserInfo(username);
+
+            // Fire reply generation (don't await - let polling handle it)
+            api.generateReplies(username).catch((error) => {
+              console.error('Failed to generate replies:', error);
+              clearInterval(pollInterval);
+              alert('Failed to generate replies. Please try again.');
+              setIsLoading(false);
+              setLoadingPhase(null);
+              setScrapingStatusText('Scraping tweets');
+            });
+          }
         }
 
-        // Also poll tweets to show them appearing
+        // Poll tweets to show them appearing in real-time
         const data = await api.getTweetsCache(username);
         const tweetsWithThreads = data.filter(tweet => {
           const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
@@ -322,35 +359,18 @@ function App() {
       }
     }, 2000); // Poll every 2 seconds
 
-    try {
-      // Step 1: Call the read tweets endpoint to scrape new tweets
-      setLoadingPhase('scraping');
-      setScrapingStatusText('Scraping tweets');
-      const readResult = await api.readTweets(username);
-      console.log(`Scraped ${readResult.count} new tweets`);
+    // Fire the scraping request without awaiting - let polling handle everything
+    setLoadingPhase('scraping');
+    setScrapingStatusText('Scraping tweets');
 
-      // Update user info to reflect new scrolling_time_saved value
-      await loadUserInfo(username);
-
-      // Step 2: Generate AI replies for the scraped tweets
-      setLoadingPhase('generating');
-      setScrapingStatusText('Generating replies');
-      const generateResult = await api.generateReplies(username);
-      console.log(`Generated ${generateResult.replies_generated} replies`);
-
-      // Step 3: Stop polling and do final reload
+    api.readTweets(username).catch((error) => {
       clearInterval(pollInterval);
-      setLoadingPhase(null);
-      setScrapingStatusText('Scraping tweets'); // Reset
-      await loadTweets(username);
-    } catch (error) {
-      clearInterval(pollInterval);
-      console.error('Failed to refresh tweets:', error);
-      alert('Failed to refresh tweets. Please try again.');
+      console.error('Failed to start scraping:', error);
+      alert('Failed to start scraping. Please try again.');
       setIsLoading(false);
       setLoadingPhase(null);
-      setScrapingStatusText('Scraping tweets'); // Reset
-    }
+      setScrapingStatusText('Scraping tweets');
+    });
   };
 
   // Wrapper for scraping with trial limit check

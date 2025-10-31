@@ -14,8 +14,9 @@ async def _get_access_token_for_user(username: str) -> str:
     from backend.oauth import ensure_access_token
     access_token = await ensure_access_token(username)
     if not access_token:
-        error(f"No token found for user {username}", status_code=404, function_name="_get_access_token_for_user", username=username, critical=True)
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No token found for user {username}. User needs to authenticate first.")
+        # Log error but don't raise RuntimeError - we handle it with HTTPException
+        error(f"Authentication required for user {username}", status_code=401, function_name="_get_access_token_for_user", username=username, critical=False)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTHENTICATION_REQUIRED")
     return access_token
 
 
@@ -51,7 +52,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
     response = requests.post(url, headers=headers, json=data, timeout=30)
     if response.status_code == 403:
         error(f"Tweet has been deleted, cannot reply", status_code=response.status_code, exception_text=response.text, function_name="post", username=username, critical=True)
-    elif response.status_code >= 400:
+    elif response.status_code not in (200, 201):
         error(f"Twitter API error when posting tweet", status_code=response.status_code, exception_text=response.text, function_name="post", username=username, critical=True)
 
     result = response.json()

@@ -12,6 +12,10 @@
 
 ---
 
+// change twitter API uril in post_takes and make sure error is logged in json + dev gets an email
+
+// delete access tokens for user in tokens.json and try to post. it should make u log in aagain.
+
 ## Introduction
 
 This document provides a comprehensive checklist for manually testing GhostPoster before releases. Each test case includes step-by-step instructions that can be followed by both technical and non-technical team members.

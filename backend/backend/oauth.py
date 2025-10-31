@@ -111,9 +111,13 @@ def refresh_access_token(refresh_token: str) -> dict[str, Any]:
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    response = requests.post(url, data=data, headers=headers)
-    response.raise_for_status()
-    return response.json()
+    try:
+        response = requests.post(url, data=data, headers=headers)
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.HTTPError as e:
+        from backend.utils import error
+        error(f"Failed to refresh access token", status_code=401, exception_text=response.text, function_name="refresh_access_token", critical=True)
 
 
 def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTPServer, threading.Event]:
@@ -265,8 +269,10 @@ async def ensure_access_token(username: str, state_file: str = "storage_state.js
         store_token(username, new_refresh, access_token, expires_in)
         notify(f"🔄 Refreshed access token for {username}")
         return access_token
-    except RuntimeError:
-        return await oauth_login(username=username, state_file=state_file)
+    except (RuntimeError, Exception):
+        # Token refresh failed - user needs to re-authenticate
+        # Don't try to re-auth in background - return None so calling code can handle it
+        return None
 
 
 def main() -> None:

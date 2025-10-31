@@ -71,7 +71,15 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1",
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
     except requests.exceptions.RequestException as e:
-        error(f"❌ Error communicating with Obelisk API: {str(e)}", status_code=500, function_name='ask_model', username='unknown', critical=False)
+        # Try to get the error response body
+        error_detail = str(e)
+        try:
+            if hasattr(e, 'response') and e.response is not None:
+                error_detail = f"{str(e)} | Response: {e.response.text}"
+        except:
+            pass
+        error(f"❌ Error communicating with Obelisk API: {error_detail}", status_code=500, function_name='ask_model', username=username, critical=False)
+        return {"error": error_detail}
 
     data = response.json()
 
@@ -178,6 +186,10 @@ def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=
             reply = response.get('message', '')
             if reply:
                 replies.append((reply, selected_model))
+                notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
+            else:
+                error_msg = response.get('error', 'Unknown error')
+                error(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}: {error_msg}", status_code=500, function_name="generate_replies_for_tweet", username=username, critical=(not batch))
 
             # Delay between generations to avoid rate limiting
             if gen_idx < needed_generations - 1:

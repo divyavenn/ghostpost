@@ -4,6 +4,26 @@ import { type PostedTweetData } from '../components/posted_tweet';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://x.ghostposter.app/api';
 console.log('Using API_BASE_URL:', API_BASE_URL);
 
+// Flag to prevent multiple auth redirects
+let isRedirecting = false;
+
+// Helper function to check for authentication errors and redirect to login
+async function handleAuthError(response: Response): Promise<void> {
+  if (response.status === 401) {
+    // Prevent multiple alerts/redirects
+    if (isRedirecting) {
+      throw new Error('Authentication required');
+    }
+
+    // Clear stored username (same as logout)
+    localStorage.removeItem('username');
+    // Show alert and reload to trigger login page
+    alert('Your session has expired. Please log in again.');
+    window.location.reload();
+    throw new Error('Authentication required');
+  }
+}
+
 export interface AuthResponse {
   auth_url: string;
   state: string;
@@ -172,6 +192,7 @@ export const api = {
         reply_index: replyIndex,
       }),
     });
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to post reply');
     return response.json();
   },
@@ -180,6 +201,7 @@ export const api = {
     const response = await fetch(`${API_BASE_URL}/post/tweet/${tweetId}?username=${encodeURIComponent(username)}`, {
       method: 'DELETE',
     });
+    await handleAuthError(response);
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Failed to delete tweet' }));
       throw new Error(error.detail || 'Failed to delete tweet');
@@ -193,15 +215,30 @@ export const api = {
     max_scrolls?: number;
     max_tweets?: number;
   }): Promise<{ message: string; count: number; tweets: TweetData[] }> => {
-    const response = await fetch(`${API_BASE_URL}/read/${encodeURIComponent(username)}/tweets`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload || {}),
-    });
-    if (!response.ok) throw new Error('Failed to read tweets');
-    return response.json();
+    // Use 1 hour timeout for scraping operations
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3600000); // 1 hour
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/read/${encodeURIComponent(username)}/tweets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload || {}),
+        signal: controller.signal,
+      });
+      clearTimeout(timeoutId);
+      await handleAuthError(response);
+      if (!response.ok) throw new Error('Failed to read tweets');
+      return response.json();
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Scraping timed out after 1 hour. The scraping may still be running in the background.');
+      }
+      throw error;
+    }
   },
 
   getScrapingStatus: async (username: string): Promise<{ type: string; value: string; phase: string }> => {
@@ -221,6 +258,7 @@ export const api = {
       },
       body: JSON.stringify(payload || {}),
     });
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to generate replies');
     return response.json();
   },
@@ -232,6 +270,7 @@ export const api = {
         'Content-Type': 'application/json',
       },
     });
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to regenerate reply');
     return response.json();
   },

@@ -7,17 +7,16 @@ Usage:
     python scraper_stats.py <username> --detailed
 """
 
-import sys
 import json
-from pathlib import Path
-from datetime import datetime
+import sys
 from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
 
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # Python <3.11
-    from datetime import timezone
-    UTC = timezone.utc
+    UTC = UTC
 
 
 def get_cache_key(username: str) -> str:
@@ -51,7 +50,7 @@ def analyze_scraper_runs(username: str, detailed: bool = False):
     # Read all log entries
     scrape_entries = []
     try:
-        with open(log_path, 'r', encoding='utf-8') as f:
+        with open(log_path, encoding='utf-8') as f:
             for line in f:
                 line = line.strip()
                 if line:
@@ -97,7 +96,7 @@ def analyze_scraper_runs(username: str, detailed: bool = False):
     print(f"📊 SCRAPER STATISTICS FOR: {username}")
     print(f"{'='*60}\n")
 
-    print(f"📅 Time Range:")
+    print("📅 Time Range:")
     print(f"   First run:  {first_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print(f"   Last run:   {last_run.strftime('%Y-%m-%d %H:%M:%S %Z')}")
     print(f"   Duration:   {(last_run - first_run).days} days\n")
@@ -117,7 +116,7 @@ def analyze_scraper_runs(username: str, detailed: bool = False):
     # Detailed breakdown
     if detailed:
         print(f"{'='*60}")
-        print(f"📆 DAILY BREAKDOWN")
+        print("📆 DAILY BREAKDOWN")
         print(f"{'='*60}\n")
 
         sorted_dates = sorted(daily_stats.keys())
@@ -130,7 +129,7 @@ def analyze_scraper_runs(username: str, detailed: bool = False):
             print()
 
         print(f"{'='*60}")
-        print(f"📝 RECENT RUNS (Last 10)")
+        print("📝 RECENT RUNS (Last 10)")
         print(f"{'='*60}\n")
 
         recent_entries = sorted(scrape_entries, key=lambda e: e['timestamp'], reverse=True)[:10]

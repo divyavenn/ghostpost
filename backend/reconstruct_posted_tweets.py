@@ -10,6 +10,7 @@ LOG_FILE = CACHE_DIR / "divya_venn_log.jsonl"
 TWEETS_CACHE = CACHE_DIR / "divya_venn_tweets.json"
 OUTPUT_FILE = CACHE_DIR / "divya_venn_posted_tweets.json"
 
+
 def main():
     # Read all posted actions from log
     posted_entries = []
@@ -67,8 +68,9 @@ def main():
             "url": f"https://x.com/divya_venn/status/{posted_tweet_id}",
             "response_to_thread": original_tweet.get("thread", []),
             "responding_to": original_tweet.get("handle", ""),
+            "replying_to_pfp": original_tweet.get("author_profile_pic_url", ""),
             "original_tweet_url": original_tweet.get("url", ""),
-            "last_metrics_update": None
+            "last_metrics_update": timestamp
         }
 
         posted_tweets.append(posted_tweet)
@@ -83,10 +85,11 @@ def main():
         json.dump(posted_tweets, f, indent=2, ensure_ascii=False)
 
     print(f"✅ Created {OUTPUT_FILE} with {len(posted_tweets)} tweets")
-    print(f"\n📊 Summary:")
+    print("\n📊 Summary:")
     print(f"  - Total posted tweets: {len(posted_tweets)}")
     print(f"  - Oldest: {posted_tweets[-1]['created_at'] if posted_tweets else 'N/A'}")
     print(f"  - Newest: {posted_tweets[0]['created_at'] if posted_tweets else 'N/A'}")
+
 
 if __name__ == "__main__":
     main()

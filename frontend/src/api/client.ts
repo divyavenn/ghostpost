@@ -14,6 +14,7 @@ async function handleAuthError(response: Response): Promise<void> {
     if (isRedirecting) {
       throw new Error('Authentication required');
     }
+    isRedirecting = true;
 
     // Clear stored username (same as logout)
     localStorage.removeItem('username');

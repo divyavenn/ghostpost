@@ -9,8 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from backend.data_validation import User
 from pydantic import ValidationError
+
+from backend.data_validation import User
 
 # Test data with missing fields
 test_users = [
@@ -30,7 +31,9 @@ test_users = [
         "follower_count": 100,
         "account_type": "premium",
         "models": ["gpt-4"],
-        "relevant_accounts": {"user1": True},
+        "relevant_accounts": {
+            "user1": True
+        },
         "queries": ["AI news"],
         "max_tweets_retrieve": 30,
         "number_of_generations": 2,
@@ -52,9 +55,9 @@ for idx, user_data in enumerate(test_users):
 
     try:
         user = User(**user_data)
-        print(f"✅ Valid! All required fields present.")
+        print("✅ Valid! All required fields present.")
     except ValidationError as e:
-        print(f"❌ Validation errors found:")
+        print("❌ Validation errors found:")
         for error in e.errors():
             field = error['loc'][0] if error['loc'] else 'unknown'
             print(f"  - {field}: {error['msg']}")

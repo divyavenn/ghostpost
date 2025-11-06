@@ -118,7 +118,7 @@ def check_account_limit(handle: str, action: str) -> dict[str, Any]:
         return {
             "allowed": False,
             "error": "scrape_limit_reached",
-            "message": f"You've used all your scrapes.",
+            "message": "You've used all your scrapes.",
             "upgrade_required": account_type == "trial",
             "upgrade_message": "To keep using, upgrade." if account_type == "trial" else None,
             "scrapes_left": 0,
@@ -132,7 +132,7 @@ def check_account_limit(handle: str, action: str) -> dict[str, Any]:
         return {
             "allowed": False,
             "error": "post_limit_reached",
-            "message": f"You've used all your posts.",
+            "message": "You've used all your posts.",
             "upgrade_required": account_type == "trial",
             "upgrade_message": "To keep using, upgrade." if account_type == "trial" else None,
             "posts_left": 0,

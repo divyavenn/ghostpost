@@ -3,14 +3,16 @@ Fetch current performance metrics for all posted tweets from Twitter API.
 """
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from datetime import datetime, timezone
+
 import requests
 
 # Paths
 CACHE_DIR = Path("cache")
 POSTED_TWEETS_FILE = CACHE_DIR / "divya_venn_posted_tweets.json"
 TOKEN_FILE = CACHE_DIR / "tokens.json"
+
 
 def get_access_token():
     """Get access token for divya_venn from tokens.json"""
@@ -38,14 +40,9 @@ def fetch_tweet_metrics(access_token, tweet_ids):
     url = "https://api.twitter.com/2/tweets"
 
     # Build query params (max 100 tweets at once)
-    params = {
-        "ids": ",".join(tweet_ids[:100]),
-        "tweet.fields": "public_metrics"
-    }
+    params = {"ids": ",".join(tweet_ids[:100]), "tweet.fields": "public_metrics"}
 
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     print(f"🌐 Fetching metrics for {len(tweet_ids)} tweets from Twitter API...")
 
@@ -100,7 +97,7 @@ def main():
     metrics_map = fetch_tweet_metrics(access_token, posted_tweet_ids)
 
     # Update tweets with metrics
-    update_time = datetime.now(timezone.utc).isoformat()
+    update_time = datetime.now(UTC).isoformat()
     updated_count = 0
 
     for tweet in posted_tweets:
@@ -129,11 +126,12 @@ def main():
     total_quotes = sum(t["quotes"] for t in posted_tweets)
     total_replies = sum(t["replies"] for t in posted_tweets)
 
-    print(f"\n📊 Total Performance:")
+    print("\n📊 Total Performance:")
     print(f"  - Likes: {total_likes}")
     print(f"  - Retweets: {total_retweets}")
     print(f"  - Quotes: {total_quotes}")
     print(f"  - Replies: {total_replies}")
+
 
 if __name__ == "__main__":
     main()

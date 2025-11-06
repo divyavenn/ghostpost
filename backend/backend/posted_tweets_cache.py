@@ -9,8 +9,7 @@ from typing import Any
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # Python <3.11
-    from datetime import timezone
-    UTC = timezone.utc
+    UTC = UTC
 
 from backend.utils import CACHE_DIR, _cache_key, notify
 
@@ -25,9 +24,10 @@ def read_posted_tweets_cache(username: str) -> list[dict[str, Any]]:
     Read posted tweets from cache file.
     Returns list of tweet objects sorted by created_at (newest first).
     """
+    from pydantic import ValidationError
+
     from backend.data_validation import PostedTweet
     from backend.utils import error
-    from pydantic import ValidationError
 
     cache_path = get_posted_tweets_path(username)
 
@@ -40,7 +40,7 @@ def read_posted_tweets_cache(username: str) -> list[dict[str, Any]]:
 
         # Ensure it's a list
         if not isinstance(tweets, list):
-            error(f"Invalid posted tweets cache format: expected list", status_code=500, function_name="read_posted_tweets_cache", username=username)
+            error("Invalid posted tweets cache format: expected list", status_code=500, function_name="read_posted_tweets_cache", username=username)
             return []
 
         # Validate each tweet
@@ -58,7 +58,7 @@ def read_posted_tweets_cache(username: str) -> list[dict[str, Any]]:
         return validated_tweets
 
     except Exception as e:
-        error(f"Error reading posted tweets cache", status_code=500, exception_text=str(e), function_name="read_posted_tweets_cache", username=username)
+        error("Error reading posted tweets cache", status_code=500, exception_text=str(e), function_name="read_posted_tweets_cache", username=username)
         notify(f"❌ Error reading posted tweets cache for {username}: {e}")
         return []
 
@@ -68,9 +68,10 @@ def write_posted_tweets_cache(username: str, tweets: list[dict[str, Any]]) -> No
     Write posted tweets to cache file.
     Overwrites the entire file.
     """
+    from pydantic import ValidationError
+
     from backend.data_validation import PostedTweet
     from backend.utils import error
-    from pydantic import ValidationError
 
     cache_path = get_posted_tweets_path(username)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,21 +92,19 @@ def write_posted_tweets_cache(username: str, tweets: list[dict[str, Any]]) -> No
         with open(cache_path, "w", encoding="utf-8") as f:
             json.dump(validated_tweets, f, indent=2, ensure_ascii=False)
     except Exception as e:
-        error(f"Error writing posted tweets cache", status_code=500, exception_text=str(e), function_name="write_posted_tweets_cache", username=username)
+        error("Error writing posted tweets cache", status_code=500, exception_text=str(e), function_name="write_posted_tweets_cache", username=username)
         notify(f"❌ Error writing posted tweets cache for {username}: {e}")
         raise
 
 
-def add_posted_tweet(
-    username: str,
-    posted_tweet_id: str,
-    text: str,
-    original_tweet_url: str,
-    responding_to_handle: str,
-    replying_to_pfp: str,
-    response_to_thread: list[str],
-    created_at: str | None = None
-) -> dict[str, Any]:
+def add_posted_tweet(username: str,
+                     posted_tweet_id: str,
+                     text: str,
+                     original_tweet_url: str,
+                     responding_to_handle: str,
+                     replying_to_pfp: str,
+                     response_to_thread: list[str],
+                     created_at: str | None = None) -> dict[str, Any]:
     """
     Add a new posted tweet to the cache.
 
@@ -141,7 +140,7 @@ def add_posted_tweet(
         "responding_to": responding_to_handle,
         "replying_to_pfp": replying_to_pfp,
         "original_tweet_url": original_tweet_url,
-        "last_metrics_update": None  # Track when metrics were last fetched
+        "last_metrics_update": created_at  # Use creation time as initial value
     }
 
     # Read existing tweets
@@ -158,14 +157,7 @@ def add_posted_tweet(
     return tweet
 
 
-def update_tweet_metrics(
-    username: str,
-    posted_tweet_id: str,
-    likes: int,
-    retweets: int,
-    quotes: int,
-    replies: int
-) -> dict[str, Any] | None:
+def update_tweet_metrics(username: str, posted_tweet_id: str, likes: int, retweets: int, quotes: int, replies: int) -> dict[str, Any] | None:
     """
     Update performance metrics for a posted tweet.
 

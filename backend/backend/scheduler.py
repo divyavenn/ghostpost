@@ -17,7 +17,6 @@ from fastapi import APIRouter
 from backend.generate_replies import generate_replies
 from backend.log_interactions import log_scrape_action
 from backend.read_tweets import read_tweets
-from backend.tweets_cache import cleanup_old_tweets
 from backend.utils import BROWSER_STATE_FILE, cookie_still_valid, log_background_task, notify
 
 # Global scheduler instance
@@ -25,6 +24,21 @@ scheduler = AsyncIOScheduler()
 # API Router
 
 router = APIRouter(prefix="/scheduler", tags=["scheduler"])
+
+
+async def cleanup_expired_browser_sessions():
+    """
+    Cleanup expired browser sessions to prevent zombie processes.
+    This helps prevent resource leaks from browser sessions that weren't properly closed.
+    """
+    try:
+        from backend.browser_session import cleanup_expired_sessions
+        await cleanup_expired_sessions()
+        notify("🧹 Cleaned up expired browser sessions")
+    except Exception as e:
+        from backend.utils import error
+        error("Failed to cleanup browser sessions", status_code=500, exception_text=str(e), function_name="cleanup_expired_browser_sessions")
+        notify(f"⚠️ Failed to cleanup browser sessions: {e}")
 
 
 def get_users_with_valid_sessions() -> list[str]:
@@ -59,7 +73,7 @@ def get_users_with_valid_sessions() -> list[str]:
 
     except Exception as e:
         from backend.utils import error
-        error(f"Error reading browser states", status_code=500, exception_text=str(e), function_name="get_users_with_valid_sessions")
+        error("Error reading browser states", status_code=500, exception_text=str(e), function_name="get_users_with_valid_sessions")
         notify(f"❌ Error reading browser states: {e}")
         return []
 
@@ -72,6 +86,8 @@ async def auto_scrape_for_user(username: str):
         username: Twitter handle of the user
     """
     import time
+
+    from backend.tweets_cache import purge_unedited_tweets
     from backend.utils import read_user_info, write_user_info
 
     start_time = time.time()
@@ -79,13 +95,16 @@ async def auto_scrape_for_user(username: str):
     try:
         notify(f"🤖 [Auto-scrape] Starting for user: {username}")
 
-        # Step 1: Clean up tweets older than 3 days (72 hours)
-        notify(f"🧹 [Auto-scrape] Cleaning up old tweets for {username}...")
-        removed_count = await cleanup_old_tweets(username, hours=72)
-        if removed_count > 0:
-            notify(f"✅ [Auto-scrape] Cleaned up {removed_count} tweet(s) older than 3 days for {username}")
+        # Step 0: Cleanup expired browser sessions to prevent resource leaks
+        await cleanup_expired_browser_sessions()
+
+        # Step 1: Purge unedited tweets
+        notify(f"🗑️ [Auto-scrape] Purging unedited tweets for {username}...")
+        purged_count = await purge_unedited_tweets(username)
+        if purged_count > 0:
+            notify(f"✅ [Auto-scrape] Purged {purged_count} unedited tweet(s) for {username}")
         else:
-            notify(f"✅ [Auto-scrape] No old tweets to clean up for {username}")
+            notify(f"✅ [Auto-scrape] No unedited tweets to purge for {username}")
 
         # Step 2: Scrape new tweets
         notify(f"🔍 [Auto-scrape] Scraping tweets for {username}...")
@@ -102,13 +121,7 @@ async def auto_scrape_for_user(username: str):
         log_scrape_action(username, len(tweets), initiated_by="auto")
 
         # Log to background tasks log
-        log_background_task(
-            username=username,
-            task_type="tweet_scraping",
-            tweets_scraped=len(tweets),
-            replies_generated=reply_count,
-            initiated_by="auto"
-        )
+        log_background_task(username=username, task_type="tweet_scraping", tweets_scraped=len(tweets), replies_generated=reply_count, initiated_by="auto")
 
         notify(f"🎉 [Auto-scrape] Completed for {username}")
 
@@ -129,7 +142,7 @@ async def auto_scrape_for_user(username: str):
                 notify(f"⏱️ Added {elapsed_seconds}s to scrolling time for @{username} (total: {user_info['scrolling_time_saved']}s)")
         except Exception as e:
             from backend.utils import error
-            error(f"Failed to update scrolling time", status_code=500, exception_text=str(e), function_name="auto_scrape_for_user", username=username)
+            error("Failed to update scrolling time", status_code=500, exception_text=str(e), function_name="auto_scrape_for_user", username=username)
             notify(f"⚠️ Failed to update scrolling time for {username}: {e}")
 
 
@@ -156,7 +169,7 @@ async def auto_scrape_all_users():
                 await auto_scrape_for_user(username)
             except Exception as e:
                 from backend.utils import error
-                error(f"Error processing auto-scrape", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users", username=username)
+                error("Error processing auto-scrape", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users", username=username)
                 notify(f"❌ [Auto-scrape] Error processing {username}: {e}")
                 continue
 
@@ -164,7 +177,7 @@ async def auto_scrape_all_users():
 
     except Exception as e:
         from backend.utils import error
-        error(f"Fatal error in batch scraping", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users")
+        error("Fatal error in batch scraping", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users")
         notify(f"❌ [Auto-scrape] Fatal error in batch scraping: {e}")
 
 
@@ -189,8 +202,17 @@ def start_scheduler(interval_hours: int = 24):
         max_instances=1  # Prevent overlapping runs
     )
 
+    # Add browser session cleanup job (runs every hour to prevent zombie processes)
+    scheduler.add_job(cleanup_expired_browser_sessions,
+                      trigger=IntervalTrigger(hours=1),
+                      id='cleanup_browser_sessions',
+                      name='Cleanup expired browser sessions every hour',
+                      replace_existing=True,
+                      max_instances=1)
+
     scheduler.start()
     notify(f"✅ Background scheduler started (interval: {interval_hours} hours)")
+    notify("🧹 Browser session cleanup scheduled every hour")
     notify(f"📅 Next auto-scrape: {scheduler.get_jobs()[0].next_run_time}")
 
 

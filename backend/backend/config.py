@@ -4,6 +4,7 @@ All configuration variables should be defined here.
 """
 import os
 from pathlib import Path
+
 import dotenv
 
 # Load .env file from backend/ directory (one level up from backend/backend/)
@@ -39,10 +40,7 @@ TWITTER_API_BASE_URL = "https://api.x.com/2"
 TWITTER_API_V2_BASE = "https://api.twitter.com/2"
 
 # Twitter bearer token for API requests
-TWITTER_BEARER_TOKEN = os.getenv(
-    "TWITTER_BEARER_TOKEN",
-    r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi"
-)
+TWITTER_BEARER_TOKEN = os.getenv("TWITTER_BEARER_TOKEN", r"AAAAAAAAAAAAAAAAAAAAAJHRxQEAAAAAB%2F567wfymD1OQyW8C4MXhUX8t4c%3DZn9FSzsz31UhfpTQN10YRMHQHRuMqsGYjPFYFxUJXVezuuZuPi")
 
 # Auth cookie name
 AUTH_COOKIE = "auth_token"

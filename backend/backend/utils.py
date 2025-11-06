@@ -10,9 +10,11 @@ from backend.config import (
     AUTH_COOKIE,
     BROWSER_STATE_FILE,
     CACHE_DIR,
-    DEFAULT_TWITTER_USERNAME as USERNAME,
     TOKEN_FILE,
     USER_INFO_FILE,
+)
+from backend.config import (
+    DEFAULT_TWITTER_USERNAME as USERNAME,
 )
 
 # Ensure cache directory exists
@@ -23,7 +25,7 @@ def notify(msg: str):
     print(msg)
 
 
-def error(msg: str, status_code: int = 500, exception_text : str | None = None, function_name: str | None = None, username: str | None = None, critical: bool = False):
+def error(msg: str, status_code: int = 500, exception_text: str | None = None, function_name: str | None = None, username: str | None = None, critical: bool = False):
     """
     Log the error to errors.jsonl. If critical, raise a RunTimeError as well (user gets notified/process gets interrupted).
 
@@ -44,14 +46,7 @@ def error(msg: str, status_code: int = 500, exception_text : str | None = None, 
 
     timestamp = datetime.utcnow().isoformat() + "Z"
     # Create error log entry
-    error_entry = {
-        "message": msg,
-        "status_code": status_code,
-        "function_name": function_name or "unknown",
-        "timestamp": timestamp,
-        "user": username or "unknown",
-        "exception" : exception_text
-    }
+    error_entry = {"message": msg, "status_code": status_code, "function_name": function_name or "unknown", "timestamp": timestamp, "user": username or "unknown", "exception": exception_text}
 
     # Append to errors.jsonl (create if doesn't exist)
     errors_log_path = CACHE_DIR / "errors.jsonl"
@@ -66,8 +61,7 @@ def error(msg: str, status_code: int = 500, exception_text : str | None = None, 
     if critical:
         message_devs(f"❌ Critical error in {function_name} for user {username}: {msg}. timestamp: {timestamp}")
         raise RuntimeError(f"❌ {msg}")
-        
-    
+
 
 def message_devs(text: str):
     """
@@ -77,8 +71,8 @@ def message_devs(text: str):
         text: The message content to send
     """
     import smtplib
-    from email.mime.text import MIMEText
     from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
 
     from backend.config import DEV_EMAIL, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_USER
 
@@ -178,8 +172,9 @@ def remove_entry_from_map(path: Path, username: str, tmp_suffix: str) -> bool:
 
 
 async def store_browser_state(username: str, context) -> None:
-    from backend.data_validation import BrowserState
     from pydantic import ValidationError
+
+    from backend.data_validation import BrowserState
 
     state = await context.storage_state()
     path = BROWSER_STATE_FILE
@@ -190,7 +185,7 @@ async def store_browser_state(username: str, context) -> None:
             if isinstance(cached, dict):
                 cache = cached
         except Exception as e:
-            error(f"Failed to read existing browser state file", status_code=500, exception_text=str(e), function_name="store_browser_state")
+            error("Failed to read existing browser state file", status_code=500, exception_text=str(e), function_name="store_browser_state")
 
     # Add timestamp to track when the state was last updated
     state["timestamp"] = datetime.utcnow().isoformat() + "Z"
@@ -220,8 +215,9 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
     Returns:
         Tuple of (browser, context) if session exists and is valid, None otherwise
     """
-    from backend.data_validation import BrowserState
     from pydantic import ValidationError
+
+    from backend.data_validation import BrowserState
 
     path = BROWSER_STATE_FILE
     if not path.exists():
@@ -295,8 +291,9 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
 
 
 def load_user_info_entries() -> list[dict[str, Any]]:
-    from backend.data_validation import User
     from pydantic import ValidationError
+
+    from backend.data_validation import User
 
     if not USER_INFO_FILE.exists():
         return []
@@ -304,7 +301,7 @@ def load_user_info_entries() -> list[dict[str, Any]]:
     try:
         raw = json.loads(USER_INFO_FILE.read_text())
     except Exception as e:
-        error(f"Failed to parse user_info.json", status_code=500, exception_text=str(e), function_name="load_user_info_entries")
+        error("Failed to parse user_info.json", status_code=500, exception_text=str(e), function_name="load_user_info_entries")
         return []
 
     entries = []
@@ -313,7 +310,7 @@ def load_user_info_entries() -> list[dict[str, Any]]:
     elif isinstance(raw, list):
         raw = [entry for entry in raw if isinstance(entry, dict)]
     else:
-        error(f"Invalid user_info.json format: expected dict or list", status_code=500, function_name="load_user_info_entries")
+        error("Invalid user_info.json format: expected dict or list", status_code=500, function_name="load_user_info_entries")
         return []
 
     # Validate each entry
@@ -340,8 +337,9 @@ def find_user_info(entries: Iterable[dict[str, Any]], handle: str) -> dict[str, 
 
 def write_user_info(user_info: dict[str, Any]) -> Path:
     # Persist user metadata to disk, updating the entry matching the handle/username."""
-    from backend.data_validation import User
     from pydantic import ValidationError
+
+    from backend.data_validation import User
 
     handle = user_info.get("handle") or user_info.get("username")
 
@@ -402,8 +400,9 @@ def read_user_info(handle: str) -> dict[str, Any] | None:
 
 def read_tokens() -> dict[str, Any]:
     """Return the existing token map from disk (empty dict if missing/invalid)."""
-    from backend.data_validation import Token
     from pydantic import ValidationError
+
+    from backend.data_validation import Token
 
     path = TOKEN_FILE
     if not path.exists():
@@ -468,8 +467,9 @@ def read_user_access_token(username: str) -> tuple[str | None, float | None]:
 
 def store_token(username: str, refresh_token: str, access_token: str | None = None, expires_in: int | None = None):
     """Persist the refresh token and optionally access token with expiration to a shared JSON map."""
-    from backend.data_validation import Token
     from pydantic import ValidationError
+
+    from backend.data_validation import Token
 
     tokens = read_tokens()
     path = TOKEN_FILE
@@ -501,13 +501,7 @@ def _cache_key(username: str | None) -> str:
     return sanitized or "default"
 
 
-def log_background_task(
-    username: str,
-    task_type: str,
-    tweets_scraped: int = 0,
-    replies_generated: int = 0,
-    **extra_data
-):
+def log_background_task(username: str, task_type: str, tweets_scraped: int = 0, replies_generated: int = 0, **extra_data):
     """
     Log background task execution to append-only log file.
 
@@ -521,14 +515,7 @@ def log_background_task(
     log_file = CACHE_DIR / "background_tasks.jsonl"
 
     # Create log entry
-    log_entry = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "username": username,
-        "task_type": task_type,
-        "tweets_scraped": tweets_scraped,
-        "replies_generated": replies_generated,
-        **extra_data
-    }
+    log_entry = {"timestamp": datetime.utcnow().isoformat() + "Z", "username": username, "task_type": task_type, "tweets_scraped": tweets_scraped, "replies_generated": replies_generated, **extra_data}
 
     try:
         # Append to log file (create if doesn't exist)
@@ -538,13 +525,7 @@ def log_background_task(
         notify(f"📝 Logged background task: {task_type} for @{username}")
 
     except Exception as e:
-        error(
-            "Failed to log background task",
-            status_code=500,
-            exception_text=str(e),
-            function_name="log_background_task",
-            username=username
-        )
+        error("Failed to log background task", status_code=500, exception_text=str(e), function_name="log_background_task", username=username)
         notify(f"⚠️ Failed to log background task: {e}")
 
 

@@ -28,18 +28,14 @@ async def lifespan(app: FastAPI):
     stop_scheduler()
 
 
-app = FastAPI(
-    title="FloodMe API",
-    version="1.0.0",
-    openapi_version="3.1.0",
-    lifespan=lifespan
-)
+app = FastAPI(title="FloodMe API", version="1.0.0", openapi_version="3.1.0", lifespan=lifespan)
 
 # Add CORS middleware to allow frontend to make requests
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",  # Local dev (Vite)
+        "http://localhost:5174",  # Local dev (Vite alternate port)
         "http://localhost:3000",  # Local dev
         "http://localhost",  # Docker frontend (port 80)
         "http://192.168.8.57:3000",  # Production server
@@ -106,8 +102,4 @@ async def vnc_health_check():
 
     all_ready = all(checks.values())
 
-    return {
-        "ready": all_ready,
-        "checks": checks,
-        "message": "VNC services ready for OAuth" if all_ready else "VNC services not ready yet"
-    }
+    return {"ready": all_ready, "checks": checks, "message": "VNC services ready for OAuth" if all_ready else "VNC services not ready yet"}

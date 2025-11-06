@@ -1,7 +1,7 @@
 """Browserbase-based scraping fallback for improved bot detection evasion."""
 
-from playwright.async_api import async_playwright
 from browserbase import Browserbase
+from playwright.async_api import async_playwright
 
 from backend.config import BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
 
@@ -10,7 +10,7 @@ try:
     from backend.utils import error, notify, read_browser_state, store_browser_state
 except ImportError:
     from headless_fetch import collect_from_page
-    from utils import error, notify, read_browser_state, store_browser_state
+    from utils import error, notify, read_browser_state
 
 
 async def get_browserbase_session(username: str):

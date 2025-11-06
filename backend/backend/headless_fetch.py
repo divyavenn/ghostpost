@@ -1,15 +1,14 @@
 import asyncio
 import re
-from asyncio import sleep
+
+from backend.utils import notify
 
 from .full_thread import get_thread, scroll
-from backend.utils import notify
 
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # Python <3.11
-    from datetime import timezone
-    UTC = timezone.utc
+    UTC = UTC
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -171,6 +170,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
     min_likes = 5
     pending = set()
     max_scrolls = 5
+
     def engagement_score(legacy: dict) -> int:
         likes = int(legacy.get("favorite_count", 0))
         rts = int(legacy.get("retweet_count", 0))
@@ -731,7 +731,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
     )
 
     await scroll(page, scrolls=max_scrolls, delay=1.8)
-    
+
     if pending:
         await asyncio.gather(*pending, return_exceptions=True)
 

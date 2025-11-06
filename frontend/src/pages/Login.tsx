@@ -1,12 +1,15 @@
 import { Background } from '../components/Background';
 import { useNavigate } from 'react-router-dom';
 import { useState } from 'react';
+import { useSetRecoilState } from 'recoil';
+import { usernameState } from '../atoms';
 import { LoginLoading } from '../components/LoginLoading';
 import { LoginCarousel } from '../components/LoginCarousel';
 import { loginCards } from '../data/loginCards';
 
 export function Login() {
   const navigate = useNavigate();
+  const setUsername = useSetRecoilState(usernameState);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,8 +115,8 @@ export function Login() {
             // Bring main window back into focus
             window.focus();
 
-            // Save username and navigate to app
-            localStorage.setItem('username', status.username);
+            // Save username to Recoil (which also updates localStorage via effect)
+            setUsername(status.username);
             setIsLoggingIn(false);
             navigate('/', { replace: true });
           } else if (status.status === 'extension_required') {

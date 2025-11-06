@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSetRecoilState } from 'recoil';
+import { useRecoilState } from 'recoil';
 import {TweetDisplay, type TweetData } from './components/tweet_new';
 import {PostedTweetDisplay, type PostedTweetData } from './components/posted_tweet';
-import { api, type UserInfo } from './api/client';
+import { api } from './api/client';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { StatsDashboard } from './components/StatsDashboard';
 import { Background } from './components/Background';
@@ -20,34 +20,34 @@ import {
   isSettingsOpenState,
   showFirstTimeModalState,
   activeTabState,
-  isLoadingState,
   loadingPhaseState,
-  scrapingStatusTextState,
+  loadingStatusDataState,
 } from './atoms';
 
 function App() {
   const navigate = useNavigate();
 
-  // Local state
-  const [username, setUsername] = useState<string | null>(localStorage.getItem('username'));
+  // Recoil state - used directly
+  const [username, setUsername] = useRecoilState(usernameState);
+  const [userInfo, setUserInfo] = useRecoilState(userInfoState);
+  const [isSettingsOpen, setIsSettingsOpen] = useRecoilState(isSettingsOpenState);
+  const [showFirstTimeModal, setShowFirstTimeModal] = useRecoilState(showFirstTimeModalState);
+  const [activeTab, setActiveTab] = useRecoilState(activeTabState);
+  const [loadingPhase, setLoadingPhase] = useRecoilState(loadingPhaseState);
+  const [, setLoadingStatusData] = useRecoilState(loadingStatusDataState);
+
+  // Local state (component-specific)
   const [tweets, setTweets] = useState<TweetData[]>([]);
   const [currentTweetIndex, setCurrentTweetIndex] = useState(0);
-  const [isLoading, setIsLoading] = useState(false);
-  const [loadingPhase, setLoadingPhase] = useState<'scraping' | 'generating' | null>(null);
   const [deletingTweetIds, setDeletingTweetIds] = useState<Set<string>>(new Set());
   const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
   const [regeneratingTweetIds, setRegeneratingTweetIds] = useState<Set<string>>(new Set());
   const [postedTweets, setPostedTweets] = useState<PostedTweetData[]>([]);
-  const [activeTab, setActiveTab] = useState<'generated' | 'posted'>('generated');
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
-  const [scrapingStatusText, setScrapingStatusText] = useState<string>('Scraping tweets');
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
   const [isLoadingMorePosted, setIsLoadingMorePosted] = useState(false);
-  const [numberOfGenerations, setNumberOfGenerations] = useState<number>(1); // User setting for how many replies to display
-  const [showFirstTimeModal, setShowFirstTimeModal] = useState(false);
+  const [numberOfGenerations, setNumberOfGenerations] = useState<number>(1);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [showPaidModal, setShowPaidModal] = useState(false);
   const [paidModalConfig, setPaidModalConfig] = useState<{
@@ -55,50 +55,10 @@ function App() {
     remaining: number;
     onAction: () => void;
   } | null>(null);
-  const postedTweetsOffsetRef = useRef(0); // Track offset with ref to avoid re-creating callback
+  const postedTweetsOffsetRef = useRef(0);
 
-  // Recoil state setters - sync local state to global Recoil atoms
-  const setRecoilUsername = useSetRecoilState(usernameState);
-  const setRecoilUserInfo = useSetRecoilState(userInfoState);
-  const setRecoilIsSettingsOpen = useSetRecoilState(isSettingsOpenState);
-  const setRecoilShowFirstTimeModal = useSetRecoilState(showFirstTimeModalState);
-  const setRecoilActiveTab = useSetRecoilState(activeTabState);
-  const setRecoilIsLoading = useSetRecoilState(isLoadingState);
-  const setRecoilLoadingPhase = useSetRecoilState(loadingPhaseState);
-  const setRecoilScrapingStatusText = useSetRecoilState(scrapingStatusTextState);
-
-  // Sync local state to Recoil atoms whenever they change
-  useEffect(() => {
-    setRecoilUsername(username);
-  }, [username, setRecoilUsername]);
-
-  useEffect(() => {
-    setRecoilUserInfo(userInfo);
-  }, [userInfo, setRecoilUserInfo]);
-
-  useEffect(() => {
-    setRecoilIsSettingsOpen(isSettingsOpen);
-  }, [isSettingsOpen, setRecoilIsSettingsOpen]);
-
-  useEffect(() => {
-    setRecoilShowFirstTimeModal(showFirstTimeModal);
-  }, [showFirstTimeModal, setRecoilShowFirstTimeModal]);
-
-  useEffect(() => {
-    setRecoilActiveTab(activeTab);
-  }, [activeTab, setRecoilActiveTab]);
-
-  useEffect(() => {
-    setRecoilIsLoading(isLoading);
-  }, [isLoading, setRecoilIsLoading]);
-
-  useEffect(() => {
-    setRecoilLoadingPhase(loadingPhase);
-  }, [loadingPhase, setRecoilLoadingPhase]);
-
-  useEffect(() => {
-    setRecoilScrapingStatusText(scrapingStatusText);
-  }, [scrapingStatusText, setRecoilScrapingStatusText]);
+  // Derived state: isLoading can be determined from loadingPhase
+  const isLoading = loadingPhase !== null;
 
   // Load posted tweets from backend
   const loadPostedTweets = useCallback(async (user: string, reset: boolean = true) => {
@@ -257,7 +217,6 @@ function App() {
   };
 
   const loadTweets = async (user: string) => {
-    setIsLoading(true);
     try {
       const data = await api.getTweetsCache(user);
 
@@ -278,8 +237,6 @@ function App() {
     } catch (error) {
       console.error('Failed to load tweets:', error);
       alert('Failed to load tweets. Please try again.');
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -287,62 +244,41 @@ function App() {
   const handleScrapeInternal = async () => {
     if (!username) return;
 
-    setIsLoading(true);
-
-    // Track if we've already triggered reply generation
-    let scrapingComplete = false;
-    let generatingStarted = false;
-
     // Start polling for scraping status and tweets in the background
     const pollInterval = setInterval(async () => {
       if (!username) return;
       try {
         // Poll scraping status
         const status = await api.getScrapingStatus(username);
+        console.log('[Polling] Status:', status, '| Current phase:', loadingPhase);
 
-        // Update status text based on current scraping phase
+        // Update status based on current scraping phase
         if (status.type === 'account') {
+          console.log('[Polling] Setting phase to scraping (account)');
           setLoadingPhase('scraping');
-          setScrapingStatusText(`Scraping tweets from @${status.value}`);
+          setLoadingStatusData({ type: 'account', value: status.value });
         } else if (status.type === 'query') {
+          console.log('[Polling] Setting phase to scraping (query)');
           setLoadingPhase('scraping');
-          setScrapingStatusText(`Scraping tweets related to "${status.value}"`);
+          setLoadingStatusData({ type: 'query', value: status.value });
         } else if (status.type === 'generating') {
+          console.log('[Polling] Setting phase to generating');
           setLoadingPhase('generating');
-          setScrapingStatusText(`Generating replies (${status.value})`);
+          setLoadingStatusData({ type: 'generating', value: status.value });
         } else if (status.type === 'complete') {
-          setScrapingStatusText('Done!');
+          console.log('[Polling] Status complete, stopping polling');
+          setLoadingStatusData({ type: 'complete', value: '' });
 
           // Stop polling and finish up
           clearInterval(pollInterval);
           setLoadingPhase(null);
-          setScrapingStatusText('Scraping tweets'); // Reset
+          setLoadingStatusData(null);
           await loadUserInfo(username);
           await loadTweets(username);
-          setIsLoading(false);
-        } else if (status.phase === 'complete' && !scrapingComplete) {
-          // Scraping is done, trigger reply generation
-          scrapingComplete = true;
-
-          if (!generatingStarted) {
-            generatingStarted = true;
-            setLoadingPhase('generating');
-            setScrapingStatusText('Generating replies');
-
-            // Update user info to reflect new scrolling_time_saved
-            await loadUserInfo(username);
-
-            // Fire reply generation (don't await - let polling handle it)
-            api.generateReplies(username).catch((error) => {
-              console.error('Failed to generate replies:', error);
-              clearInterval(pollInterval);
-              alert('Failed to generate replies. Please try again.');
-              setIsLoading(false);
-              setLoadingPhase(null);
-              setScrapingStatusText('Scraping tweets');
-            });
-          }
-        }
+        } else if (status.type !== 'idle') {
+          // Log unexpected status types (idle is expected when not scraping)
+          console.warn('[Polling] Unexpected status type:', status.type);
+        } 
 
         // Poll tweets to show them appearing in real-time
         const data = await api.getTweetsCache(username);
@@ -361,15 +297,14 @@ function App() {
 
     // Fire the scraping request without awaiting - let polling handle everything
     setLoadingPhase('scraping');
-    setScrapingStatusText('Scraping tweets');
+    setLoadingStatusData(null);
 
     api.readTweets(username).catch((error) => {
       clearInterval(pollInterval);
       console.error('Failed to start scraping:', error);
       alert('Failed to start scraping. Please try again.');
-      setIsLoading(false);
       setLoadingPhase(null);
-      setScrapingStatusText('Scraping tweets');
+      setLoadingStatusData(null);
     });
   };
 
@@ -418,8 +353,6 @@ function App() {
       return;
     }
 
-    setIsLoading(true);
-
     // Start polling for generation status
     const pollInterval = setInterval(async () => {
       if (!username) return;
@@ -427,11 +360,11 @@ function App() {
         // Poll scraping status (reuses same endpoint)
         const status = await api.getScrapingStatus(username);
 
-        // Update status text based on current phase
+        // Update status based on current phase
         if (status.type === 'generating') {
-          setScrapingStatusText(`Generating replies (${status.value})`);
+          setLoadingStatusData({ type: 'generating', value: status.value });
         } else if (status.type === 'complete') {
-          setScrapingStatusText('Done!');
+          setLoadingStatusData({ type: 'complete', value: '' });
         }
 
         // Poll tweets to show updated replies
@@ -452,22 +385,21 @@ function App() {
     try {
       // Only generate AI replies for existing cached tweets (with overwrite)
       setLoadingPhase('generating');
-      setScrapingStatusText('Generating replies');
+      setLoadingStatusData(null);
       const generateResult = await api.generateReplies(username, { overwrite: true });
       console.log(`Generated ${generateResult.replies_generated} replies`);
 
       // Stop polling and do final reload
       clearInterval(pollInterval);
       setLoadingPhase(null);
-      setScrapingStatusText('Generating replies'); // Reset
+      setLoadingStatusData(null);
       await loadTweets(username);
     } catch (error) {
       clearInterval(pollInterval);
       console.error('Failed to generate replies:', error);
       alert('Failed to generate replies. Please try again.');
-      setIsLoading(false);
       setLoadingPhase(null);
-      setScrapingStatusText('Generating replies'); // Reset
+      setLoadingStatusData(null);
     }
   };
 
@@ -747,9 +679,8 @@ function App() {
 
             // If generation will happen, show loading overlay and poll for completion
             if (generationHappened) {
-              setIsLoading(true);
               setLoadingPhase('generating');
-              setScrapingStatusText('Generating additional replies');
+              setLoadingStatusData(null);
 
               // Start polling for status immediately
               const pollInterval = setInterval(async () => {
@@ -758,16 +689,16 @@ function App() {
                   const status = await api.getScrapingStatus(username);
 
                   if (status.type === 'generating') {
-                    setScrapingStatusText(`Generating replies (${status.value})`);
+                    setLoadingStatusData({ type: 'generating', value: status.value });
                   } else if (status.type === 'complete') {
-                    setScrapingStatusText('Done!');
+                    setLoadingStatusData({ type: 'complete', value: '' });
                     // Stop polling when complete
                     clearInterval(pollInterval);
 
                     // Wait a moment then reload and hide overlay
                     setTimeout(async () => {
-                      setIsLoading(false);
                       setLoadingPhase(null);
+                      setLoadingStatusData(null);
                       await loadTweets(username!);
                       await loadUserInfo(username!);
                     }, 1000);
@@ -791,8 +722,8 @@ function App() {
               // Safety timeout - if status never becomes 'complete', stop after 60 seconds
               setTimeout(() => {
                 clearInterval(pollInterval);
-                setIsLoading(false);
                 setLoadingPhase(null);
+                setLoadingStatusData(null);
                 loadTweets(username!).catch(console.error);
                 loadUserInfo(username!).catch(console.error);
               }, 60000);
@@ -940,7 +871,7 @@ function App() {
       )}
 
       {/* Loading overlay */}
-      {loadingPhase && <LoadingOverlay phase={loadingPhase} statusText={scrapingStatusText} />}
+      <LoadingOverlay />
 
       {/* First-time user email modal */}
       {showFirstTimeModal && username && (

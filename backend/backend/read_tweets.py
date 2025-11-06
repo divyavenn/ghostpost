@@ -8,11 +8,11 @@ from pydantic import BaseModel
 
 # Handle imports for both package and standalone execution
 try:
-    from backend.resolve_imports import ensure_standalone_imports
     from backend.config import SHOW_BROWSER
+    from backend.resolve_imports import ensure_standalone_imports
 except ModuleNotFoundError:  # Running from inside backend/
-    from resolve_imports import ensure_standalone_imports
     from config import SHOW_BROWSER
+    from resolve_imports import ensure_standalone_imports
 
 ensure_standalone_imports(globals())
 
@@ -27,15 +27,18 @@ except ImportError:
 
 # -------- Config --------
 import os
+
 from backend.config import (
     DEFAULT_MAX_TWEETS_RETRIEVE as MAX_TWEETS_RETRIEVE,
-    DEFAULT_QUERIES as QUERIES,
-    DEFAULT_TWITTER_PASSWORD as PASSWORD,
+)
+from backend.config import (
     DEFAULT_TWITTER_USERNAME as USERNAME,
-    DEFAULT_USERNAMES as USERNAMES,
+)
+from backend.config import (
     SHOW_BROWSER,
     USE_BROWSERBASE_FOR_SCRAPING,
 )
+
 
 def should_use_headless_for_scraping() -> bool:
     """
@@ -49,6 +52,7 @@ def should_use_headless_for_scraping() -> bool:
     # Use config value (inverted - SHOW_BROWSER=True means headless=False)
     return not SHOW_BROWSER
 
+
 def should_use_browserbase_for_scraping() -> bool:
     """
     Return True if scraping should use Browserbase instead of local browser.
@@ -59,6 +63,7 @@ def should_use_browserbase_for_scraping() -> bool:
         return browserbase_env.lower() in ("true", "1", "yes")
     # Use config value
     return USE_BROWSERBASE_FOR_SCRAPING
+
 
 see_browser = not should_use_headless_for_scraping()  # Show browser only if not in headless mode
 
@@ -133,8 +138,8 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     Returns:
         dict: Scraped tweets
     """
-    from backend.exceptions import BotDetectionError, RateLimitError, CaptchaError
-    from backend.browserbase_scraper import fetch_user_tweets_browserbase, fetch_search_browserbase
+    from backend.browserbase_scraper import fetch_search_browserbase, fetch_user_tweets_browserbase
+    from backend.exceptions import CaptchaError, RateLimitError
 
     results = {}
 
@@ -171,83 +176,96 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
                 notify(f"❌ [Browserbase] Error searching [{q}]: {e}")
 
         if username:
-            scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
+            scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
         return results
 
     # Try local scraping first (cost-effective)
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=(not see_browser))
-        browser, ctx = await get_home(browser=browser, username=username)
+        browser = None
+        ctx = None
+        try:
+            browser = await p.chromium.launch(headless=(not see_browser))
+            browser, ctx = await get_home(browser=browser, username=username)
 
-        # user timelines
-        for u in usernames:
-            try:
-                # Update status
-                if username:
-                    scraping_status[username] = {"type": "account", "value": u, "phase": "scraping"}
-                    notify(f"📍 Status updated: Scraping from @{u}")
-
-                tweets = await fetch_user_tweets(ctx, u, username=username, write_callback=write_callback)
-                # Add source metadata to each tweet
-                for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {"type": "account", "value": u}
-                results.update(tweets)
-            except (RateLimitError, CaptchaError) as e:
-                # Bot detection! Fall back to Browserbase
-                notify(f"🤖 Bot detection for @{u}: {e}")
-                notify(f"🔄 Falling back to Browserbase for @{u}...")
-
+            # user timelines
+            for u in usernames:
                 try:
-                    tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback)
+                    # Update status
+                    if username:
+                        scraping_status[username] = {"type": "account", "value": u, "phase": "scraping"}
+                        notify(f"📍 Status updated: Scraping from @{u}")
+
+                    tweets = await fetch_user_tweets(ctx, u, username=username, write_callback=write_callback)
+                    # Add source metadata to each tweet
                     for tweet_data in tweets.values():
                         tweet_data["scraped_from"] = {"type": "account", "value": u}
                     results.update(tweets)
-                    notify(f"✅ Successfully scraped @{u} via Browserbase fallback")
-                except Exception as fallback_error:
-                    notify(f"❌ Browserbase fallback also failed for @{u}: {fallback_error}")
-            except Exception as e:
-                notify(f"⚠️ error fetching @{u}: {e}")
+                except (RateLimitError, CaptchaError) as e:
+                    # Bot detection! Fall back to Browserbase
+                    notify(f"🤖 Bot detection for @{u}: {e}")
+                    notify(f"🔄 Falling back to Browserbase for @{u}...")
 
-        # topic searches
-        for q in queries:
-            try:
-                # Update status
-                if username:
-                    scraping_status[username] = {"type": "query", "value": q, "phase": "scraping"}
-                    notify(f"📍 Status updated: Scraping query [{q}]")
+                    try:
+                        tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback)
+                        for tweet_data in tweets.values():
+                            tweet_data["scraped_from"] = {"type": "account", "value": u}
+                        results.update(tweets)
+                        notify(f"✅ Successfully scraped @{u} via Browserbase fallback")
+                    except Exception as fallback_error:
+                        notify(f"❌ Browserbase fallback also failed for @{u}: {fallback_error}")
+                except Exception as e:
+                    notify(f"⚠️ error fetching @{u}: {e}")
 
-                tweets = await fetch_search(ctx, q, username=username, write_callback=write_callback)
-                # Add source metadata to each tweet
-                for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {"type": "query", "value": q}
-                results.update(tweets)
-            except (RateLimitError, CaptchaError) as e:
-                # Bot detection! Fall back to Browserbase
-                notify(f"🤖 Bot detection for query [{q}]: {e}")
-                notify(f"🔄 Falling back to Browserbase for query [{q}]...")
-
+            # topic searches
+            for q in queries:
                 try:
-                    tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
+                    # Update status
+                    if username:
+                        scraping_status[username] = {"type": "query", "value": q, "phase": "scraping"}
+                        notify(f"📍 Status updated: Scraping query [{q}]")
+
+                    tweets = await fetch_search(ctx, q, username=username, write_callback=write_callback)
+                    # Add source metadata to each tweet
                     for tweet_data in tweets.values():
                         tweet_data["scraped_from"] = {"type": "query", "value": q}
                     results.update(tweets)
-                    notify(f"✅ Successfully scraped query [{q}] via Browserbase fallback")
-                except Exception as fallback_error:
-                    notify(f"❌ Browserbase fallback also failed for query [{q}]: {fallback_error}")
-            except Exception as e:
-                notify(f"⚠️ error searching [{q}]: {e}")
+                except (RateLimitError, CaptchaError) as e:
+                    # Bot detection! Fall back to Browserbase
+                    notify(f"🤖 Bot detection for query [{q}]: {e}")
+                    notify(f"🔄 Falling back to Browserbase for query [{q}]...")
 
-        # Mark as complete
-        if username:
-            scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
+                    try:
+                        tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
+                        for tweet_data in tweets.values():
+                            tweet_data["scraped_from"] = {"type": "query", "value": q}
+                        results.update(tweets)
+                        notify(f"✅ Successfully scraped query [{q}] via Browserbase fallback")
+                    except Exception as fallback_error:
+                        notify(f"❌ Browserbase fallback also failed for query [{q}]: {fallback_error}")
+                except Exception as e:
+                    notify(f"⚠️ error searching [{q}]: {e}")
 
-        await ctx.close()
-        await browser.close()
-        return results
+            # Mark as complete
+            if username:
+                scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
+
+            return results
+        finally:
+            # Always cleanup browser resources, even if exceptions occur
+            if ctx:
+                try:
+                    await ctx.close()
+                except Exception as e:
+                    notify(f"⚠️ Error closing browser context: {e}")
+            if browser:
+                try:
+                    await browser.close()
+                except Exception as e:
+                    notify(f"⚠️ Error closing browser: {e}")
 
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
-    from backend.tweets_cache import cleanup_old_tweets, write_to_cache
+    from backend.tweets_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
     from backend.user import read_user_settings
 
     user_settings = read_user_settings(username)
@@ -264,6 +282,11 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
         queries = user_settings.get("queries", [])
     if max_tweets is None:
         max_tweets = user_settings.get("max_tweets_retrieve", MAX_TWEETS_RETRIEVE)
+
+    # Purge unedited tweets before retrieving new ones
+    purged_count = await purge_unedited_tweets(username)
+    if purged_count > 0:
+        notify(f"🗑️ Purged {purged_count} unedited tweets before scraping")
 
     # Clean up old tweets before retrieving new ones (48 hour threshold)
     await cleanup_old_tweets(username, hours=48)
@@ -330,7 +353,15 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
         # Log the scraping action
         log_scrape_action(username, len(tweets))
 
-        return {"message": "Tweets scraped and cached successfully", "count": len(tweets), "tweets": tweets, "scraping_duration_seconds": scraping_duration}
+        # Auto-generate replies for newly scraped tweets
+        notify(f"💬 [Manual scrape] Generating replies for {username}...")
+        # Set status to generating before calling generate_replies
+        from backend.generate_replies import generate_replies
+        result = await generate_replies(username=username, overwrite=False)
+        reply_count = sum(1 for t in result if t.get('generated_replies'))
+        notify(f"✅ [Manual scrape] Generated {reply_count} replies for {username}")
+
+        return {"message": "Tweets scraped and cached successfully", "count": len(tweets), "tweets": tweets, "scraping_duration_seconds": scraping_duration, "replies_generated": reply_count}
     except Exception as e:
         print(str(e))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error scraping tweets: {str(e)}") from e

@@ -47,6 +47,7 @@ def get_all_users() -> list[str]:
 def get_user_info(access_token: str) -> dict[str, Any]:
     """Fetch the authenticated user's metadata and persist it locally."""
     import requests
+
     from backend.utils import read_user_info
 
     url = "https://api.twitter.com/2/users/me"
@@ -164,7 +165,12 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     }
 
 
-def write_user_settings(handle: str, queries: list[str] | None = None, relevant_accounts: dict[str, bool] | None = None, max_tweets_retrieve: int | None = None, number_of_generations: int | None = None, models: list[str] | None = None) -> None:
+def write_user_settings(handle: str,
+                        queries: list[str] | None = None,
+                        relevant_accounts: dict[str, bool] | None = None,
+                        max_tweets_retrieve: int | None = None,
+                        number_of_generations: int | None = None,
+                        models: list[str] | None = None) -> None:
     """Update scraping settings for a user in user_info.json."""
     from backend.utils import read_user_info, write_user_info
 
@@ -187,14 +193,14 @@ def write_user_settings(handle: str, queries: list[str] | None = None, relevant_
         # Validate range 1-5
         if not 1 <= number_of_generations <= 5:
             from backend.utils import error
-            error(f"Invalid number_of_generations: must be between 1 and 5", status_code=400, function_name="write_user_settings", username=handle)
+            error("Invalid number_of_generations: must be between 1 and 5", status_code=400, function_name="write_user_settings", username=handle)
             raise ValueError("number_of_generations must be between 1 and 5")
         user_info["number_of_generations"] = number_of_generations
     if models is not None:
         # Validate models list is not empty
         if not models or not isinstance(models, list):
             from backend.utils import error
-            error(f"Invalid models: must be a non-empty list of strings", status_code=400, function_name="write_user_settings", username=handle)
+            error("Invalid models: must be a non-empty list of strings", status_code=400, function_name="write_user_settings", username=handle)
             raise ValueError("models must be a non-empty list of strings")
         user_info["models"] = models
 
@@ -222,7 +228,8 @@ class UpdateSettingsRequest(BaseModel):
 @router.get("/{handle}/info")
 async def get_user_info_endpoint(handle: str) -> dict:
     """Get user information."""
-    from backend.utils import error, read_user_info as get_cached_user_info
+    from backend.utils import error
+    from backend.utils import read_user_info as get_cached_user_info
 
     user_info = get_cached_user_info(handle)
     if not user_info:
@@ -252,14 +259,11 @@ async def update_user_email_endpoint(handle: str, payload: UpdateEmailRequest) -
 
         notify(f"✅ Updated email for @{handle}")
 
-        return {
-            "message": "Email updated successfully",
-            "email": payload.email
-        }
+        return {"message": "Email updated successfully", "email": payload.email}
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error updating email", status_code=500, exception_text=str(e), function_name="update_user_email_endpoint", username=handle)
+        error("Error updating email", status_code=500, exception_text=str(e), function_name="update_user_email_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error updating email: {str(e)}") from e
 
 
@@ -293,7 +297,12 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
         notify(f"🔍 Settings update: old_num_generations={old_num_generations}, new_num_generations={new_num_generations}, payload.number_of_generations={payload.number_of_generations}")
 
         # Update the settings (models parameter removed - use dedicated endpoint)
-        write_user_settings(handle=handle, queries=payload.queries, relevant_accounts=payload.relevant_accounts, max_tweets_retrieve=payload.max_tweets_retrieve, number_of_generations=payload.number_of_generations, models=None)
+        write_user_settings(handle=handle,
+                            queries=payload.queries,
+                            relevant_accounts=payload.relevant_accounts,
+                            max_tweets_retrieve=payload.max_tweets_retrieve,
+                            number_of_generations=payload.number_of_generations,
+                            models=None)
 
         # Handle changes in number_of_generations
         generation_happened = False
@@ -330,11 +339,7 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
 
                     # Initialize scraping status before starting generation
                     from backend.generate_replies import scraping_status
-                    scraping_status[handle] = {
-                        "type": "generating",
-                        "value": f"0/{tweets_to_update}",
-                        "phase": "generating"
-                    }
+                    scraping_status[handle] = {"type": "generating", "value": f"0/{tweets_to_update}", "phase": "generating"}
 
                     updated_count = 0
                     for idx, tweet in enumerate(tweets):
@@ -349,22 +354,13 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
 
                         # Update scraping status for frontend polling
                         from backend.generate_replies import scraping_status
-                        scraping_status[handle] = {
-                            "type": "generating",
-                            "value": f"{updated_count + 1}/{tweets_to_update}",
-                            "phase": "generating"
-                        }
+                        scraping_status[handle] = {"type": "generating", "value": f"{updated_count + 1}/{tweets_to_update}", "phase": "generating"}
 
                         tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
                         notify(f"🔄 Generating {needed_replies} additional replies for tweet {tweet_id} (currently has {current_reply_count})")
 
                         # Generate additional replies using the reusable function
-                        new_replies = generate_replies_for_tweet(
-                            tweet=tweet,
-                            models=models,
-                            needed_generations=needed_replies,
-                            delay_seconds=1
-                        )
+                        new_replies = await generate_replies_for_tweet(tweet=tweet, models=models, needed_generations=needed_replies, delay_seconds=1)
 
                         # Append new replies to existing ones (new_replies is array of tuples)
                         if new_replies:
@@ -378,8 +374,20 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
                     await write_to_cache(tweets, f"Updated replies (increased to {new_num_generations})", username=handle)
 
                     # Mark generation as complete
+                    import asyncio
+
                     from backend.generate_replies import scraping_status
                     scraping_status[handle] = {"type": "complete", "value": "", "phase": "complete"}
+
+                    # Reset to idle after 5 seconds
+                    async def reset_to_idle():
+                        await asyncio.sleep(5)
+                        if handle in scraping_status and scraping_status[handle]["type"] == "complete":
+                            scraping_status[handle] = {"type": "idle", "value": "", "phase": "idle"}
+                            notify(f"🔄 Status reset to idle for {handle}")
+
+                    # Start the reset task in the background
+                    asyncio.create_task(reset_to_idle())
 
                 elif new_num_generations < old_num_generations:
                     # Note: We don't actually delete replies when count is reduced
@@ -388,14 +396,10 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
                     notify(f"✂️ Settings reduced replies (from {old_num_generations} to {new_num_generations}) - existing replies preserved")
                     generation_happened = False  # No actual generation needed
 
-        return {
-            "message": "Settings updated successfully",
-            "settings": read_user_settings(handle),
-            "generation_happened": generation_happened
-        }
+        return {"message": "Settings updated successfully", "settings": read_user_settings(handle), "generation_happened": generation_happened}
     except Exception as e:
         from backend.utils import error
-        error(f"Error updating settings", status_code=500, exception_text=str(e), function_name="update_settings_endpoint", username=handle)
+        error("Error updating settings", status_code=500, exception_text=str(e), function_name="update_settings_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error updating settings: {str(e)}") from e
 
 
@@ -425,7 +429,7 @@ async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> di
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error adding account", status_code=500, exception_text=str(e), function_name="add_account_endpoint", username=handle, critical=True)
+        error("Error adding account", status_code=500, exception_text=str(e), function_name="add_account_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail=f"Error adding account: {str(e)}") from e
 
 
@@ -456,7 +460,7 @@ async def update_account_validation_endpoint(handle: str, account: str, validate
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error updating account validation", status_code=500, exception_text=str(e), function_name="update_account_validation_endpoint", username=handle)
+        error("Error updating account validation", status_code=500, exception_text=str(e), function_name="update_account_validation_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error updating account validation: {str(e)}") from e
 
 
@@ -483,7 +487,7 @@ async def remove_account_endpoint(handle: str, account: str) -> dict:
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error removing account", status_code=500, exception_text=str(e), function_name="remove_account_endpoint", username=handle, critical=True)
+        error("Error removing account", status_code=500, exception_text=str(e), function_name="remove_account_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail=f"Error removing account: {str(e)}") from e
 
 
@@ -515,7 +519,7 @@ async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dic
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error removing query", status_code=500, exception_text=str(e), function_name="remove_query_endpoint", username=handle, critical=True)
+        error("Error removing query", status_code=500, exception_text=str(e), function_name="remove_query_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail=f"Error removing query: {str(e)}") from e
 
 
@@ -546,14 +550,11 @@ async def update_models_endpoint(handle: str, payload: UpdateModelsRequest) -> d
 
         notify(f"✅ Updated models for @{handle}: {payload.models}")
 
-        return {
-            "message": "Models updated successfully",
-            "models": payload.models
-        }
+        return {"message": "Models updated successfully", "models": payload.models}
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error updating models", status_code=500, exception_text=str(e), function_name="update_models_endpoint", username=handle, critical=True)
+        error("Error updating models", status_code=500, exception_text=str(e), function_name="update_models_endpoint", username=handle, critical=True)
         raise HTTPException(status_code=500, detail="Error updating models: " + str(e)) from e
 
 
@@ -570,13 +571,11 @@ async def get_models_endpoint(handle: str) -> dict:
 
         models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
 
-        return {
-            "models": models
-        }
+        return {"models": models}
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Error getting models", status_code=500, exception_text=str(e), function_name="get_models_endpoint", username=handle)
+        error("Error getting models", status_code=500, exception_text=str(e), function_name="get_models_endpoint", username=handle)
         raise HTTPException(status_code=500, detail="Error getting models: " + str(e)) from e
 
 
@@ -598,7 +597,7 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
         access_token = await ensure_access_token(username)
 
         if not access_token:
-            error(f"User not authenticated", status_code=403, function_name="validate_twitter_handle", username=username)
+            error("User not authenticated", status_code=403, function_name="validate_twitter_handle", username=username)
             raise HTTPException(status_code=403, detail="User not authenticated")
 
         # Check if user exists with retry logic for rate limiting

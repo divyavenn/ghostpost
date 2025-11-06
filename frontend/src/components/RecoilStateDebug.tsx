@@ -24,9 +24,8 @@ import {
   isSettingsOpenState,
   showFirstTimeModalState,
   activeTabState,
-  isLoadingState,
   loadingPhaseState,
-  scrapingStatusTextState,
+  loadingStatusDataState,
 } from '../atoms';
 
 export function RecoilStateDebug() {
@@ -43,9 +42,11 @@ export function RecoilStateDebug() {
   const isSettingsOpen = useRecoilValue(isSettingsOpenState);
   const showFirstTimeModal = useRecoilValue(showFirstTimeModalState);
   const activeTab = useRecoilValue(activeTabState);
-  const isLoading = useRecoilValue(isLoadingState);
   const loadingPhase = useRecoilValue(loadingPhaseState);
-  const scrapingStatusText = useRecoilValue(scrapingStatusTextState);
+  const loadingStatusData = useRecoilValue(loadingStatusDataState);
+
+  // Derived state: isLoading can be determined from loadingPhase
+  const isLoading = loadingPhase !== null;
 
   return (
     <div className="fixed bottom-4 right-4 bg-slate-900 border border-slate-700 rounded-lg p-4 max-w-md max-h-96 overflow-y-auto text-xs font-mono shadow-2xl z-50">
@@ -146,8 +147,15 @@ export function RecoilStateDebug() {
               {loadingPhase || <span className="text-slate-500">null</span>}
             </div>
             <div className="text-slate-300">
-              <span className="text-slate-500">statusText:</span>{' '}
-              <span className="text-slate-400 italic">{scrapingStatusText}</span>
+              <span className="text-slate-500">statusData:</span>{' '}
+              {loadingStatusData ? (
+                <span className="text-slate-400 italic">
+                  {loadingStatusData.type}
+                  {loadingStatusData.value && ` - ${loadingStatusData.value}`}
+                </span>
+              ) : (
+                <span className="text-slate-500">null</span>
+              )}
             </div>
           </div>
         </div>

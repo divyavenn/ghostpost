@@ -44,6 +44,7 @@ async def scrape_tweets_for_training(handle: str,
         Path to the output .jsonl file
     """
     import time
+
     from utils import read_user_info, write_user_info
 
     start_time = time.time()

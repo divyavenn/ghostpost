@@ -5,7 +5,7 @@ import requests
 from dotenv import load_dotenv
 
 from .read_tweets import USERNAME
-from .utils import notify, error, read_user_info
+from .utils import error, notify, read_user_info
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -28,7 +28,7 @@ except ImportError:
     from read_tweets import scraping_status
 
 
-def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False, username: str = "unknown") -> dict:
+async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False, username: str = "unknown") -> dict:
     """
     Generate a reply using the VLM.
     
@@ -95,7 +95,6 @@ def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1",
 def build_prompt(tweet):
     tweet_id = tweet['id'] if 'id' in tweet else (tweet['tweet_id'] if 'tweet_id' in tweet else None)
 
-
     thread = tweet['thread'] if 'thread' in tweet else []
     if not thread:
         notify(f"⚠️ Tweet {tweet_id} has no thread content, skipping")
@@ -110,7 +109,7 @@ def build_prompt(tweet):
     has_quoted_tweet = bool(quoted_tweet and ('text' in quoted_tweet and quoted_tweet['text']))
 
     if has_quoted_tweet:
-         # Add quoted tweet context first
+        # Add quoted tweet context first
         qt_author = quoted_tweet['author_handle'] if 'author_handle' in quoted_tweet else 'unknown'
         qt_name = quoted_tweet['author_name'] if 'author_name' in quoted_tweet else qt_author
         qt_text = quoted_tweet['text'] if 'text' in quoted_tweet else ''
@@ -118,7 +117,7 @@ def build_prompt(tweet):
         text_prompt += f"[QUOTED TWEET by @{qt_author} ({qt_name})]\n"
         text_prompt += f"{qt_text}\n"
 
-            # Add QT images first
+        # Add QT images first
         qt_media = quoted_tweet['media'] if 'media' in quoted_tweet else []
         qt_images = [item['url'] for item in qt_media if 'type' in item and item['type'] == 'photo']
         if qt_images:
@@ -147,11 +146,11 @@ def build_prompt(tweet):
     alt_texts = [item['alt_text'] for item in all_media if 'alt_text' in item and item['alt_text']]
     if alt_texts:
         text_prompt += f"\n\n[Image descriptions: {'; '.join(alt_texts)}]"
-        
-    return text_prompt, image_urls, has_quoted_tweet, tweet_id
-    
 
-def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=1, batch=False, username="unknown"):
+    return text_prompt, image_urls, has_quoted_tweet, tweet_id
+
+
+async def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=1, batch=False, username="unknown"):
     import random
     import time
 
@@ -181,7 +180,7 @@ def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=
                 notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model}...")
 
             # Pass has_quoted_tweet flag to enable appropriate system prompt
-            response = ask_model(prompt=text_prompt, model=selected_model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet, username=username)
+            response = await ask_model(prompt=text_prompt, model=selected_model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet, username=username)
 
             reply = response.get('message', '')
             if reply:
@@ -189,23 +188,27 @@ def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=
                 notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
             else:
                 error_msg = response.get('error', 'Unknown error')
-                error(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}: {error_msg}", status_code=500, function_name="generate_replies_for_tweet", username=username, critical=(not batch))
+                error(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}: {error_msg}",
+                      status_code=500,
+                      function_name="generate_replies_for_tweet",
+                      username=username,
+                      critical=(not batch))
 
             # Delay between generations to avoid rate limiting
             if gen_idx < needed_generations - 1:
-                time.sleep(delay_seconds)
+                 await asyncio.sleep(delay_seconds)
 
     return replies
 
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
-    import time
-
     from backend.tweets_cache import read_from_cache, write_to_cache
 
     # Check if API key is configured
     if not OBELISK_KEY:
         error("❌ OBELISK_KEY environment variable is not set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
+
+    scraping_status[username] = {"type": "generating", "value": "Starting...", "phase": "generating"}
 
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
@@ -227,8 +230,8 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     for idx, tweet in enumerate(tweets, 1):
         needed_generations = number_of_generations - len(tweet.get('generated_replies', []))
         if overwrite:
-                needed_generations = number_of_generations
-                
+            needed_generations = number_of_generations
+
         if needed_generations <= 0:
             skipped += 1
             continue
@@ -245,8 +248,8 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
             processed_count = count + skipped + errors + 1
             if username:
                 scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{total_to_process}", "phase": "generating"}
-                
-            replies = generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds, batch = True, username=username)
+
+            replies = await generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds, batch=True, username=username)
 
             # Store all replies as array of tuples (reply_text, model_name)
             if replies:
@@ -269,18 +272,28 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
                 notify(f"⚠️ No replies generated for tweet {tweet_id}")
                 errors += 1
 
-            time.sleep(delay_seconds)
+            await asyncio.sleep(delay_seconds)
 
         except Exception as e:
             tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
-            error(f"❌ Exception generating replies for tweet {tweet_id}: {e}",status_code=500, exception_text=str(e), function_name="generate_replies", username=username, critical=False)
+            error(f"❌ Exception generating replies for tweet {tweet_id}: {e}", status_code=500, exception_text=str(e), function_name="generate_replies", username=username, critical=False)
             errors += 1
 
     if errors > 0:
-        error(f"{errors} errors batch-generating replies for tweets",status_code=500, function_name="generate_replies", username=username, critical=True)
+        error(f"{errors} errors batch-generating replies for tweets", status_code=500, function_name="generate_replies", username=username, critical=True)
     # Mark generation as complete
     if username:
         scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
+
+        # Reset to idle after 5 seconds
+        async def reset_to_idle():
+            await asyncio.sleep(5)
+            if username in scraping_status and scraping_status[username]["type"] == "complete":
+                scraping_status[username] = {"type": "idle", "value": "", "phase": "idle"}
+                notify(f"🔄 Status reset to idle for {username}")
+
+        # Start the reset task in the background
+        asyncio.create_task(reset_to_idle())
 
     notify(f"✅ Done! Generated: {count}, Skipped: {skipped}, Errors: {errors}")
 
@@ -296,7 +309,7 @@ async def run_all() -> None:
 
 
 # API Router
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/generate", tags=["generate"])
@@ -309,6 +322,7 @@ class GenerateRepliesRequest(BaseModel):
 
 @router.post("/{username}/replies")
 async def generate_replies_endpoint(username: str, payload: GenerateRepliesRequest | None = None) -> dict:
+    from read_tweets import scraping_status
     """Generate AI replies for tweets in the cache."""
     try:
         # Set status to generating immediately when endpoint is called
@@ -324,7 +338,7 @@ async def generate_replies_endpoint(username: str, payload: GenerateRepliesReque
 
         return {"message": "Replies generated successfully", "total_tweets": len(tweets), "replies_generated": reply_count}
     except Exception as e:
-        error(f"Error generating replies", status_code=500, exception_text=str(e), function_name="generate_replies_endpoint", username=username)
+        error("Error generating replies", status_code=500, exception_text=str(e), function_name="generate_replies_endpoint", username=username)
 
 
 @router.post("/{username}/replies/{tweet_id}")
@@ -356,7 +370,7 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
         error("Tweet not found in cache", status_code=404, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Generate replies using the reusable function
-    replies = generate_replies_for_tweet(
+    replies = await generate_replies_for_tweet(
         tweet=tweet,
         models=models,
         needed_generations=number_of_generations,

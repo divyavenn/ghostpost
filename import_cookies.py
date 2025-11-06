@@ -15,7 +15,9 @@ import sys
 import requests
 
 
-def import_cookies(cookies_file: str, username: str, backend_url: str = "http://localhost:8000"):
+def import_cookies(cookies_file: str,
+                   username: str,
+                   backend_url: str = "http://localhost:8000"):
     """Import cookies from JSON file to backend."""
 
     # Read cookies from file
@@ -36,8 +38,8 @@ def import_cookies(cookies_file: str, username: str, backend_url: str = "http://
 
     # Filter for x.com/twitter.com cookies only
     twitter_cookies = [
-        c for c in cookies
-        if '.x.com' in c.get('domain', '') or '.twitter.com' in c.get('domain', '')
+        c for c in cookies if '.x.com' in c.get('domain', '')
+        or '.twitter.com' in c.get('domain', '')
     ]
 
     if not twitter_cookies:
@@ -64,8 +66,7 @@ def import_cookies(cookies_file: str, username: str, backend_url: str = "http://
                 "username": username,
                 "cookies": twitter_cookies
             },
-            timeout=10
-        )
+            timeout=10)
         response.raise_for_status()
 
         result = response.json()
@@ -87,7 +88,9 @@ def import_cookies(cookies_file: str, username: str, backend_url: str = "http://
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Usage: python import_cookies.py <cookies_file.json> <twitter_handle>")
+        print(
+            "Usage: python import_cookies.py <cookies_file.json> <twitter_handle>"
+        )
         print()
         print("Example:")
         print("  python import_cookies.py cookies.json divya_venn")

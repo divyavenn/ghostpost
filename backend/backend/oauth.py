@@ -11,20 +11,27 @@ from urllib.parse import parse_qs, urlencode, urlparse
 
 import dotenv
 
-from backend.user import get_user_info
-from backend.utils import error, notify
 from backend.config import (
     BACKEND_URL,
     SHOW_BROWSER,
+)
+from backend.config import (
     TWITTER_API_BASE_URL as BASE_URL,
+)
+from backend.config import (
     TWITTER_CLIENT_ID as client_id,
+)
+from backend.config import (
     TWITTER_CLIENT_SECRET as client_secret,
 )
+from backend.user import get_user_info
+from backend.utils import error, notify
 
 # Load .env from backend/ directory (one level up from backend/backend/)
 dotenv.load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 redirect_uri = BACKEND_URL + "/auth/callback"
+
 
 # Check if we should use headless browser for SCRAPING (not OAuth)
 def is_headless_mode_for_scraping() -> bool:
@@ -115,9 +122,9 @@ def refresh_access_token(refresh_token: str) -> dict[str, Any]:
         response = requests.post(url, data=data, headers=headers)
         response.raise_for_status()
         return response.json()
-    except requests.exceptions.HTTPError as e:
+    except requests.exceptions.HTTPError:
         from backend.utils import error
-        error(f"Failed to refresh access token", status_code=401, exception_text=response.text, function_name="refresh_access_token", critical=True)
+        error("Failed to refresh access token", status_code=401, exception_text=response.text, function_name="refresh_access_token", critical=True)
 
 
 def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTPServer, threading.Event]:
@@ -134,7 +141,6 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTP
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or 80
     path = parsed.path or "/"
-
 
     authorization_event = threading.Event()
 
@@ -210,8 +216,7 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
                 args=[
                     '--no-sandbox',  # Required for Docker
                     '--disable-dev-shm-usage',  # Overcome limited resource problems
-                ]
-            )
+                ])
             context = await browser.new_context()
             page = await context.new_page()
             await page.goto(auth_url)
@@ -287,7 +292,7 @@ def main() -> None:
         if handle:
             notify(f"Authenticated as @{handle}")
     except Exception as exc:  # pragma: no cover - network required
-        error(f"Warning: could not fetch user info", exception_text=str(exc), status_code=500, function_name="oauth_dance", username=username)
+        error("Warning: could not fetch user info", exception_text=str(exc), status_code=500, function_name="oauth_dance", username=username)
 
 
 if __name__ == "__main__":

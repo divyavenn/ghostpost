@@ -2,9 +2,9 @@
 Reconstruct divya_venn_posted_tweets.json from logs and fetch original tweet data from Twitter API.
 """
 import json
-import os
 import sys
 from pathlib import Path
+
 import requests
 
 # Paths
@@ -13,6 +13,7 @@ LOG_FILE = CACHE_DIR / "divya_venn_log.jsonl"
 TWEETS_CACHE = CACHE_DIR / "divya_venn_tweets.json"
 OUTPUT_FILE = CACHE_DIR / "divya_venn_posted_tweets.json"
 TOKEN_FILE = CACHE_DIR / "tokens.json"
+
 
 def get_access_token():
     """Get access token for divya_venn from tokens.json"""
@@ -40,16 +41,9 @@ def fetch_tweets_from_twitter(access_token, tweet_ids):
     url = "https://api.twitter.com/2/tweets"
 
     # Build query params (max 100 tweets at once)
-    params = {
-        "ids": ",".join(tweet_ids[:100]),
-        "tweet.fields": "created_at,public_metrics,author_id",
-        "expansions": "author_id",
-        "user.fields": "username"
-    }
+    params = {"ids": ",".join(tweet_ids[:100]), "tweet.fields": "created_at,public_metrics,author_id", "expansions": "author_id", "user.fields": "username"}
 
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     print(f"🌐 Fetching {len(tweet_ids)} tweets from Twitter API...")
 
@@ -157,11 +151,7 @@ def main():
         if not original_tweet.get("handle") and original_tweet_id:
             twitter_data = original_tweets_map.get(original_tweet_id, {})
             if twitter_data:
-                original_tweet = {
-                    "thread": [twitter_data.get("text", "")],
-                    "handle": twitter_data.get("handle", ""),
-                    "url": twitter_data.get("url", "")
-                }
+                original_tweet = {"thread": [twitter_data.get("text", "")], "handle": twitter_data.get("handle", ""), "url": twitter_data.get("url", "")}
 
         # Build posted tweet object
         posted_tweet = {
@@ -175,8 +165,9 @@ def main():
             "url": f"https://x.com/divya_venn/status/{posted_tweet_id}",
             "response_to_thread": original_tweet.get("thread", []),
             "responding_to": original_tweet.get("handle", ""),
+            "replying_to_pfp": original_tweet.get("author_profile_pic_url", ""),
             "original_tweet_url": original_tweet.get("url", ""),
-            "last_metrics_update": None
+            "last_metrics_update": timestamp
         }
 
         posted_tweets.append(posted_tweet)
@@ -191,11 +182,12 @@ def main():
         json.dump(posted_tweets, f, indent=2, ensure_ascii=False)
 
     print(f"✅ Created {OUTPUT_FILE} with {len(posted_tweets)} tweets")
-    print(f"\n📊 Summary:")
+    print("\n📊 Summary:")
     print(f"  - Total posted tweets: {len(posted_tweets)}")
     print(f"  - With responding_to: {sum(1 for t in posted_tweets if t['responding_to'])}")
     print(f"  - Oldest: {posted_tweets[-1]['created_at'] if posted_tweets else 'N/A'}")
     print(f"  - Newest: {posted_tweets[0]['created_at'] if posted_tweets else 'N/A'}")
+
 
 if __name__ == "__main__":
     main()

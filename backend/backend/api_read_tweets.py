@@ -3,7 +3,8 @@ from functools import lru_cache
 
 import requests
 
-from backend.config import TWITTER_API_V2_BASE as BASE, TWITTER_BEARER_TOKEN as BEARER
+from backend.config import TWITTER_API_V2_BASE as BASE
+from backend.config import TWITTER_BEARER_TOKEN as BEARER
 from backend.utils import notify
 
 

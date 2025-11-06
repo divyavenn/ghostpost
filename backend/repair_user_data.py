@@ -122,7 +122,7 @@ def repair_user_entry(entry: dict[str, Any], index: int) -> dict[str, Any] | Non
         print(f"\nCurrent data: {json.dumps(entry, indent=2)}")
 
         # Ask if user wants to repair this entry
-        should_repair = input(f"\nRepair this user? (y/n/skip): ").strip().lower()
+        should_repair = input("\nRepair this user? (y/n/skip): ").strip().lower()
 
         if should_repair == 'skip' or should_repair == 's':
             print(f"⏭️  Skipping user '{handle}'")
@@ -167,7 +167,7 @@ def repair_user_entry(entry: dict[str, Any], index: int) -> dict[str, Any] | Non
             print(f"\n✅ User '{handle}' successfully repaired and validated!")
             return repaired_entry
         except ValidationError as e:
-            print(f"\n❌ Repaired entry still has errors:")
+            print("\n❌ Repaired entry still has errors:")
             for error in e.errors():
                 field = error['loc'][0] if error['loc'] else 'unknown'
                 print(f"  - {field}: {error['msg']}")

@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.oauth import ensure_access_token
-from backend.posted_tweets_cache import read_posted_tweets_cache, update_tweet_metrics, write_posted_tweets_cache
+from backend.posted_tweets_cache import read_posted_tweets_cache, update_tweet_metrics
 from backend.utils import notify
 
 router = APIRouter(prefix="/performance", tags=["performance"])
@@ -39,9 +39,7 @@ async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[st
         "tweet.fields": "public_metrics"
     }
 
-    headers = {
-        "Authorization": f"Bearer {access_token}"
-    }
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     try:
         response = requests.get(url, headers=headers, params=params, timeout=30)
@@ -66,13 +64,11 @@ async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[st
                 public_metrics = tweet.get("public_metrics", {})
 
                 if tweet_id:
-                    metrics_map[tweet_id] = TweetMetrics(
-                        id=tweet_id,
-                        likes=public_metrics.get("like_count", 0),
-                        retweets=public_metrics.get("retweet_count", 0),
-                        quotes=public_metrics.get("quote_count", 0),
-                        replies=public_metrics.get("reply_count", 0)
-                    )
+                    metrics_map[tweet_id] = TweetMetrics(id=tweet_id,
+                                                         likes=public_metrics.get("like_count", 0),
+                                                         retweets=public_metrics.get("retweet_count", 0),
+                                                         quotes=public_metrics.get("quote_count", 0),
+                                                         replies=public_metrics.get("reply_count", 0))
 
         return metrics_map
 
@@ -93,11 +89,7 @@ async def check_tweet_performance(username: str, payload: CheckPerformanceReques
         Updated metrics and count
     """
     if not payload.tweet_ids:
-        return {
-            "message": "No tweet IDs provided",
-            "updated_count": 0,
-            "metrics": []
-        }
+        return {"message": "No tweet IDs provided", "updated_count": 0, "metrics": []}
 
     # Get user's access token
     access_token = await ensure_access_token(username)
@@ -114,32 +106,15 @@ async def check_tweet_performance(username: str, payload: CheckPerformanceReques
     updated_metrics = []
 
     for tweet_id, metrics in metrics_map.items():
-        updated_tweet = update_tweet_metrics(
-            username=username,
-            posted_tweet_id=tweet_id,
-            likes=metrics.likes,
-            retweets=metrics.retweets,
-            quotes=metrics.quotes,
-            replies=metrics.replies
-        )
+        updated_tweet = update_tweet_metrics(username=username, posted_tweet_id=tweet_id, likes=metrics.likes, retweets=metrics.retweets, quotes=metrics.quotes, replies=metrics.replies)
 
         if updated_tweet:
             updated_count += 1
-            updated_metrics.append({
-                "id": tweet_id,
-                "likes": metrics.likes,
-                "retweets": metrics.retweets,
-                "quotes": metrics.quotes,
-                "replies": metrics.replies
-            })
+            updated_metrics.append({"id": tweet_id, "likes": metrics.likes, "retweets": metrics.retweets, "quotes": metrics.quotes, "replies": metrics.replies})
 
     notify(f"✅ Updated metrics for {updated_count}/{len(payload.tweet_ids)} tweets")
 
-    return {
-        "message": f"Updated metrics for {updated_count} tweets",
-        "updated_count": updated_count,
-        "metrics": updated_metrics
-    }
+    return {"message": f"Updated metrics for {updated_count} tweets", "updated_count": updated_count, "metrics": updated_metrics}
 
 
 @router.get("/{username}/posted-tweets")
@@ -162,11 +137,4 @@ async def get_posted_tweets_with_metrics(username: str, limit: int = 50, offset:
     total_count = len(tweets)
     paginated_tweets = tweets[offset:offset + limit]
 
-    return {
-        "username": username,
-        "total": total_count,
-        "count": len(paginated_tweets),
-        "limit": limit,
-        "offset": offset,
-        "tweets": paginated_tweets
-    }
+    return {"username": username, "total": total_count, "count": len(paginated_tweets), "limit": limit, "offset": offset, "tweets": paginated_tweets}

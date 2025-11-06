@@ -35,7 +35,7 @@ async def start_browser_session(request: BrowserSessionRequest):
         session_info = await create_browser_session(request.username)
         return session_info
     except Exception as e:
-        error(f"Failed to start browser session", status_code=500, exception_text=str(e), function_name="start_browser_session", username=request.username)
+        error("Failed to start browser session", status_code=500, exception_text=str(e), function_name="start_browser_session", username=request.username)
         raise HTTPException(status_code=500, detail=f"Failed to start browser session: {str(e)}")
 
 
@@ -49,7 +49,7 @@ async def check_session_status(session_id: str):
         status = await get_session_status(session_id)
         return status
     except Exception as e:
-        error(f"Failed to check session status", status_code=500, exception_text=str(e), function_name="check_session_status")
+        error("Failed to check session status", status_code=500, exception_text=str(e), function_name="check_session_status")
         raise HTTPException(status_code=500, detail=f"Failed to check session status: {str(e)}")
 
 
@@ -62,10 +62,10 @@ async def save_browser_session(request: SaveSessionRequest):
         result = await save_and_close_session(request.session_id)
         return result
     except ValueError as e:
-        error(f"Session not found", status_code=404, exception_text=str(e), function_name="save_browser_session")
+        error("Session not found", status_code=404, exception_text=str(e), function_name="save_browser_session")
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        error(f"Failed to save session", status_code=500, exception_text=str(e), function_name="save_browser_session")
+        error("Failed to save session", status_code=500, exception_text=str(e), function_name="save_browser_session")
         raise HTTPException(status_code=500, detail=f"Failed to save session: {str(e)}")
 
 
@@ -78,7 +78,7 @@ async def cancel_browser_session(session_id: str):
         await close_session(session_id)
         return {"status": "cancelled"}
     except Exception as e:
-        error(f"Failed to cancel session", status_code=500, exception_text=str(e), function_name="cancel_browser_session")
+        error("Failed to cancel session", status_code=500, exception_text=str(e), function_name="cancel_browser_session")
         raise HTTPException(status_code=500, detail=f"Failed to cancel session: {str(e)}")
 
 
@@ -91,12 +91,12 @@ async def get_browser_screenshot(session_id: str):
     try:
         screenshot_bytes = await get_session_screenshot(session_id)
         if not screenshot_bytes:
-            error(f"Session not found", status_code=404, function_name="get_browser_screenshot")
+            error("Session not found", status_code=404, function_name="get_browser_screenshot")
             raise HTTPException(status_code=404, detail="Session not found")
 
         return StreamingResponse(io.BytesIO(screenshot_bytes), media_type="image/png")
     except HTTPException:
         raise
     except Exception as e:
-        error(f"Failed to get screenshot", status_code=500, exception_text=str(e), function_name="get_browser_screenshot")
+        error("Failed to get screenshot", status_code=500, exception_text=str(e), function_name="get_browser_screenshot")
         raise HTTPException(status_code=500, detail=f"Failed to get screenshot: {str(e)}")

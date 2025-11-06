@@ -14,12 +14,55 @@ from backend.config import SESSION_TIMEOUT
 active_sessions: dict[str, dict] = {}
 
 
-async def cleanup_expired_sessions():
-    """Remove sessions older than SESSION_TIMEOUT"""
-    current_time = time.time()
-    expired = [sid for sid, session in active_sessions.items() if current_time - session["created_at"] > SESSION_TIMEOUT]
+async def is_session_active(session: dict) -> bool:
+    """
+    Check if a browser session is actively being used.
+    Returns True if the page is still navigating or loading.
+    """
+    try:
+        page: Page = session["page"]
+        # Check if page is closed or browser is disconnected
+        if page.is_closed():
+            return False
 
-    for sid in expired:
+        # Try to get current URL - if this fails, browser is disconnected
+        try:
+            _ = page.url
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
+
+
+async def cleanup_expired_sessions():
+    """
+    Remove sessions older than SESSION_TIMEOUT that are not actively being used.
+    This prevents interrupting users who are actively completing OAuth login.
+    """
+    from backend.utils import notify
+
+    current_time = time.time()
+    expired_sids = []
+
+    for sid, session in active_sessions.items():
+        session_age = current_time - session["created_at"]
+
+        # Only consider sessions that have exceeded timeout
+        if session_age > SESSION_TIMEOUT:
+            # Check if session is still active
+            is_active = await is_session_active(session)
+
+            if is_active:
+                # Session is active despite being old - user is still logging in
+                notify(f"⏱️ OAuth session {sid[:8]}... is {int(session_age)}s old but still active - keeping alive")
+            else:
+                # Session is inactive and expired - safe to clean up
+                expired_sids.append(sid)
+
+    # Clean up inactive expired sessions
+    for sid in expired_sids:
+        notify(f"🧹 Cleaning up expired inactive OAuth session {sid[:8]}...")
         await close_session(sid)
 
 
@@ -99,12 +142,10 @@ async def save_and_close_session(session_id: str) -> dict:
     Save browser state and close the session after successful login.
     """
     from backend.oauth import exchange_code_for_token
-    from backend.utils import store_browser_state
-
-    from backend.utils import error
+    from backend.utils import error, store_browser_state
     session = active_sessions.get(session_id)
     if not session:
-        error(f"Session not found", status_code=404, function_name="save_and_close_session")
+        error("Session not found", status_code=404, function_name="save_and_close_session")
         raise ValueError("Session not found")
 
     username = session["username"]

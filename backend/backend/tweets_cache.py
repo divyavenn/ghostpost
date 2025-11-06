@@ -22,9 +22,10 @@ def get_user_tweet_cache(username=USERNAME) -> Path:
 async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
     import uuid
 
+    from pydantic import ValidationError
+
     from backend.data_validation import ScrapedTweet
     from backend.log_interactions import TweetAction, log_tweet_action
-    from pydantic import ValidationError
 
     # Read existing cache
     existing_tweets = await read_from_cache(username)
@@ -96,11 +97,7 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
                         reply_text = reply_data
                         model_name = "unknown"
 
-                    replies_with_models.append({
-                        "reply_index": idx,
-                        "model": model_name,
-                        "text": reply_text
-                    })
+                    replies_with_models.append({"reply_index": idx, "model": model_name, "text": reply_text})
 
                 metadata["generated_replies"] = replies_with_models
 
@@ -110,8 +107,9 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
 
 
 async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
-    from backend.data_validation import ScrapedTweet
     from pydantic import ValidationError
+
+    from backend.data_validation import ScrapedTweet
 
     path = get_user_tweet_cache(username)
     notify(f"💾 Reading tweets from cache ({path.name})")
@@ -134,8 +132,56 @@ async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
 
         return validated_tweets
     except Exception as exc:
-        error(f"Error reading JSON file", exception_text=str(exc), function_name="read_from_cache")
+        error("Error reading JSON file", exception_text=str(exc), function_name="read_from_cache")
         return []
+
+
+async def purge_unedited_tweets(username: str) -> int:
+    """Remove tweets that have not been edited from cache.
+
+    Args:
+        username: The username whose cache to clean
+
+    Returns:
+        Number of tweets removed
+    """
+    from backend.log_interactions import TweetAction, log_tweet_action
+
+    tweets = await read_from_cache(username)
+
+    if not tweets:
+        return 0
+
+    # Separate tweets into kept (edited=True) and removed (edited=False or missing)
+    kept_tweets = []
+    removed_tweets = []
+
+    for tweet in tweets:
+        # Keep tweets that have been edited
+        if tweet.get("edited", False):
+            kept_tweets.append(tweet)
+        else:
+            removed_tweets.append(tweet)
+
+    removed_count = len(removed_tweets)
+
+    # Write back if any were removed
+    if removed_count > 0:
+        path = get_user_tweet_cache(username)
+        atomic_file_update(path, kept_tweets, ".tmp", ensure_ascii=False)
+        notify(f"🧹 Purged {removed_count} unedited tweet(s) from cache")
+
+        # Log deletion for each removed tweet
+        for tweet in removed_tweets:
+            tweet_id = tweet.get("id") or tweet.get("tweet_id")
+            cache_id = tweet.get("cache_id")
+            if tweet_id:
+                metadata = {"reason": "unedited"}
+                if cache_id:
+                    metadata["cache_id"] = cache_id
+                log_tweet_action(username, TweetAction.DELETED, str(tweet_id), metadata=metadata)
+
+    return removed_count
 
 
 async def cleanup_old_tweets(username: str, hours: int = 48) -> int:
@@ -308,20 +354,16 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str, reply_i
     generated_replies[reply_index] = (new_reply, model_name)
     tweet["generated_replies"] = generated_replies
 
+    # Mark tweet as edited
+    tweet["edited"] = True
+
     # Write to cache without logging (to avoid duplicate WRITTEN logs)
     path = get_user_tweet_cache(username)
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
     notify(f"💾 Edited reply {reply_index} for tweet {tweet_id}")
 
     # Log the edit with comprehensive metadata including reply index and model
-    metadata = {
-        "cache_id": cache_id,
-        "reply_index": reply_index,
-        "model": model_name,
-        "new_reply": new_reply,
-        "diff": "".join(diff),
-        "replying_to_tweet_id": original_tweet_id
-    }
+    metadata = {"cache_id": cache_id, "reply_index": reply_index, "model": model_name, "new_reply": new_reply, "diff": "".join(diff), "replying_to_tweet_id": original_tweet_id}
 
     log_tweet_action(username, TweetAction.EDITED, tweet_id, metadata=metadata)
     return True

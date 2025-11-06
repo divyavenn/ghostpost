@@ -6,7 +6,16 @@ export const usernameState = atom<string | null>({
   key: 'usernameState',
   default: localStorage.getItem('username'),
   effects: [
-    ({ onSet }) => {
+    ({ setSelf, onSet, trigger }) => {
+      // On initialization, read from localStorage
+      if (trigger === 'get') {
+        const storedValue = localStorage.getItem('username');
+        if (storedValue !== null) {
+          setSelf(storedValue);
+        }
+      }
+
+      // When value changes, update localStorage
       onSet((newValue) => {
         if (newValue) {
           localStorage.setItem('username', newValue);
@@ -106,17 +115,9 @@ export const activeTabState = atom<'generated' | 'posted'>({
   default: 'generated',
 });
 
-
-/**
- * Whether the app is currently loading tweets
- */
-export const isLoadingState = atom<boolean>({
-  key: 'isLoadingState',
-  default: false,
-});
-
 /**
  * Current loading phase (scraping or generating)
+ * When null, the app is not loading
  */
 export const loadingPhaseState = atom<'scraping' | 'generating' | null>({
   key: 'loadingPhaseState',
@@ -124,9 +125,12 @@ export const loadingPhaseState = atom<'scraping' | 'generating' | null>({
 });
 
 /**
- * Loading status text for scraping phase
+ * Loading status data (contains dynamic info like account names, progress)
  */
-export const scrapingStatusTextState = atom<string>({
-  key: 'scrapingStatusTextState',
-  default: 'Scraping tweets',
+export const loadingStatusDataState = atom<{
+  type: 'account' | 'query' | 'generating' | 'complete' | 'idle';
+  value: string;
+} | null>({
+  key: 'loadingStatusDataState',
+  default: null,
 });

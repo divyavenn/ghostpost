@@ -1,4 +1,3 @@
-import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { RecoilRoot } from 'recoil'
@@ -11,17 +10,15 @@ import { LoginLoading } from './components/LoginLoading.tsx'
 import { LoginSuccess } from './components/LoginSuccess.tsx'
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <RecoilRoot>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<App />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/no-model" element={<NoModelError />} />
-          <Route path="/login-loading" element={<LoginLoading />} />
-          <Route path="/login-success" element={<LoginSuccess />} />
-        </Routes>
-      </BrowserRouter>
-    </RecoilRoot>
-  </StrictMode>,
+  <RecoilRoot>
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<App />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/no-model" element={<NoModelError />} />
+        <Route path="/login-loading" element={<LoginLoading />} />
+        <Route path="/login-success" element={<LoginSuccess />} />
+      </Routes>
+    </BrowserRouter>
+  </RecoilRoot>,
 )

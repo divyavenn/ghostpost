@@ -704,6 +704,15 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                         "media": extract_media_urls(node),
                         "quoted_tweet": extract_quoted_tweet(node),
                     }
+
+                    # Apply initial intent filter (loose filter)
+                    if username:
+                        from backend.intent_filter import check_tweet_matches_intent_initial
+                        matches_intent = await check_tweet_matches_intent_initial(tweet_data, username)
+                        if not matches_intent:
+                            # Skip this tweet - doesn't match intent
+                            continue
+
                     tweets[tid] = tweet_data
                     found_any = True
 
@@ -738,6 +747,8 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
     await page.close()
 
     # Collect threads for all tweets with progressive writing
+    # Also apply final intent filter after thread collection
+    tweets_to_remove = []
     for tid, t in tweets.items():
         t["thread"] = await get_thread(ctx, t["url"], root_id=t["id"])
 
@@ -745,9 +756,24 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
         if t["thread"] and len(t["thread"]) > 0:
             t["text"] = t["thread"][0]
 
-            # Progressive write: save thread immediately if callback provided
+            # Apply final intent filter (strict filter) after thread is collected
+            if username:
+                from backend.intent_filter import check_tweet_matches_intent_final
+                matches_intent = await check_tweet_matches_intent_final(t, username)
+                if not matches_intent:
+                    # Mark for removal - doesn't match intent after full thread analysis
+                    tweets_to_remove.append(tid)
+                    continue
+
+            # Progressive write: save thread immediately if callback provided (only if passed filter)
             if write_callback and username:
                 await write_callback([t], username)
+
+    # Remove tweets that failed the final intent filter
+    for tid in tweets_to_remove:
+        if tid in tweets:
+            del tweets[tid]
+            notify(f"🗑️ Removed tweet {tid} from results (failed final intent filter)")
 
     # NOTE: We no longer remove tweets without threads - they stay in cache
     # but frontend will filter them out for display

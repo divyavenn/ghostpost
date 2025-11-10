@@ -215,7 +215,7 @@ export const api = {
     queries?: string[];
     max_scrolls?: number;
     max_tweets?: number;
-  }): Promise<{ message: string; count: number; tweets: TweetData[] }> => {
+  }): Promise<{ message: string; status: string; background_task: string }> => {
     // Use 1 hour timeout for scraping operations
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3600000); // 1 hour

@@ -23,9 +23,9 @@ from backend.config import OBELISK_KEY
 
 # Import scraping status tracker from read_tweets for status updates
 try:
-    from backend.read_tweets import scraping_status
+    from backend.read_tweets import scraping_status, update_status_to_reflect_finished_scraping
 except ImportError:
-    from read_tweets import scraping_status
+    from read_tweets import scraping_status, update_status_to_reflect_finished_scraping
 
 
 async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False, username: str = "unknown") -> dict:
@@ -152,7 +152,6 @@ def build_prompt(tweet):
 
 async def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=1, batch=False, username="unknown"):
     import random
-    import time
 
     replies = []
 
@@ -196,7 +195,7 @@ async def generate_replies_for_tweet(tweet, models, needed_generations, delay_se
 
             # Delay between generations to avoid rate limiting
             if gen_idx < needed_generations - 1:
-                 await asyncio.sleep(delay_seconds)
+                await asyncio.sleep(delay_seconds)
 
     return replies
 
@@ -219,6 +218,8 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
     if not tweets:
         notify("⚠️ No tweets found in cache")
+        # Update status to complete and then idle since there's nothing to process
+        asyncio.create_task(update_status_to_reflect_finished_scraping(username))
         return []
 
     notify(f"📝 Processing {len(tweets)} tweets for user {username} using models: {models}...")
@@ -281,19 +282,10 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
     if errors > 0:
         error(f"{errors} errors batch-generating replies for tweets", status_code=500, function_name="generate_replies", username=username, critical=True)
-    # Mark generation as complete
+
+    # Mark generation as complete and reset to idle after 5 seconds
     if username:
-        scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
-
-        # Reset to idle after 5 seconds
-        async def reset_to_idle():
-            await asyncio.sleep(5)
-            if username in scraping_status and scraping_status[username]["type"] == "complete":
-                scraping_status[username] = {"type": "idle", "value": "", "phase": "idle"}
-                notify(f"🔄 Status reset to idle for {username}")
-
-        # Start the reset task in the background
-        asyncio.create_task(reset_to_idle())
+        asyncio.create_task(update_status_to_reflect_finished_scraping(username))
 
     notify(f"✅ Done! Generated: {count}, Skipped: {skipped}, Errors: {errors}")
 

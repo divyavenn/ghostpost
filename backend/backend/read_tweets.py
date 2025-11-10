@@ -2,7 +2,7 @@ import asyncio
 import re
 import time
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from playwright.async_api import async_playwright
 from pydantic import BaseModel
 
@@ -69,6 +69,21 @@ see_browser = not should_use_headless_for_scraping()  # Show browser only if not
 
 # Global status tracker for scraping progress
 scraping_status = {}  # {username: {"type": "account"/"query", "value": "handle/query", "phase": "scraping"/"complete"}}
+
+
+async def update_status_to_reflect_finished_scraping(username: str):
+    """
+    Update status to complete, then reset to idle after 5 seconds.
+    Used when scraping/generation finishes (including when there are no tweets to process).
+    """
+    scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
+    notify(f"✅ Status set to complete for {username}")
+
+    # Reset to idle after 5 seconds
+    await asyncio.sleep(5)
+    if username in scraping_status and scraping_status[username]["type"] == "complete":
+        scraping_status[username] = {"type": "idle", "value": "", "phase": "idle"}
+        notify(f"🔄 Status reset to idle for {username}")
 
 
 # headless login, legacy code, currently use oAuth instead
@@ -141,6 +156,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     from backend.browserbase_scraper import fetch_search_browserbase, fetch_user_tweets_browserbase
     from backend.exceptions import CaptchaError, RateLimitError
 
+    notify(f"🚀 [gather_trending] Starting for {username}: {len(usernames)} accounts, {len(queries)} queries, use_browserbase={use_browserbase}")
     results = {}
 
     # If explicitly requesting Browserbase, skip local scraping
@@ -177,6 +193,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
 
         if username:
             scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
+        notify(f"✅ [gather_trending] Completed for {username}: {len(results)} tweets scraped (Browserbase mode)")
         return results
 
     # Try local scraping first (cost-effective)
@@ -249,6 +266,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
             if username:
                 scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
 
+            notify(f"✅ [gather_trending] Completed for {username}: {len(results)} tweets scraped (local mode)")
             return results
         finally:
             # Always cleanup browser resources, even if exceptions occur
@@ -326,21 +344,28 @@ class ReadTweetsRequest(BaseModel):
     max_tweets: int | None = None
 
 
-@router.post("/{username}/tweets")
-async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None = None) -> dict:
-    """Scrape tweets from usernames and queries, save to cache."""
+async def _scrape_and_generate_background(username: str, relevant_accounts: list[str] | None, queries: list[str] | None, max_tweets: int | None):
+    """
+    Background task that handles both scraping and reply generation.
+    This allows the endpoint to return immediately while work continues in background.
+    """
     try:
         # Track scraping time
         start_time = time.time()
 
-        if payload is None:
+        notify(f"🔍 [Background] Starting tweet scrape for {username}...")
+
+        # Scrape tweets
+        if relevant_accounts is None and queries is None and max_tweets is None:
             tweets = await read_tweets(username=username)
         else:
-            tweets = await read_tweets(username=username, relevant_accounts=payload.usernames, queries=payload.queries, max_tweets=payload.max_tweets)
+            tweets = await read_tweets(username=username, relevant_accounts=relevant_accounts, queries=queries, max_tweets=max_tweets)
 
         # Calculate time saved (time spent scraping)
         end_time = time.time()
         scraping_duration = int(end_time - start_time)  # in seconds
+
+        notify(f"✅ [Background] Scraping completed in {scraping_duration}s. Found {len(tweets)} tweets for {username}")
 
         # Update user's scrolling_time_saved
         user_info = read_user_info(username)
@@ -348,23 +373,60 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
             current_time_saved = user_info.get("scrolling_time_saved", 0)
             user_info["scrolling_time_saved"] = current_time_saved + scraping_duration
             write_user_info(user_info)
-            notify(f"⏱️ Scraping took {scraping_duration}s. Total time saved: {user_info['scrolling_time_saved']}s")
+            notify(f"⏱️ Total time saved for {username}: {user_info['scrolling_time_saved']}s")
 
         # Log the scraping action
         log_scrape_action(username, len(tweets))
 
-        # Auto-generate replies for newly scraped tweets
-        notify(f"💬 [Manual scrape] Generating replies for {username}...")
-        # Set status to generating before calling generate_replies
+        # Generate replies
+        notify(f"💬 [Background] Generating replies for {username}...")
         from backend.generate_replies import generate_replies
         result = await generate_replies(username=username, overwrite=False)
         reply_count = sum(1 for t in result if t.get('generated_replies'))
-        notify(f"✅ [Manual scrape] Generated {reply_count} replies for {username}")
+        notify(f"✅ [Background] Generated {reply_count} replies for {username}")
 
-        return {"message": "Tweets scraped and cached successfully", "count": len(tweets), "tweets": tweets, "scraping_duration_seconds": scraping_duration, "replies_generated": reply_count}
     except Exception as e:
+        error(f"Error in background scraping/generation for {username}: {e}",
+              status_code=500,
+              function_name="_scrape_and_generate_background",
+              username=username,
+              critical=False)
+        # Ensure status gets reset to idle even on error
+        if username in scraping_status:
+            asyncio.create_task(update_status_to_reflect_finished_scraping(username))
+
+
+@router.post("/{username}/tweets")
+async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks, payload: ReadTweetsRequest | None = None) -> dict:
+    """
+    Start tweet scraping and reply generation in background. Returns immediately.
+    Frontend should poll /read/{username}/status to track progress.
+    """
+    try:
+        notify(f"📋 [API] Received scrape request for {username}")
+
+        # Set initial status to scraping
+        scraping_status[username] = {"type": "scraping", "value": "", "phase": "scraping"}
+
+        # Extract payload parameters
+        relevant_accounts = payload.usernames if payload else None
+        queries = payload.queries if payload else None
+        max_tweets = payload.max_tweets if payload else None
+
+        # Schedule scraping and generation in background
+        background_tasks.add_task(_scrape_and_generate_background, username, relevant_accounts, queries, max_tweets)
+
+        notify(f"✅ [API] Background scraping scheduled for {username}")
+
+        return {
+            "message": "Scraping started in background. Poll /read/{username}/status to track progress.",
+            "status": "scraping_started",
+            "background_task": "scraping_and_generation_scheduled"
+        }
+    except Exception as e:
+        notify(f"❌ [API] Error scheduling scrape for {username}: {str(e)}")
         print(str(e))
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error scraping tweets: {str(e)}") from e
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error starting scrape: {str(e)}") from e
 
 
 @router.get("/{username}/status")

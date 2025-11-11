@@ -3,6 +3,8 @@ import os
 
 import requests
 from dotenv import load_dotenv
+from fastapi import APIRouter
+from pydantic import BaseModel
 
 from .read_tweets import USERNAME
 from .utils import error, notify, read_user_info
@@ -18,7 +20,6 @@ ensure_standalone_imports(globals())
 # Load .env from backend/ directory (one level up from backend/backend/)
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-# Import config
 from backend.config import OBELISK_KEY
 
 # Import scraping status tracker from read_tweets for status updates
@@ -76,7 +77,7 @@ async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nak
         try:
             if hasattr(e, 'response') and e.response is not None:
                 error_detail = f"{str(e)} | Response: {e.response.text}"
-        except:
+        except Exception:
             pass
         error(f"❌ Error communicating with Obelisk API: {error_detail}", status_code=500, function_name='ask_model', username=username, critical=False)
         return {"error": error_detail}
@@ -219,7 +220,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     if not tweets:
         notify("⚠️ No tweets found in cache")
         # Update status to complete and then idle since there's nothing to process
-        asyncio.create_task(update_status_to_reflect_finished_scraping(username))
+        await update_status_to_reflect_finished_scraping(username)
         return []
 
     notify(f"📝 Processing {len(tweets)} tweets for user {username} using models: {models}...")
@@ -228,7 +229,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     errors = 0
     total_to_process = len([t for t in tweets if not (('generated_replies' in t and t['generated_replies']) and not overwrite) and ('thread' in t and t['thread'])])
 
-    for idx, tweet in enumerate(tweets, 1):
+    for tweet in tweets:
         needed_generations = number_of_generations - len(tweet.get('generated_replies', []))
         if overwrite:
             needed_generations = number_of_generations
@@ -284,8 +285,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
         error(f"{errors} errors batch-generating replies for tweets", status_code=500, function_name="generate_replies", username=username, critical=True)
 
     # Mark generation as complete and reset to idle after 5 seconds
-    if username:
-        asyncio.create_task(update_status_to_reflect_finished_scraping(username))
+    await update_status_to_reflect_finished_scraping(username)
 
     notify(f"✅ Done! Generated: {count}, Skipped: {skipped}, Errors: {errors}")
 
@@ -301,9 +301,6 @@ async def run_all() -> None:
 
 
 # API Router
-from fastapi import APIRouter
-from pydantic import BaseModel
-
 router = APIRouter(prefix="/generate", tags=["generate"])
 
 

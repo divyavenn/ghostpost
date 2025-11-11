@@ -34,6 +34,7 @@ class User(BaseModel):
     queries: list[str] = []
     max_tweets_retrieve: int = 30
     number_of_generations: int = 2
+    intent: str = ""  # User's intent for filtering and query generation
 
     # metrics
     lifetime_new_follows: int = 0

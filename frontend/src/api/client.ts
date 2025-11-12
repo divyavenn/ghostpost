@@ -60,6 +60,7 @@ export interface UserSettings {
   max_tweets_retrieve: number;
   number_of_generations: number;
   models?: string[]; // Read-only, managed via dedicated endpoint
+  intent?: string; // User's intent for filtering and query generation
 }
 
 export interface UserInfo {
@@ -388,6 +389,18 @@ export const api = {
       method: 'POST'
     });
     if (!response.ok) throw new Error('Failed to validate accounts');
+    return response.json();
+  },
+
+  updateIntent: async (username: string, intent: string): Promise<{ message: string; intent: string; background_task: string }> => {
+    const response = await fetch(`${API_BASE_URL}/intent/${encodeURIComponent(username)}/update`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ intent }),
+    });
+    if (!response.ok) throw new Error('Failed to update intent');
     return response.json();
   },
 

@@ -386,11 +386,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         notify(f"✅ [Background] Generated {reply_count} replies for {username}")
 
     except Exception as e:
-        error(f"Error in background scraping/generation for {username}: {e}",
-              status_code=500,
-              function_name="_scrape_and_generate_background",
-              username=username,
-              critical=False)
+        error(f"Error in background scraping/generation for {username}: {e}", status_code=500, function_name="_scrape_and_generate_background", username=username, critical=False)
         # Ensure status gets reset to idle even on error
         if username in scraping_status:
             asyncio.create_task(update_status_to_reflect_finished_scraping(username))
@@ -418,11 +414,7 @@ async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks,
 
         notify(f"✅ [API] Background scraping scheduled for {username}")
 
-        return {
-            "message": "Scraping started in background. Poll /read/{username}/status to track progress.",
-            "status": "scraping_started",
-            "background_task": "scraping_and_generation_scheduled"
-        }
+        return {"message": "Scraping started in background. Poll /read/{username}/status to track progress.", "status": "scraping_started", "background_task": "scraping_and_generation_scheduled"}
     except Exception as e:
         notify(f"❌ [API] Error scheduling scrape for {username}: {str(e)}")
         print(str(e))

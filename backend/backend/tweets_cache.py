@@ -66,7 +66,7 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
 
     path = get_user_tweet_cache(username)
     atomic_file_update(path, all_tweets, ".tmp", ensure_ascii=False)
-    notify(f"💾{description} and wrote to cache")
+    # notify(f"💾{description} and wrote to cache")
 
     # Log each tweet being written
     for tweet in tweets:
@@ -112,7 +112,7 @@ async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
     from backend.data_validation import ScrapedTweet
 
     path = get_user_tweet_cache(username)
-    notify(f"💾 Reading tweets from cache ({path.name})")
+    # notify(f"💾 Reading tweets from cache ({path.name})")
     if not path.exists():
         return []
     try:
@@ -137,14 +137,6 @@ async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
 
 
 async def purge_unedited_tweets(username: str) -> int:
-    """Remove tweets that have not been edited from cache.
-
-    Args:
-        username: The username whose cache to clean
-
-    Returns:
-        Number of tweets removed
-    """
     from backend.log_interactions import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)

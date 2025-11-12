@@ -73,6 +73,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     max_tweets_retrieve: 30,
     number_of_generations: 1,
     models: [], // Read-only, not editable in settings modal
+    intent: '',
   });
   const [originalSettings, setOriginalSettings] = useState<UserSettings | null>(null);
 
@@ -84,6 +85,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
   const [maxTweetsInput, setMaxTweetsInput] = useState<string>('30');
+  const [generatingQueries, setGeneratingQueries] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -200,6 +202,43 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     }
   };
 
+  const handleIntentChange = async (newIntent: string) => {
+    if (!newIntent.trim()) {
+      // If intent is cleared, just update locally
+      setSettings(prev => ({ ...prev, intent: newIntent }));
+      return;
+    }
+
+    try {
+      setGeneratingQueries(true);
+      // Call API to update intent and generate queries in background
+      await api.updateIntent(username, newIntent);
+
+      // Update local state immediately
+      setSettings(prev => ({ ...prev, intent: newIntent }));
+
+      // Show notification that queries are being generated
+      showError('Generating search queries from your intent in the background...');
+      setTimeout(() => setErrorMessage(''), 3000);
+
+      // Reload settings after a delay to get the generated queries
+      setTimeout(async () => {
+        try {
+          const updatedSettings = await api.getUserSettings(username);
+          setSettings(updatedSettings);
+          setGeneratingQueries(false);
+        } catch (error) {
+          console.error('Failed to reload settings:', error);
+          setGeneratingQueries(false);
+        }
+      }, 5000); // Wait 5 seconds for background task to complete
+    } catch (error) {
+      console.error('Failed to update intent:', error);
+      showError('Failed to update intent. Please try again.');
+      setGeneratingQueries(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
 
@@ -289,6 +328,29 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
                 </p>
               </div>
             )}
+            {/* Intent */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <SectionTitle text="Your Intent" />
+                {generatingQueries && (
+                  <span className="text-neutral-400 text-xs flex items-center gap-2">
+                    <div className="animate-spin h-3 w-3 border-2 border-sky-500 border-t-transparent rounded-full"></div>
+                    Generating queries...
+                  </span>
+                )}
+              </div>
+              <textarea
+                value={settings.intent || ''}
+                onChange={(e) => setSettings(prev => ({ ...prev, intent: e.target.value }))}
+                onBlur={(e) => handleIntentChange(e.target.value)}
+                placeholder="Describe what you're looking to engage with on Twitter (e.g., 'I'm a VC looking to discuss early-stage startups and talent recruitment')"
+                className="w-full bg-neutral-800 text-white px-4 py-3 rounded-[15px] focus:outline-none transition mb-2 min-h-[100px] resize-y"
+              />
+              <p className="text-neutral-500 text-xs">
+                When you update your intent, we'll automatically generate optimized search queries for you.
+              </p>
+            </div>
+
             {/* Relevant Accounts */}
             <div>
               <div className="flex items-center justify-between mb-3">

@@ -78,12 +78,15 @@ async def update_status_to_reflect_finished_scraping(username: str):
     """
     scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
     notify(f"✅ Status set to complete for {username}")
-
-    # Reset to idle after 5 seconds
-    await asyncio.sleep(5)
-    if username in scraping_status and scraping_status[username]["type"] == "complete":
-        scraping_status[username] = {"type": "idle", "value": "", "phase": "idle"}
-        notify(f"🔄 Status reset to idle for {username}")
+    
+    async def reset_to_idle():
+        # Reset to idle after 5 seconds
+        await asyncio.sleep(5)
+        if username in scraping_status and scraping_status[username]["type"] == "complete":
+            scraping_status[username] = {"type": "idle", "value": "", "phase": "idle"}
+            notify(f"🔄 Status reset to idle for {username}")
+            
+    asyncio.create_task(reset_to_idle())
 
 
 # headless login, legacy code, currently use oAuth instead

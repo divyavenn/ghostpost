@@ -311,7 +311,6 @@ class GenerateRepliesRequest(BaseModel):
 
 @router.post("/{username}/replies")
 async def generate_replies_endpoint(username: str, payload: GenerateRepliesRequest | None = None) -> dict:
-    from read_tweets import scraping_status
     """Generate AI replies for tweets in the cache."""
     try:
         # Set status to generating immediately when endpoint is called

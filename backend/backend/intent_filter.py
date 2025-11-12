@@ -16,42 +16,19 @@ from backend.utils import error, notify, read_user_info
 load_dotenv()
 
 
-async def extract_keywords_from_intent(intent: str) -> list[str]:
-    """
-    Extract seed keywords and phrases from a user's intent using AI.
-
-    Args:
-        intent: User's intent description (e.g., "I'm a VC looking to talk about early-stage startups")
-
-    Returns:
-        List of keywords and phrases extracted from the intent
-    """
-    if not intent or not intent.strip():
-        return []
-
-    prompt = f"""Extract 10-15 specific keywords and phrases that would help identify relevant tweets for this user intent:
-
-"{intent}"
-
-Return ONLY a JSON array of strings, nothing else. Include:
-- Key topics and concepts
-- Industry-specific terms
-- Action phrases
-- Relevant jargon
-
-Example format: ["pre-seed raise", "early stage startup", "VC funding", "first hire"]
-
-JSON array:"""
-
+def ask_llm(system_prompt, prompt):
     url = "https://obelisk.dread.technology/api/chat/completions"
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
 
     payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "You are a keyword extraction expert. Always respond with valid JSON arrays only."},
-            {"role": "user", "content": prompt}
-        ]
+        "model": "chatgpt-4o",
+        "messages": [{
+            "role": "system",
+            "content": system_prompt
+        }, {
+            "role": "user",
+            "content": prompt
+        }]
     }
 
     try:
@@ -60,23 +37,10 @@ JSON array:"""
         data = response.json()
 
         message = data["choices"][0]["message"]["content"]
-
-        # Parse JSON array from response
-        import json
-        keywords = json.loads(message.strip())
-
-        if isinstance(keywords, list):
-            notify(f"📝 Extracted {len(keywords)} keywords from intent")
-            return keywords
-        else:
-            notify("⚠️ Unexpected keyword format, returning empty list")
-            return []
-
+        return message
+    
     except Exception as e:
-        error(f"❌ Error extracting keywords from intent: {e}",
-              status_code=500,
-              function_name="extract_keywords_from_intent",
-              critical=False)
+        error(f"❌ Error extracting keywords from intent: {e}", status_code=500, function_name="extract_keywords_from_intent", critical=False)
         return []
 
 
@@ -112,37 +76,24 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
         return False
 
     # Build a quick prompt for initial filtering
+    system_prompt = "You are a content relevance evaluator. Answer only YES or NO."
     prompt = f"""User intent: "{intent}"
 
-Tweet text: "{tweet_text}"
-Tweet author: @{tweet_handle}
+    Tweet text: "{tweet_text}"
+    Tweet author: @{tweet_handle}
 
-Could this tweet potentially be relevant to the user's intent? Consider:
-- Does it relate to the topics they're interested in?
-- Could it lead to valuable conversations?
-- Is there ANY connection to their stated interests?
+    Could this tweet potentially be relevant to the user's intent? Consider:
+    - Does it relate to the topics they're interested in?
+    - Could it lead to valuable conversations?
+    - Is there ANY connection to their stated interests?
 
-Be lenient - we want to catch potential matches.
+    Be lenient - we want to catch potential matches.
 
-Answer with only "YES" or "NO"."""
-
-    url = "https://obelisk.dread.technology/api/chat/completions"
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
-
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "You are a content relevance evaluator. Answer only YES or NO."},
-            {"role": "user", "content": prompt}
-        ]
-    }
+    Answer with only "YES" or "NO"."""
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-
-        message = data["choices"][0]["message"]["content"].strip().upper()
+        message = ask_llm(system_prompt, prompt)
+        message = message.strip().upper()
 
         matches = "YES" in message
 
@@ -154,11 +105,7 @@ Answer with only "YES" or "NO"."""
         return matches
 
     except Exception as e:
-        error(f"⚠️ Error in initial intent filter for tweet {tweet_id}: {e}",
-              status_code=500,
-              function_name="check_tweet_matches_intent_initial",
-              username=username,
-              critical=False)
+        error(f"⚠️ Error in initial intent filter for tweet {tweet_id}: {e}", status_code=500, function_name="check_tweet_matches_intent_initial", username=username, critical=False)
         # On error, allow tweet through (fail open)
         return True
 
@@ -197,37 +144,24 @@ async def check_tweet_matches_intent_final(tweet_data: dict, username: str) -> b
         quoted_context = f"\n\n[This tweet quotes @{qt_author}: \"{qt_text}\"]"
 
     # Build comprehensive prompt for final filtering
+    system_prompt = "You are a strict content relevance evaluator. Answer only YES or NO."
     prompt = f"""User intent: "{intent}"
 
-Tweet thread by @{tweet_handle}:
-{full_thread}{quoted_context}
+    Tweet thread by @{tweet_handle}:
+    {full_thread}{quoted_context}
 
-Does this tweet thread clearly match the user's intent? Consider:
-- Is it directly relevant to their stated interests?
-- Would engaging with this tweet help them achieve their goals?
-- Does it provide value aligned with their intent?
+    Does this tweet thread clearly match the user's intent? Consider:
+    - Is it directly relevant to their stated interests?
+    - Would engaging with this tweet help them achieve their goals?
+    - Does it provide value aligned with their intent?
 
-Be strict - only keep tweets that are genuinely relevant.
+    Be strict - only keep tweets that are genuinely relevant.
 
-Answer with only "YES" or "NO"."""
-
-    url = "https://obelisk.dread.technology/api/chat/completions"
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
-
-    payload = {
-        "model": "gpt-4o-mini",
-        "messages": [
-            {"role": "system", "content": "You are a strict content relevance evaluator. Answer only YES or NO."},
-            {"role": "user", "content": prompt}
-        ]
-    }
+    Answer with only "YES" or "NO"."""
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-
-        message = data["choices"][0]["message"]["content"].strip().upper()
+        message = ask_llm(system_prompt, prompt)
+        message = message.strip().upper()
 
         matches = "YES" in message
 
@@ -239,11 +173,7 @@ Answer with only "YES" or "NO"."""
         return matches
 
     except Exception as e:
-        error(f"⚠️ Error in final intent filter for tweet {tweet_id}: {e}",
-              status_code=500,
-              function_name="check_tweet_matches_intent_final",
-              username=username,
-              critical=False)
+        error(f"⚠️ Error in final intent filter for tweet {tweet_id}: {e}", status_code=500, function_name="check_tweet_matches_intent_final", username=username, critical=False)
         # On error, allow tweet through (fail open)
         return True
 
@@ -278,9 +208,5 @@ async def remove_tweet_from_cache(tweet_id: str, username: str) -> bool:
             return False
 
     except Exception as e:
-        error(f"❌ Error removing tweet {tweet_id} from cache: {e}",
-              status_code=500,
-              function_name="remove_tweet_from_cache",
-              username=username,
-              critical=False)
+        error(f"❌ Error removing tweet {tweet_id} from cache: {e}", status_code=500, function_name="remove_tweet_from_cache", username=username, critical=False)
         return False

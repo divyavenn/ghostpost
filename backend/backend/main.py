@@ -7,6 +7,7 @@ from backend.account_routes import router as account_router
 from backend.auth_routes import router as auth_router
 from backend.browser_auth_routes import router as browser_auth_router
 from backend.generate_replies import router as generate_router
+from backend.intent_to_queries import router as intent_router
 from backend.log_interactions import router as logging_router
 from backend.performance_check import router as performance_router
 from backend.post_takes import router as post_router
@@ -54,6 +55,7 @@ app.include_router(posted_router)
 app.include_router(performance_router)
 app.include_router(read_router)
 app.include_router(generate_router)
+app.include_router(intent_router)
 app.include_router(logging_router)
 app.include_router(user_router)
 app.include_router(scheduler_router)

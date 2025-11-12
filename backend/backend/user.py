@@ -161,7 +161,8 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
         "relevant_accounts": relevant_accounts,
         "max_tweets_retrieve": user_info.get("max_tweets_retrieve", 30),
         "number_of_generations": user_info.get("number_of_generations", 1),
-        "models": user_info.get("models", ["claude-3-5-sonnet-20241022"])  # Default to single model
+        "models": user_info.get("models", ["claude-3-5-sonnet-20241022"]),  # Default to single model
+        "intent": user_info.get("intent", "")
     }
 
 

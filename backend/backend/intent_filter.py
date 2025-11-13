@@ -45,17 +45,6 @@ def ask_llm(system_prompt, prompt):
 
 
 async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) -> bool:
-    """
-    Initial loose filter - check if tweet COULD match user intent.
-    Called immediately after tweet is scraped (before thread collection).
-
-    Args:
-        tweet_data: Tweet data with basic fields (text, handle, etc.)
-        username: Username to get intent from
-
-    Returns:
-        True if tweet potentially matches intent, False otherwise
-    """
     user_info = read_user_info(username)
     if not user_info:
         # No user info, allow tweet through

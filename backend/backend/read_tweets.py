@@ -381,7 +381,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         # Log the scraping action
         log_scrape_action(username, len(tweets))
 
-        # Generate replies
+        # Generate replies (this will also update status to complete/idle when done)
         notify(f"💬 [Background] Generating replies for {username}...")
         from backend.generate_replies import generate_replies
         result = await generate_replies(username=username, overwrite=False)
@@ -392,7 +392,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         error(f"Error in background scraping/generation for {username}: {e}", status_code=500, function_name="_scrape_and_generate_background", username=username, critical=False)
         # Ensure status gets reset to idle even on error
         if username in scraping_status:
-            asyncio.create_task(update_status_to_reflect_finished_scraping(username))
+            await update_status_to_reflect_finished_scraping(username)
 
 
 @router.post("/{username}/tweets")

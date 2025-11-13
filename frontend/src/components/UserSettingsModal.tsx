@@ -75,7 +75,6 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     models: [], // Read-only, not editable in settings modal
     intent: '',
   });
-  const [originalSettings, setOriginalSettings] = useState<UserSettings | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -99,7 +98,6 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     try {
       const userSettings = await api.getUserSettings(username);
       setSettings(userSettings);
-      setOriginalSettings(userSettings); // Store original for comparison
       setMaxTweetsInput(userSettings.max_tweets_retrieve.toString());
     } catch (error) {
       console.error('Failed to load settings:', error);
@@ -242,16 +240,16 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const handleSave = async () => {
     setSaving(true);
 
-    // Check if generation will happen (number_of_generations INCREASED)
-    const willGenerate = originalSettings &&
-                        settings.number_of_generations > originalSettings.number_of_generations;
-
-    // If generation will happen, signal parent to show loading overlay BEFORE API call
-    if (willGenerate) {
-      onClose(true); // This will start the loading overlay and polling
-    }
-
     try {
+      // Fetch current settings from server to check if generation count increased
+      const currentSettings = await api.getUserSettings(username);
+      const willGenerate = settings.number_of_generations > currentSettings.number_of_generations;
+
+      // If generation will happen, signal parent to show loading overlay BEFORE API call
+      if (willGenerate) {
+        onClose(true); // This will start the loading overlay and polling
+      }
+
       // Send settings without models (models managed via dedicated endpoint)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { models, ...settingsToUpdate } = settings;
@@ -504,10 +502,10 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
                 </button>
                 <button
                   onClick={handleSave}
-                  disabled={saving || loading}
+                  disabled={saving || loading || generatingQueries}
                   className="px-6 py-2 rounded-lg bg-sky-500 text-white hover:bg-sky-600 transition disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Saving...' : 'Save Changes'}
+                  {saving ? 'Saving...' : generatingQueries ? 'Generating Queries...' : 'Save Changes'}
                 </button>
               </>
             )}

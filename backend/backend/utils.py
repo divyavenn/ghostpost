@@ -365,6 +365,7 @@ def write_user_info(user_info: dict[str, Any]) -> Path:
         # Trial users start with 3 scrapes and 3 posts
         target.setdefault("scrapes_left", 3)
         target.setdefault("posts_left", 3)
+        target.setdefault("intent", "")  # Initialize intent field
 
         # Auto-generate uid if not provided
         if "uid" not in target or target["uid"] is None:
@@ -373,6 +374,9 @@ def write_user_info(user_info: dict[str, Any]) -> Path:
             max_uid = max(existing_uids) if existing_uids else 0
             target["uid"] = max_uid + 1
             notify(f"🆔 Auto-generated uid={target['uid']} for new user @{handle}")
+
+    # Ensure intent field exists for all users (backward compatibility)
+    target.setdefault("intent", "")
 
     # Validate the updated user data before writing
     try:
@@ -395,7 +399,13 @@ def read_user_info(handle: str) -> dict[str, Any] | None:
         return None
 
     entries = load_user_info_entries()
-    return find_user_info(entries, handle)
+    user_info = find_user_info(entries, handle)
+
+    # Ensure intent field exists for backward compatibility
+    if user_info and "intent" not in user_info:
+        user_info["intent"] = ""
+
+    return user_info
 
 
 def read_tokens() -> dict[str, Any]:

@@ -45,7 +45,7 @@ async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[st
         response = requests.get(url, headers=headers, params=params, timeout=30)
 
         if response.status_code == 401:
-            raise HTTPException(status_code=401, detail="Twitter API authentication failed. Please re-authenticate.")
+            raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
 
         if response.status_code == 429:
             raise HTTPException(status_code=429, detail="Twitter API rate limit exceeded. Please try again later.")
@@ -95,7 +95,7 @@ async def check_tweet_performance(username: str, payload: CheckPerformanceReques
     access_token = await ensure_access_token(username)
 
     if not access_token:
-        raise HTTPException(status_code=401, detail=f"No authentication token found for {username}")
+        raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
 
     # Fetch metrics from Twitter
     notify(f"📊 Fetching metrics for {len(payload.tweet_ids)} tweets for @{username}...")

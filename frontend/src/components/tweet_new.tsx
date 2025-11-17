@@ -25,6 +25,7 @@ export interface TweetData {
   scraped_from?: {
     type: 'account' | 'query';
     value: string;
+    summary?: string;  // Short 1-2 word summary for queries
   };
   media?: Array<{
     type: 'photo';
@@ -230,7 +231,7 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                         <span>
                           {tweet.scraped_from.type === 'account'
                             ? `@${tweet.scraped_from.value}`
-                            : tweet.scraped_from.value}
+                            : tweet.scraped_from.summary || tweet.scraped_from.value}
                         </span>
                       </div>
                     )}

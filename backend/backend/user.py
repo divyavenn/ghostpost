@@ -149,15 +149,23 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     if not user_info:
         return None
 
-    # Convert stored queries to topics for display
+    # Handle queries - can be list of strings (legacy) or list of [query, summary] pairs (new format)
     stored_queries = user_info.get("queries", [])
-    topics = [query_to_topic(q) for q in stored_queries]
+    queries_for_display = []
+
+    for q in stored_queries:
+        if isinstance(q, list) and len(q) == 2:
+            # New format: [query, summary] - return full query for settings modal
+            queries_for_display.append(q[0])  # Full query
+        elif isinstance(q, str):
+            # Legacy format: just the query string
+            queries_for_display.append(q)
 
     # relevant_accounts is a dict: {handle: validated}
     relevant_accounts = user_info.get("relevant_accounts", {})
 
     return {
-        "queries": topics,  # Return topics, not full queries
+        "queries": queries_for_display,  # Return full queries for settings modal
         "relevant_accounts": relevant_accounts,
         "max_tweets_retrieve": user_info.get("max_tweets_retrieve", 30),
         "number_of_generations": user_info.get("number_of_generations", 1),
@@ -182,9 +190,30 @@ def write_user_settings(handle: str,
 
     # Update only the provided settings
     if queries is not None:
-        # Convert topics to full queries before storing
-        full_queries = [topic_to_query(q) for q in queries]
-        user_info["queries"] = full_queries
+        # Preserve existing [query, summary] tuple format if it exists
+        # The frontend sends back only the query strings (from read_user_settings)
+        # We need to match them with existing stored queries to preserve summaries
+        existing_queries = user_info.get("queries", [])
+
+        # Build a map: full_query -> summary (if stored as tuples)
+        query_summary_map = {}
+        for stored_q in existing_queries:
+            if isinstance(stored_q, list) and len(stored_q) == 2:
+                query_summary_map[stored_q[0]] = stored_q[1]
+
+        # Process incoming queries
+        updated_queries = []
+        for q in queries:
+            # Check if this query already has a summary in storage
+            if q in query_summary_map:
+                # Preserve the tuple format with summary
+                updated_queries.append([q, query_summary_map[q]])
+            else:
+                # New query without summary - store as plain string for now
+                # (Will get summary when regenerated via intent system)
+                updated_queries.append(q)
+
+        user_info["queries"] = updated_queries
     if relevant_accounts is not None:
         # Store as dict {handle: validated}
         user_info["relevant_accounts"] = relevant_accounts
@@ -598,8 +627,8 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
         access_token = await ensure_access_token(username)
 
         if not access_token:
-            error("User not authenticated", status_code=403, function_name="validate_twitter_handle", username=username)
-            raise HTTPException(status_code=403, detail="User not authenticated")
+            error("User not authenticated", status_code=401, function_name="validate_twitter_handle", username=username, critical=False)
+            raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
 
         # Check if user exists with retry logic for rate limiting
         url = f"https://api.twitter.com/2/users/by/username/{handle}"

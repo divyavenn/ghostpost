@@ -31,7 +31,7 @@ class User(BaseModel):
     # settings
     models: list[str] = []
     relevant_accounts: dict[str, bool] = {}  # handle -> isverified
-    queries: list[str] = []
+    queries: list[str] | list[list[str]] = []  # Can be list of strings (legacy) or list of [query, summary] pairs
     max_tweets_retrieve: int = 30
     number_of_generations: int = 2
     intent: str = ""  # User's intent for filtering and query generation
@@ -47,6 +47,7 @@ class User(BaseModel):
 class Source(BaseModel):
     type: Literal["account", "query"]
     value: str
+    summary: str | None = None  # Short 1-2 word summary for queries
 
 
 class ScrapedTweet(BaseModel):

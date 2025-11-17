@@ -22,7 +22,9 @@ export function LoadingOverlay() {
       case 'account':
         return `Scraping tweets from @${statusData.value}`;
       case 'query':
-        return `Scraping tweets related to "${statusData.value}"`;
+        // Use summary if available, otherwise fall back to full query
+        const displayText = statusData.summary || statusData.value;
+        return `Scraping tweets related to "${displayText}"`;
       case 'generating':
         return `Generating replies${statusData.value ? ` (${statusData.value})` : ''}`;
       case 'complete':

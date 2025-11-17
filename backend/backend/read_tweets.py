@@ -142,7 +142,7 @@ async def fetch_search(ctx, query: str, username=None, write_callback=None, **kw
 
 
 # -------- Orchestration --------
-async def gather_trending(usernames, queries, username=None, write_callback=None, use_browserbase=False):
+async def gather_trending(usernames, queries, username=None, write_callback=None, use_browserbase=False, query_summary_map=None):
     """
     Gather trending tweets with progressive writing and Browserbase fallback.
 
@@ -183,13 +183,15 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
         # Scrape queries
         for q in queries:
             try:
+                # Get summary for this query
+                summary = query_summary_map.get(q, q) if query_summary_map else q
                 if username:
-                    scraping_status[username] = {"type": "query", "value": q, "phase": "scraping_browserbase"}
+                    scraping_status[username] = {"type": "query", "value": q, "summary": summary, "phase": "scraping_browserbase"}
                     notify(f"📍 Status: Scraping query [{q}] via Browserbase")
 
                 tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
                 for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {"type": "query", "value": q}
+                    tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
                 results.update(tweets)
             except Exception as e:
                 notify(f"❌ [Browserbase] Error searching [{q}]: {e}")
@@ -239,15 +241,17 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
             # topic searches
             for q in queries:
                 try:
+                    # Get summary for this query
+                    summary = query_summary_map.get(q, q) if query_summary_map else q
                     # Update status
                     if username:
-                        scraping_status[username] = {"type": "query", "value": q, "phase": "scraping"}
+                        scraping_status[username] = {"type": "query", "value": q, "summary": summary, "phase": "scraping"}
                         notify(f"📍 Status updated: Scraping query [{q}]")
 
                     tweets = await fetch_search(ctx, q, username=username, write_callback=write_callback)
                     # Add source metadata to each tweet
                     for tweet_data in tweets.values():
-                        tweet_data["scraped_from"] = {"type": "query", "value": q}
+                        tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
                     results.update(tweets)
                 except (RateLimitError, CaptchaError) as e:
                     # Bot detection! Fall back to Browserbase
@@ -257,7 +261,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
                     try:
                         tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
                         for tweet_data in tweets.values():
-                            tweet_data["scraped_from"] = {"type": "query", "value": q}
+                            tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
                         results.update(tweets)
                         notify(f"✅ Successfully scraped query [{q}] via Browserbase fallback")
                     except Exception as fallback_error:
@@ -288,6 +292,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
     from backend.tweets_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
     from backend.user import read_user_settings
+    from backend.utils import read_user_info
 
     user_settings = read_user_settings(username)
 
@@ -299,8 +304,34 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
         # Extract only accounts where validated is True, as a list of handles
         accounts_dict = user_settings.get("relevant_accounts", {})
         relevant_accounts = [handle for handle, validated in accounts_dict.items() if validated]
+
+    # Build query summary map from user_info (stores full [query, summary] pairs)
+    query_summary_map = {}
+    user_info = read_user_info(username)
+
     if queries is None:
-        queries = user_settings.get("queries", [])
+        if user_info:
+            stored_queries = user_info.get("queries", [])
+            queries = []
+            for q in stored_queries:
+                if isinstance(q, list) and len(q) == 2:
+                    # New format: [query, summary]
+                    queries.append(q[0])
+                    query_summary_map[q[0]] = q[1]
+                elif isinstance(q, str):
+                    # Legacy format: just query string
+                    queries.append(q)
+                    query_summary_map[q] = q  # Use query itself as summary for legacy
+        else:
+            # Fallback to user_settings if user_info not available
+            queries = user_settings.get("queries", [])
+            for q in queries:
+                query_summary_map[q] = q  # No summaries available in this path
+    else:
+        # If queries provided externally, use them as-is without summaries
+        for q in queries:
+            query_summary_map[q] = q
+
     if max_tweets is None:
         max_tweets = user_settings.get("max_tweets_retrieve", MAX_TWEETS_RETRIEVE)
 
@@ -326,7 +357,7 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
         notify("💻 Using local scraping with Browserbase fallback on bot detection")
 
     # Gather tweets with progressive writing enabled
-    trending = await gather_trending(relevant_accounts, queries, username=username, write_callback=progressive_write, use_browserbase=use_browserbase)
+    trending = await gather_trending(relevant_accounts, queries, username=username, write_callback=progressive_write, use_browserbase=use_browserbase, query_summary_map=query_summary_map)
     # sort by score desc
     sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
     if max_tweets:
@@ -381,12 +412,19 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         # Log the scraping action
         log_scrape_action(username, len(tweets))
 
-        # Generate replies (this will also update status to complete/idle when done)
-        notify(f"💬 [Background] Generating replies for {username}...")
-        from backend.generate_replies import generate_replies
-        result = await generate_replies(username=username, overwrite=False)
-        reply_count = sum(1 for t in result if t.get('generated_replies'))
-        notify(f"✅ [Background] Generated {reply_count} replies for {username}")
+        # Generate replies only for premium users (this will also update status to complete/idle when done)
+        account_type = user_info.get("account_type", "trial")
+        if account_type == "premium":
+            notify(f"💬 [Background] Generating replies for {username} (premium user)...")
+            from backend.generate_replies import generate_replies
+            result = await generate_replies(username=username, overwrite=False)
+            reply_count = sum(1 for t in result if t.get('generated_replies'))
+            notify(f"✅ [Background] Generated {reply_count} replies for {username}")
+        else:
+            notify(f"⏭️ [Background] Skipping reply generation for {username} (account type: {account_type}, premium required)")
+            # Update status to complete since we're not generating
+            if username in scraping_status:
+                await update_status_to_reflect_finished_scraping(username)
 
     except Exception as e:
         error(f"Error in background scraping/generation for {username}: {e}", status_code=500, function_name="_scrape_and_generate_background", username=username, critical=False)
@@ -400,9 +438,20 @@ async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks,
     """
     Start tweet scraping and reply generation in background. Returns immediately.
     Frontend should poll /read/{username}/status to track progress.
+
+    Note: Reply generation only occurs for premium users. Non-premium users will only get scraping.
     """
     try:
         notify(f"📋 [API] Received scrape request for {username}")
+
+        # Check user account type
+        user_info = read_user_info(username)
+        if not user_info:
+            error(f"User not found: {username}", status_code=404, function_name="read_tweets_endpoint", username=username)
+            raise HTTPException(status_code=404, detail=f"User not found: {username}")
+
+        account_type = user_info.get("account_type", "trial")
+        notify(f"📋 [API] User {username} has account type: {account_type}")
 
         # Set initial status to scraping
         scraping_status[username] = {"type": "scraping", "value": "", "phase": "scraping"}
@@ -417,7 +466,11 @@ async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks,
 
         notify(f"✅ [API] Background scraping scheduled for {username}")
 
-        return {"message": "Scraping started in background. Poll /read/{username}/status to track progress.", "status": "scraping_started", "background_task": "scraping_and_generation_scheduled"}
+        message = "Scraping started in background. Poll /read/{username}/status to track progress."
+        if account_type != "premium":
+            message += " (Reply generation requires premium account)"
+
+        return {"message": message, "status": "scraping_started", "background_task": "scraping_and_generation_scheduled", "account_type": account_type}
     except Exception as e:
         notify(f"❌ [API] Error scheduling scrape for {username}: {str(e)}")
         print(str(e))

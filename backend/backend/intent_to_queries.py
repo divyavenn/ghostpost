@@ -17,7 +17,15 @@ class SearchPlan(BaseModel):
     negatives: list[str]  # Terms to exclude
 
 
-async def generate_queries_from_intent(intent: str, username: str) -> list[str]:
+async def generate_queries_from_intent(intent: str, username: str) -> list[tuple[str, str]]:
+    """
+    Generate Twitter search queries with summaries from user intent.
+
+    Returns:
+        List of tuples (query, summary) where:
+        - query: Full Twitter search query with operators
+        - summary: 1-2 word description for display
+    """
     if not intent or not intent.strip():
         notify(f"⚠️ No intent provided for {username}, skipping query generation")
         return []
@@ -27,39 +35,43 @@ async def generate_queries_from_intent(intent: str, username: str) -> list[str]:
         return []
 
     # Create comprehensive prompt for LLM
-    system_prompt = "You are a Twitter search query expert. Always return valid JSON arrays of query strings."
-    prompt = f"""Given a user's intent, generate 5-8 optimized Twitter search queries.
+    system_prompt = "You are a Twitter search query expert. Always return valid JSON."
+    prompt = f"""Given a user's intent, generate 5-8 optimized Twitter search queries WITH short summaries.
 
-    User Intent: "{intent}"
+User Intent: "{intent}"
 
-    For each query, consider:
-    1. **Topics**: Main themes and subjects
-    2. **Entities**: Specific organizations, funds, companies, communities
-    3. **Must-have terms**: Required keywords that must appear
-    4. **Should-have terms**: Synonyms, hashtags, related terms (optional but helpful)
-    5. **Negatives**: Spam terms, irrelevant content to exclude
-    6. **Author types**: Who typically tweets about this (VCs, founders, engineers, etc.)
+For each query, consider:
+1. **Topics**: Main themes and subjects
+2. **Entities**: Specific organizations, funds, companies, communities
+3. **Must-have terms**: Required keywords that must appear
+4. **Should-have terms**: Synonyms, hashtags, related terms (optional but helpful)
+5. **Negatives**: Spam terms, irrelevant content to exclude
+6. **Author types**: Who typically tweets about this (VCs, founders, engineers, etc.)
 
-    Generate queries that are:
-    - Specific enough to filter noise
-    - Broad enough to catch relevant content
-    - Using Twitter search operators correctly
-    - Focused on high-quality discussions
+Generate queries that are:
+- Specific enough to filter noise
+- Broad enough to catch relevant content
+- Using Twitter search operators correctly
+- Focused on high-quality discussions
 
-    Return a JSON array of query strings. Each query should use Twitter search syntax:
-    - Use quotes for exact phrases: "raising seed"
-    - Use OR for alternatives: (VC OR "venture capital")
-    - Use - to exclude: -giveaway -crypto
-    - Include filters: -filter:links -filter:replies lang:en
+Return a JSON array of objects. Each object should have:
+- "query": Full Twitter search query with operators
+- "summary": 1-2 word description (e.g., "Seed Funding", "YC Startups", "Tech Hiring")
 
-    Example format:
-    [
-    "early stage startup (founder OR founding) (hiring OR recruiting) -filter:links -filter:replies lang:en",
-    "pre-seed OR preseed (raising OR fundraising) -giveaway -crypto -filter:links lang:en",
-    "YC OR \\"Y Combinator\\" (batch OR portfolio) -filter:replies lang:en"
-    ]
+Query syntax to use:
+- Use quotes for exact phrases: "raising seed"
+- Use OR for alternatives: (VC OR "venture capital")
+- Use - to exclude: -giveaway -crypto
+- Include filters: -filter:links -filter:replies lang:en
 
-    Generate queries now as a JSON array:"""
+Example format:
+[
+  {{"query": "early stage startup (founder OR founding) (hiring OR recruiting) -filter:links -filter:replies lang:en", "summary": "Tech Hiring"}},
+  {{"query": "pre-seed OR preseed (raising OR fundraising) -giveaway -crypto -filter:links lang:en", "summary": "Seed Funding"}},
+  {{"query": "YC OR \\"Y Combinator\\" (batch OR portfolio) -filter:replies lang:en", "summary": "YC Startups"}}
+]
+
+Generate queries now as a JSON array:"""
 
     try:
         notify(f"🤖 [Intent→Queries] Generating queries for {username}...")
@@ -74,16 +86,30 @@ async def generate_queries_from_intent(intent: str, username: str) -> list[str]:
         elif "```" in message:
             message = message.split("```")[1].split("```")[0].strip()
 
-        queries = json.loads(message)
+        queries_data = json.loads(message)
 
-        if not isinstance(queries, list):
-            error(f"LLM returned non-list response: {type(queries)}", status_code=500, function_name="generate_queries_from_intent", username=username, critical=False)
+        if not isinstance(queries_data, list):
+            error(f"LLM returned non-list response: {type(queries_data)}", status_code=500, function_name="generate_queries_from_intent", username=username, critical=False)
             return []
 
-        # Filter out any empty queries
-        queries = [q.strip() for q in queries if q and isinstance(q, str) and q.strip()]
+        # Convert to list of tuples (query, summary)
+        queries = []
+        for item in queries_data:
+            if isinstance(item, dict) and "query" in item and "summary" in item:
+                query = item["query"].strip()
+                summary = item["summary"].strip()
+                if query and summary:
+                    queries.append((query, summary))
+            elif isinstance(item, str):
+                # Fallback: if LLM returns just strings, generate simple summary
+                query = item.strip()
+                if query:
+                    # Extract first 1-2 meaningful words as summary
+                    words = [w for w in query.split() if not w.startswith('-') and not w.startswith('(')]
+                    summary = ' '.join(words[:2]) if words else "Query"
+                    queries.append((query, summary))
 
-        notify(f"✅ [Intent→Queries] Generated {len(queries)} queries for {username}")
+        notify(f"✅ [Intent→Queries] Generated {len(queries)} queries with summaries for {username}")
 
         return queries
 
@@ -123,9 +149,9 @@ async def _generate_and_update_queries_background(username: str, intent: str):
             error(f"User info not found for {username}", status_code=404, function_name="_generate_and_update_queries_background", username=username, critical=False)
             return
 
-        # Update intent and queries
+        # Update intent and queries (convert tuples to lists for JSON serialization)
         user_info["intent"] = intent
-        user_info["queries"] = queries
+        user_info["queries"] = [list(q) for q in queries]  # Convert tuples to lists
         write_user_info(user_info)
 
         notify(f"✅ [Background] Updated {username} with {len(queries)} new queries")

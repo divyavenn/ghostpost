@@ -130,6 +130,7 @@ export const loadingPhaseState = atom<'scraping' | 'generating' | null>({
 export const loadingStatusDataState = atom<{
   type: 'account' | 'query' | 'generating' | 'complete' | 'idle';
   value: string;
+  summary?: string;  // Short 1-2 word summary for queries
 } | null>({
   key: 'loadingStatusDataState',
   default: null,

@@ -243,6 +243,7 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     try {
       // Fetch current settings from server to check if generation count increased
       const currentSettings = await api.getUserSettings(username);
+      setSaving(false);
       const willGenerate = settings.number_of_generations > currentSettings.number_of_generations;
 
       // If generation will happen, signal parent to show loading overlay BEFORE API call

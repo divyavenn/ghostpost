@@ -260,7 +260,7 @@ function App() {
         } else if (status.type === 'query') {
           console.log('[Polling] Setting phase to scraping (query)');
           setLoadingPhase('scraping');
-          setLoadingStatusData({ type: 'query', value: status.value });
+          setLoadingStatusData({ type: 'query', value: status.value, summary: status.summary });
         } else if (status.type === 'generating') {
           console.log('[Polling] Setting phase to generating');
           setLoadingPhase('generating');
@@ -269,7 +269,7 @@ function App() {
           console.log('[Polling] Status complete, stopping polling');
           setLoadingStatusData({ type: 'complete', value: '' });
 
-          // Stop polling and finish up
+          // Stop polling
           clearInterval(pollInterval);
           setLoadingPhase(null);
           setLoadingStatusData(null);

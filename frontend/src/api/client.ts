@@ -10,18 +10,35 @@ let isRedirecting = false;
 // Helper function to check for authentication errors and redirect to login
 async function handleAuthError(response: Response): Promise<void> {
   if (response.status === 401) {
-    // Prevent multiple alerts/redirects
-    if (isRedirecting) {
+    // Check if this is an authentication token issue
+    const errorText = await response.clone().text();
+    let shouldLogout = false;
+
+    try {
+      const errorData = JSON.parse(errorText);
+      // Check for our custom AUTHENTICATION_REQUIRED error code
+      if (errorData.detail === 'AUTHENTICATION_REQUIRED') {
+        shouldLogout = true;
+      }
+    } catch {
+      // If we can't parse the error, assume 401 means logout needed
+      shouldLogout = true;
+    }
+
+    if (shouldLogout) {
+      // Prevent multiple alerts/redirects
+      if (isRedirecting) {
+        throw new Error('Authentication required');
+      }
+      isRedirecting = true;
+
+      // Clear stored username (same as logout)
+      localStorage.removeItem('username');
+      // Show alert and reload to trigger login page
+      alert('Your session has expired. Please log in again.');
+      window.location.reload();
       throw new Error('Authentication required');
     }
-    isRedirecting = true;
-
-    // Clear stored username (same as logout)
-    localStorage.removeItem('username');
-    // Show alert and reload to trigger login page
-    alert('Your session has expired. Please log in again.');
-    window.location.reload();
-    throw new Error('Authentication required');
   }
 }
 
@@ -243,7 +260,7 @@ export const api = {
     }
   },
 
-  getScrapingStatus: async (username: string): Promise<{ type: string; value: string; phase: string }> => {
+  getScrapingStatus: async (username: string): Promise<{ type: string; value: string; phase: string; summary?: string }> => {
     const response = await fetch(`${API_BASE_URL}/read/${encodeURIComponent(username)}/status`);
     if (!response.ok) throw new Error('Failed to get scraping status');
     return response.json();
@@ -421,6 +438,7 @@ export const api = {
         tweet_ids: tweetIds
       }),
     });
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to check tweet performance');
     return response.json();
   },

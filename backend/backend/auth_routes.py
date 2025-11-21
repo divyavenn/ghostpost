@@ -12,7 +12,7 @@ from backend.config import (
     BROWSERBASE_PROJECT_ID,
     SHOW_BROWSER,
 )
-from backend.oauth import exchange_code_for_token, get_authorization_url
+from backend.backend.browser_management.twitter.oauth import exchange_code_for_token, get_authorization_url
 from backend.user import get_user_info
 from backend.utils import atomic_file_update, notify, store_browser_state, store_token
 
@@ -524,7 +524,7 @@ async def get_login_url(payload: LoginUrlRequest | None = None) -> dict:
     state = secrets.token_urlsafe(32)
 
     # Generate OAuth URL (same as /twitter/start endpoint)
-    from backend.oauth import get_authorization_url
+    from backend.backend.browser_management.twitter.oauth import get_authorization_url
     auth_url, code_verifier = get_authorization_url(state)
 
     # Store frontend URL for redirect after OAuth

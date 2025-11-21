@@ -43,6 +43,9 @@ class User(BaseModel):
     scrapes_left: int | None = None
     posts_left: int | None = None
 
+    # seen tweets tracking (to prevent showing duplicate tweets)
+    seen_tweets: dict[str, str] = {}  # tweet_id -> timestamp
+
 
 class Source(BaseModel):
     type: Literal["account", "query"]
@@ -75,6 +78,7 @@ class ScrapedTweet(BaseModel):
     retweets: int
     quotes: int
     replies: int
+    impressions: int = 0  # view/impression count
     followers: int  # follower count of author at time of tweet
     score: float  # calculated engagement score
 
@@ -92,6 +96,7 @@ class PostedTweet(BaseModel):
     retweets: int
     quotes: int
     replies: int
+    impressions: int = 0  # view/impression count
 
     # metadata
     created_at: str  # ISO 8601 datetime string

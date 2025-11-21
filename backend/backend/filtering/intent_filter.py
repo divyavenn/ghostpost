@@ -20,16 +20,7 @@ def ask_llm(system_prompt, prompt):
     url = "https://obelisk.dread.technology/api/chat/completions"
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
 
-    payload = {
-        "model": "chatgpt-4o",
-        "messages": [{
-            "role": "system",
-            "content": system_prompt
-        }, {
-            "role": "user",
-            "content": prompt
-        }]
-    }
+    payload = {"model": "chatgpt-4o", "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]}
 
     try:
         response = requests.post(url, headers=headers, json=payload)
@@ -38,7 +29,7 @@ def ask_llm(system_prompt, prompt):
 
         message = data["choices"][0]["message"]["content"]
         return message
-    
+
     except Exception as e:
         error(f"❌ Error extracting keywords from intent: {e}", status_code=500, function_name="extract_keywords_from_intent", critical=False)
         return []
@@ -178,7 +169,7 @@ async def remove_tweet_from_cache(tweet_id: str, username: str) -> bool:
     Returns:
         True if tweet was removed, False otherwise
     """
-    from backend.tweets_cache import read_from_cache, write_to_cache
+    from backend.backend.data.twitter.edit_cache import read_from_cache, write_to_cache
 
     try:
         # Read current cache

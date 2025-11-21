@@ -6,7 +6,7 @@ import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.oauth import ensure_access_token
+from backend.backend.browser_management.twitter.oauth import ensure_access_token
 from backend.posted_tweets_cache import read_posted_tweets_cache, update_tweet_metrics
 from backend.utils import notify
 
@@ -19,6 +19,7 @@ class TweetMetrics(BaseModel):
     retweets: int
     quotes: int
     replies: int
+    impressions: int = 0
 
 
 class CheckPerformanceRequest(BaseModel):
@@ -68,7 +69,8 @@ async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[st
                                                          likes=public_metrics.get("like_count", 0),
                                                          retweets=public_metrics.get("retweet_count", 0),
                                                          quotes=public_metrics.get("quote_count", 0),
-                                                         replies=public_metrics.get("reply_count", 0))
+                                                         replies=public_metrics.get("reply_count", 0),
+                                                         impressions=public_metrics.get("impression_count", 0))
 
         return metrics_map
 

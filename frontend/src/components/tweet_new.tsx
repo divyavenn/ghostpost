@@ -12,6 +12,7 @@ export interface TweetData {
   retweets: number;
   quotes: number;
   replies: number;  // Count of replies to the original tweet
+  impressions?: number;  // View/impression count
   handle: string;
   score: number;
   username: string;
@@ -331,6 +332,12 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
             <i className="fa-regular fa-heart text-lg text-neutral-500" aria-hidden="true" />
             <span className="font-medium">{formatMetric(tweet.likes)}</span>
           </div>
+          {tweet.impressions !== undefined && tweet.impressions > 0 && (
+            <div className="flex items-center gap-2">
+              <i className="fa-regular fa-eye text-lg text-neutral-500" aria-hidden="true" />
+              <span className="font-medium">{formatMetric(tweet.impressions)}</span>
+            </div>
+          )}
         </div>
 
         {!readOnly ? (

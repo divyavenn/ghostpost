@@ -14,9 +14,9 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter
 
-from backend.generate_replies import generate_replies
+from backend.backend.replying.generate_replies import generate_replies
 from backend.log_interactions import log_scrape_action
-from backend.read_tweets import read_tweets
+from backend.backend.scraping.twitter.timeline import read_tweets
 from backend.utils import BROWSER_STATE_FILE, cookie_still_valid, log_background_task, notify
 
 # Global scheduler instance
@@ -87,7 +87,7 @@ async def auto_scrape_for_user(username: str):
     """
     import time
 
-    from backend.tweets_cache import purge_unedited_tweets
+    from backend.backend.data.twitter.edit_cache import purge_unedited_tweets
     from backend.utils import read_user_info, write_user_info
 
     start_time = time.time()

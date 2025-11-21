@@ -17,11 +17,11 @@ except ModuleNotFoundError:  # Running from inside backend/
 ensure_standalone_imports(globals())
 
 try:
-    from backend.headless_fetch import collect_from_page
+    from backend.backend.scraping.twitter.tools import collect_from_page
     from backend.log_interactions import log_scrape_action
     from backend.utils import error, notify, read_user_info, write_user_info
 except ImportError:
-    from headless_fetch import collect_from_page
+    from backend.backend.scraping.twitter.tools import collect_from_page
     from log_interactions import log_scrape_action
     from utils import error, notify, read_user_info, write_user_info
 
@@ -35,6 +35,7 @@ from backend.config import (
     DEFAULT_TWITTER_USERNAME as USERNAME,
 )
 from backend.config import (
+    MAX_TWEET_AGE_HOURS,
     SHOW_BROWSER,
     USE_BROWSERBASE_FOR_SCRAPING,
 )
@@ -78,14 +79,14 @@ async def update_status_to_reflect_finished_scraping(username: str):
     """
     scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
     notify(f"✅ Status set to complete for {username}")
-    
+
     async def reset_to_idle():
         # Reset to idle after 5 seconds
         await asyncio.sleep(5)
         if username in scraping_status and scraping_status[username]["type"] == "complete":
             scraping_status[username] = {"type": "idle", "value": "", "phase": "idle"}
             notify(f"🔄 Status reset to idle for {username}")
-            
+
     asyncio.create_task(reset_to_idle())
 
 
@@ -156,7 +157,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     Returns:
         dict: Scraped tweets
     """
-    from backend.browserbase_scraper import fetch_search_browserbase, fetch_user_tweets_browserbase
+    from backend.backend.scraping.browerbase import fetch_search_browserbase, fetch_user_tweets_browserbase
     from backend.exceptions import CaptchaError, RateLimitError
 
     notify(f"🚀 [gather_trending] Starting for {username}: {len(usernames)} accounts, {len(queries)} queries, use_browserbase={use_browserbase}")
@@ -290,7 +291,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
 
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
-    from backend.tweets_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
+    from backend.backend.data.twitter.edit_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
     from backend.user import read_user_settings
     from backend.utils import read_user_info
 
@@ -340,13 +341,27 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     if purged_count > 0:
         notify(f"🗑️ Purged {purged_count} unedited tweets before scraping")
 
-    # Clean up old tweets before retrieving new ones (48 hour threshold)
-    await cleanup_old_tweets(username, hours=48)
+    # Clean up old tweets before retrieving new ones
+    await cleanup_old_tweets(username, hours=MAX_TWEET_AGE_HOURS)
+
+    # Clean up old seen_tweets entries
+    from backend.utils import cleanup_seen_tweets
+    cleanup_seen_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
     # Define progressive write callback for incremental updates
     async def progressive_write(tweets_batch, target_username):
-        """Write tweets incrementally as they're discovered"""
-        await write_to_cache(tweets_batch, "Progressive tweet scraping", username=target_username)
+        """Write tweets incrementally as they're discovered, filtering out already-seen tweets"""
+        from backend.utils import is_tweet_seen
+
+        # Filter out tweets that were already seen
+        filtered_batch = []
+        for tweet in tweets_batch:
+            tweet_id = tweet.get("id") or tweet.get("tweet_id")
+            if tweet_id and not is_tweet_seen(target_username, str(tweet_id)):
+                filtered_batch.append(tweet)
+
+        if filtered_batch:
+            await write_to_cache(filtered_batch, "Progressive tweet scraping", username=target_username)
 
     sorted_items = []
     # Check if we should use Browserbase for all scraping
@@ -358,8 +373,24 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
 
     # Gather tweets with progressive writing enabled
     trending = await gather_trending(relevant_accounts, queries, username=username, write_callback=progressive_write, use_browserbase=use_browserbase, query_summary_map=query_summary_map)
+
+    # Filter out tweets that were already seen
+    from backend.utils import is_tweet_seen
+    original_count = len(trending)
+    filtered_trending = {}
+    filtered_out_count = 0
+
+    for tweet_id, tweet_data in trending.items():
+        if not is_tweet_seen(username, tweet_id):
+            filtered_trending[tweet_id] = tweet_data
+        else:
+            filtered_out_count += 1
+
+    if filtered_out_count > 0:
+        notify(f"🔍 Filtered out {filtered_out_count} previously seen tweet(s) from {original_count} scraped")
+
     # sort by score desc
-    sorted_items = sorted(trending.values(), key=lambda x: x["score"], reverse=True)
+    sorted_items = sorted(filtered_trending.values(), key=lambda x: x["score"], reverse=True)
     if max_tweets:
         sorted_items = sorted_items[:max_tweets]
 
@@ -416,7 +447,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         account_type = user_info.get("account_type", "trial")
         if account_type == "premium":
             notify(f"💬 [Background] Generating replies for {username} (premium user)...")
-            from backend.generate_replies import generate_replies
+            from backend.backend.replying.generate_replies import generate_replies
             result = await generate_replies(username=username, overwrite=False)
             reply_count = sum(1 for t in result if t.get('generated_replies'))
             notify(f"✅ [Background] Generated {reply_count} replies for {username}")

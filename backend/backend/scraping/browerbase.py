@@ -6,10 +6,10 @@ from playwright.async_api import async_playwright
 from backend.config import BROWSERBASE_API_KEY, BROWSERBASE_PROJECT_ID
 
 try:
-    from backend.headless_fetch import collect_from_page
+    from backend.backend.scraping.twitter.tools import collect_from_page
     from backend.utils import error, notify, read_browser_state, store_browser_state
 except ImportError:
-    from headless_fetch import collect_from_page
+    from backend.backend.scraping.twitter.tools import collect_from_page
     from utils import error, notify, read_browser_state
 
 

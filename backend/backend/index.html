@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GhostPost | Bespoke AI</title>
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,600;1,400&family=Inter:wght@200;400&family=Space+Mono&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- GSAP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/TextPlugin.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        serif: ['"Cormorant Garamond"', 'serif'],
+                        sans: ['"Inter"', 'sans-serif'],
+                        mono: ['"Space Mono"', 'monospace'],
+                    },
+                    colors: {
+                        black: '#050505',
+                        offWhite: '#E5E5E5',
+                        charcoal: '#1A1A1A',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #050505;
+            color: #E5E5E5;
+            cursor: none; /* Custom cursor implementation */
+            overflow-x: hidden;
+        }
+
+        /* Custom Cursor */
+        .cursor-dot,
+        .cursor-outline {
+            position: fixed;
+            top: 0;
+            left: 0;
+            transform: translate(-50%, -50%);
+            border-radius: 50%;
+            z-index: 9999;
+            pointer-events: none;
+        }
+
+        .cursor-dot {
+            width: 8px;
+            height: 8px;
+            background-color: white;
+        }
+
+        .cursor-outline {
+            width: 40px;
+            height: 40px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            transition: width 0.2s, height 0.2s, background-color 0.2s;
+        }
+
+        /* Text Cursor for Typewriter */
+        .blinking-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1em;
+            background-color: white;
+            margin-left: 5px;
+            animation: blink 1s step-end infinite;
+            vertical-align: middle;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Grain overlay */
+        .grain {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+            z-index: 50;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        
+        /* Selection color */
+        ::selection {
+            background: white;
+            color: black;
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-white selection:text-black">
+
+    <!-- Custom Cursor Elements -->
+    <div class="cursor-dot"></div>
+    <div class="cursor-outline"></div>
+    
+    <!-- Film Grain Overlay -->
+    <div class="grain"></div>
+
+    <!-- Navigation -->
+    <nav class="fixed top-0 w-full p-8 flex justify-between items-center z-40 mix-blend-difference">
+        <div class="text-2xl font-serif italic tracking-wide opacity-0" id="nav-logo">GhostPost.</div>
+        <div class="hidden md:flex gap-8 font-sans text-xs tracking-[0.2em] uppercase opacity-0" id="nav-links">
+            <a href="#" class="hover:text-gray-400 transition-colors">Manifesto</a>
+            <a href="#" class="hover:text-gray-400 transition-colors">The Tech</a>
+            <a href="#" class="hover:text-gray-400 transition-colors">Access</a>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="relative w-full min-h-screen flex flex-col items-center justify-center px-4">
+        
+        <!-- Background Dynamic Text (The "Ghost" Writing) -->
+        <div class="absolute inset-0 overflow-hidden z-0 opacity-10 pointer-events-none flex items-center justify-center">
+            <div id="bg-typewriter" class="font-mono text-sm md:text-base leading-loose max-w-4xl text-justify"></div>
+        </div>
+
+        <div class="relative z-10 text-center max-w-5xl mx-auto mt-20">
+            
+            <!-- Headline -->
+            <h1 class="font-serif text-5xl md:text-8xl lg:text-9xl leading-[0.9] tracking-tight mb-8">
+                <span class="block overflow-hidden"><span class="inline-block translate-y-full reveal-text">Become Your</span></span>
+                <span class="block overflow-hidden italic"><span class="inline-block translate-y-full reveal-text">Own Ghostwriter.</span></span>
+            </h1>
+
+            <!-- Dynamic Subtext / Value Prop -->
+            <div class="h-24 md:h-16 mt-8 flex items-center justify-center">
+                <p class="font-mono text-xs md:text-sm text-gray-400 max-w-lg leading-relaxed">
+                    <span id="typewriter-text"></span><span class="blinking-cursor"></span>
+                </p>
+            </div>
+
+            <!-- Call to Action -->
+            <div class="mt-12 opacity-0" id="cta-container">
+                <button class="group relative px-8 py-4 bg-transparent border border-white/20 hover:border-white transition-colors duration-500 overflow-hidden">
+                    <div class="absolute inset-0 bg-white translate-y-full group-hover:translate-y-0 transition-transform duration-500 ease-out"></div>
+                    <span class="relative font-sans text-xs tracking-[0.2em] uppercase group-hover:text-black transition-colors duration-500">
+                        Summon The Ghost
+                    </span>
+                </button>
+                <p class="mt-4 font-sans text-[10px] text-gray-600 uppercase tracking-widest">
+                    Bespoke LLMs • Viral Traction • Autopilot
+                </p>
+            </div>
+
+        </div>
+
+        <!-- Floating Product Abstract Visualization -->
+        <div class="absolute bottom-10 right-10 hidden lg:block opacity-0" id="code-snippet">
+            <div class="glass-panel p-6 rounded-sm w-64">
+                <div class="flex gap-2 mb-4">
+                    <div class="w-2 h-2 rounded-full bg-white/20"></div>
+                    <div class="w-2 h-2 rounded-full bg-white/20"></div>
+                </div>
+                <div class="font-mono text-[10px] text-gray-400 space-y-2">
+                    <p>> Analyzing brand voice...</p>
+                    <p>> Ingesting 500+ interactions...</p>
+                    <p class="text-white">> Model Trained.</p>
+                    <p class="animate-pulse">> Generating viral hooks...</p>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <script>
+        // --- Custom Cursor Logic ---
+        const cursorDot = document.querySelector('.cursor-dot');
+        const cursorOutline = document.querySelector('.cursor-outline');
+
+        window.addEventListener('mousemove', (e) => {
+            const posX = e.clientX;
+            const posY = e.clientY;
+
+            // Dot follows instantly
+            cursorDot.style.left = `${posX}px`;
+            cursorDot.style.top = `${posY}px`;
+
+            // Outline follows with delay (handled by CSS transition or GSAP)
+            cursorOutline.animate({
+                left: `${posX}px`,
+                top: `${posY}px`
+            }, { duration: 500, fill: "forwards" });
+        });
+
+        // Hover effects for cursor
+        document.querySelectorAll('a, button').forEach(el => {
+            el.addEventListener('mouseenter', () => {
+                cursorOutline.style.transform = 'translate(-50%, -50%) scale(1.5)';
+                cursorOutline.style.backgroundColor = 'rgba(255,255,255,0.1)';
+            });
+            el.addEventListener('mouseleave', () => {
+                cursorOutline.style.transform = 'translate(-50%, -50%) scale(1)';
+                cursorOutline.style.backgroundColor = 'transparent';
+            });
+        });
+
+        // --- GSAP Animations ---
+        gsap.registerPlugin(TextPlugin);
+
+        const tl = gsap.timeline();
+
+        // 1. Reveal Navigation
+        tl.to('#nav-logo, #nav-links', {
+            opacity: 1,
+            duration: 1.5,
+            stagger: 0.2,
+            ease: "power2.out"
+        });
+
+        // 2. Reveal Main Headline (Slide Up)
+        tl.to('.reveal-text', {
+            y: 0,
+            duration: 1.2,
+            stagger: 0.15,
+            ease: "power4.out"
+        }, "-=1");
+
+        // 3. Typewriter Effect for Value Prop
+        const mainCopy = "Bespoke LLMs that do your word of mouth for you and drive traction to your product.";
+        
+        tl.to('#typewriter-text', {
+            duration: 3,
+            text: {
+                value: mainCopy,
+                delimiter: ""
+            },
+            ease: "none",
+        });
+
+        // 4. Reveal CTA and Decoration
+        tl.to('#cta-container, #code-snippet', {
+            opacity: 1,
+            y: 0,
+            duration: 1,
+            ease: "power2.out"
+        });
+
+        // --- Background "Thinking" Animation ---
+        // This simulates the LLM trying out different "Ghost" phrases in the background
+        const bgPhrases = [
+            "Scaling organic reach...",
+            "Synthesizing founder persona...",
+            "Drafting LinkedIn thread #45...",
+            "Optimizing for high engagement...",
+            "Mimicking tone: Witty/Professional...",
+            "Deploying word of mouth agents...",
+            "Analyzing sentiment...",
+            "Ghost mode: Active."
+        ];
+
+        // Create a subtle background stream of text
+        function streamBackgroundText() {
+            const container = document.getElementById('bg-typewriter');
+            let currentPhraseIndex = 0;
+
+            setInterval(() => {
+                // Add a line
+                const line = document.createElement('div');
+                line.innerText = `> ${bgPhrases[Math.floor(Math.random() * bgPhrases.length)]}`;
+                line.style.opacity = 0;
+                container.appendChild(line);
+
+                // Animate it in and out
+                gsap.to(line, { opacity: 0.4, duration: 1, onComplete: () => {
+                    gsap.to(line, { opacity: 0, duration: 1, delay: 2, onComplete: () => {
+                        line.remove();
+                    }});
+                }});
+
+                // Keep DOM clean
+                if(container.children.length > 6) {
+                    container.firstChild.remove();
+                }
+
+            }, 800);
+        }
+
+        // Start background stream after intro
+        setTimeout(streamBackgroundText, 2000);
+
+    </script>
+</body>
+</html>

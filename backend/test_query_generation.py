@@ -3,7 +3,6 @@
 
 import asyncio
 import json
-from pathlib import Path
 
 from backend.intent_to_queries import generate_queries_from_intent
 from backend.utils import read_user_info
@@ -36,7 +35,7 @@ async def test_query_generation():
             print(f"   ❌ ERROR: Not a tuple! Value: {query_tuple}")
 
     # Now check what's actually stored in user_info.json
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📂 Checking user_info.json storage...")
 
     user_info = read_user_info(test_username)
@@ -59,7 +58,7 @@ async def test_query_generation():
         print("❌ No queries found in user_info.json")
 
     # Print raw JSON to verify format
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📄 Raw JSON format in user_info.json:")
     if user_info and "queries" in user_info:
         print(json.dumps({"queries": user_info["queries"]}, indent=2))

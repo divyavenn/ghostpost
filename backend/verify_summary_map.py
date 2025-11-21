@@ -31,9 +31,9 @@ for q in stored_queries:
         queries.append(q)
         query_summary_map[q] = q  # Use query itself as summary for legacy
 
-print("="*80)
+print("=" * 80)
 print("Query Summary Map:")
-print("="*80)
+print("=" * 80)
 
 for i, query in enumerate(queries, 1):
     summary = query_summary_map.get(query, "NOT FOUND")
@@ -41,13 +41,13 @@ for i, query in enumerate(queries, 1):
     print(f"   {query[:100]}...")
     print(f"   Summary: '{summary}'")
     if summary == query[:len(summary)]:
-        print(f"   ⚠️  Summary is just the start of the query (legacy format)")
+        print("   ⚠️  Summary is just the start of the query (legacy format)")
     elif summary == "NOT FOUND":
-        print(f"   ❌ ERROR: No summary found!")
+        print("   ❌ ERROR: No summary found!")
     else:
-        print(f"   ✅ Has distinct summary!")
+        print("   ✅ Has distinct summary!")
 
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 print(f"Total queries: {len(queries)}")
 print(f"Total summaries in map: {len(query_summary_map)}")
 print(f"Match: {'✅' if len(queries) == len(query_summary_map) else '❌'}")

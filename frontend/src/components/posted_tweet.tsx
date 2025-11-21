@@ -9,6 +9,7 @@ export interface PostedTweetData {
   retweets: number;
   quotes: number;
   replies: number;
+  impressions?: number;  // View/impression count
   created_at: string;
   url: string;  // URL of your posted tweet
   response_to_thread: string[];  // Original tweet thread you responded to
@@ -179,6 +180,12 @@ export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsernam
             <i className="fa-regular fa-heart text-lg text-neutral-500" aria-hidden="true" />
             <span className="font-medium">{formatMetric(tweet.likes)}</span>
           </div>
+          {tweet.impressions !== undefined && tweet.impressions > 0 && (
+            <div className="flex items-center gap-2">
+              <i className="fa-regular fa-eye text-lg text-neutral-500" aria-hidden="true" />
+              <span className="font-medium">{formatMetric(tweet.impressions)}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>

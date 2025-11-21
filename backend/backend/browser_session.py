@@ -71,7 +71,7 @@ async def create_browser_session(username: str) -> dict:
     Create a new browser session for OAuth login.
     Returns session info including how to connect to it.
     """
-    from backend.oauth import get_authorization_url
+    from backend.backend.browser_management.twitter.oauth import get_authorization_url
 
     # Generate session ID
     session_id = secrets.token_urlsafe(32)
@@ -141,7 +141,7 @@ async def save_and_close_session(session_id: str) -> dict:
     """
     Save browser state and close the session after successful login.
     """
-    from backend.oauth import exchange_code_for_token
+    from backend.backend.browser_management.twitter.oauth import exchange_code_for_token
     from backend.utils import error, store_browser_state
     session = active_sessions.get(session_id)
     if not session:

@@ -17,7 +17,7 @@ async def test_full_flow():
     print(f"🧪 Testing full query generation flow for: {test_username}")
     print(f"📝 Intent: {test_intent}\n")
 
-    print("="*80)
+    print("=" * 80)
     print("BEFORE - Checking current queries in user_info.json:")
     user_info_before = read_user_info(test_username)
     if user_info_before and "queries" in user_info_before:
@@ -28,11 +28,11 @@ async def test_full_flow():
     else:
         print("No queries found")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("🚀 Running background task to generate and save queries...")
     await _generate_and_update_queries_background(test_username, test_intent)
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("AFTER - Checking updated queries in user_info.json:")
     user_info_after = read_user_info(test_username)
 
@@ -53,7 +53,7 @@ async def test_full_flow():
         print(f"\n{i}. Type: {type(query_item)}")
 
         if isinstance(query_item, list):
-            print(f"   ✅ Stored as list (correct format)")
+            print("   ✅ Stored as list (correct format)")
             if len(query_item) == 2:
                 full_query, summary = query_item
                 print(f"   📝 Summary: '{summary}'")
@@ -62,13 +62,13 @@ async def test_full_flow():
                 print(f"   ❌ ERROR: List has {len(query_item)} elements, expected 2")
                 print(f"   Value: {query_item}")
         elif isinstance(query_item, str):
-            print(f"   ❌ ERROR: Stored as string (old format)")
+            print("   ❌ ERROR: Stored as string (old format)")
             print(f"   Value: '{query_item[:80]}...'")
         else:
-            print(f"   ❌ ERROR: Unexpected type")
+            print("   ❌ ERROR: Unexpected type")
             print(f"   Value: {query_item}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📄 Raw JSON (first 3 queries):")
     print(json.dumps({"queries": queries_after[:3]}, indent=2))
 

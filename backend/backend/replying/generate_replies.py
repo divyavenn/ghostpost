@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from .read_tweets import USERNAME
-from .utils import error, notify, read_user_info
+from ..scraping.twitter.timeline import USERNAME
+from ..utils import error, notify, read_user_info
 
 try:
     from backend.resolve_imports import ensure_standalone_imports
@@ -24,14 +24,13 @@ from backend.config import OBELISK_KEY
 
 # Import scraping status tracker from read_tweets for status updates
 try:
-    from backend.read_tweets import scraping_status, update_status_to_reflect_finished_scraping
+    from backend.backend.scraping.twitter.timeline import scraping_status, update_status_to_reflect_finished_scraping
 except ImportError:
-    from read_tweets import scraping_status, update_status_to_reflect_finished_scraping
-
+    from backend.backend.scraping.twitter.timeline import scraping_status, update_status_to_reflect_finished_scraping
 
 REPLY_GAME = """You are an expert at online conversation. 
 Your job is to craft replies, comments, and recommendations that support the original poster (OP), elevate the discussion, 
-and make the OP feel accurately understood. Your tone should feel like an insightful, socially intelligent expert texting a friend — concise, intuitive, supportive, never pompous.
+and make the OP feel accurately understood. Your tone should feel like an insightful, socially intelligent expert casually and informally texting a friend, using the emojis, abbreviations, and slang you'd normally use — concise, intuitive, supportive, never pompous.
 
 The quoted content is marked [QUOTED TWEET] if it exists and the user's response is marked [RESPONSE].
 
@@ -135,6 +134,7 @@ OR
 Your reply should feel like something people would screenshot because it’s that good.
 
 """
+
 
 async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False, username: str = "unknown") -> dict:
     url = "https://obelisk.dread.technology/api/chat/completions"
@@ -292,7 +292,7 @@ async def generate_replies_for_tweet(tweet, models, needed_generations, delay_se
 
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
-    from backend.tweets_cache import read_from_cache, write_to_cache
+    from backend.backend.data.twitter.edit_cache import read_from_cache, write_to_cache
 
     # Check if API key is configured
     if not OBELISK_KEY:
@@ -422,7 +422,7 @@ async def generate_replies_endpoint(username: str, payload: GenerateRepliesReque
 @router.post("/{username}/replies/{tweet_id}")
 async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict:
     """Regenerate AI reply for a single tweet."""
-    from backend.tweets_cache import read_from_cache, write_to_cache
+    from backend.backend.data.twitter.edit_cache import read_from_cache, write_to_cache
 
     # Check if API key is configured
     if not OBELISK_KEY:

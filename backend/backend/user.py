@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.tweets_cache import remove_user_cache
+from backend.backend.data.twitter.edit_cache import remove_user_cache
 from backend.utils import BROWSER_STATE_FILE, TOKEN_FILE, _archive_interactions_log, _cache_key, notify, read_user_info, remove_entry_from_map, write_user_info
 
 
@@ -338,8 +338,8 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
         generation_happened = False
         if payload.number_of_generations is not None and new_num_generations != old_num_generations:
             notify("✅ Number of generations changed! Starting automatic reply adjustment...")
-            from backend.generate_replies import generate_replies_for_tweet
-            from backend.tweets_cache import read_from_cache, write_to_cache
+            from backend.backend.replying.generate_replies import generate_replies_for_tweet
+            from backend.backend.data.twitter.edit_cache import read_from_cache, write_to_cache
 
             tweets = await read_from_cache(username=handle)
 
@@ -368,7 +368,7 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
                     notify(f"📊 Found {tweets_to_update} tweets that need additional replies")
 
                     # Initialize scraping status before starting generation
-                    from backend.generate_replies import scraping_status
+                    from backend.backend.replying.generate_replies import scraping_status
                     scraping_status[handle] = {"type": "generating", "value": f"0/{tweets_to_update}", "phase": "generating"}
 
                     updated_count = 0
@@ -383,7 +383,7 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
                             continue
 
                         # Update scraping status for frontend polling
-                        from backend.generate_replies import scraping_status
+                        from backend.backend.replying.generate_replies import scraping_status
                         scraping_status[handle] = {"type": "generating", "value": f"{updated_count + 1}/{tweets_to_update}", "phase": "generating"}
 
                         tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
@@ -406,7 +406,7 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
                     # Mark generation as complete
                     import asyncio
 
-                    from backend.generate_replies import scraping_status
+                    from backend.backend.replying.generate_replies import scraping_status
                     scraping_status[handle] = {"type": "complete", "value": "", "phase": "complete"}
 
                     # Reset to idle after 5 seconds
@@ -616,7 +616,7 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
 
     import requests
 
-    from backend.oauth import ensure_access_token
+    from backend.backend.browser_management.twitter.oauth import ensure_access_token
     from backend.utils import error
 
     try:

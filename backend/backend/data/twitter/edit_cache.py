@@ -7,6 +7,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
+from backend.config import MAX_TWEET_AGE_HOURS
 from backend.utils import _cache_key, atomic_file_update, error, notify
 
 BACKEND_DIR = Path(__file__).resolve().parent
@@ -67,6 +68,17 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
     path = get_user_tweet_cache(username)
     atomic_file_update(path, all_tweets, ".tmp", ensure_ascii=False)
     # notify(f"💾{description} and wrote to cache")
+
+    # Track newly written tweets in seen_tweets
+    from backend.utils import add_to_seen_tweets
+    tweet_ids_to_track = []
+    for tweet in tweets:
+        tweet_id = tweet.get("id") or tweet.get("tweet_id")
+        if tweet_id:
+            tweet_ids_to_track.append(str(tweet_id))
+
+    if tweet_ids_to_track:
+        add_to_seen_tweets(username, tweet_ids_to_track)
 
     # Log each tweet being written
     for tweet in tweets:
@@ -176,12 +188,12 @@ async def purge_unedited_tweets(username: str) -> int:
     return removed_count
 
 
-async def cleanup_old_tweets(username: str, hours: int = 48) -> int:
+async def cleanup_old_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) -> int:
     """Remove tweets older than the specified hours from cache.
 
     Args:
         username: The username whose cache to clean
-        hours: Age threshold in hours (default: 48)
+        hours: Age threshold in hours (default: MAX_TWEET_AGE_HOURS)
 
     Returns:
         Number of tweets removed
@@ -466,12 +478,12 @@ async def get_single_tweet_endpoint(username: str, tweet_id: str) -> dict[str, A
 
 
 @router.post("/{username}/cleanup")
-async def cleanup_tweets_endpoint(username: str, hours: int = 48) -> dict[str, Any]:
+async def cleanup_tweets_endpoint(username: str, hours: int = MAX_TWEET_AGE_HOURS) -> dict[str, Any]:
     """Manually trigger cleanup of tweets older than the specified hours.
 
     Args:
         username: The username whose cache to clean
-        hours: Age threshold in hours (default: 48)
+        hours: Age threshold in hours (default: MAX_TWEET_AGE_HOURS)
 
     Returns:
         Cleanup summary with count of removed tweets

@@ -1,11 +1,10 @@
 import json
 
-import requests
 from pydantic import BaseModel
 
 from backend.config import OBELISK_KEY
+from backend.backend.filtering.intent_filter import ask_llm
 from backend.utils import error, notify, read_user_info, write_user_info
-from backend.intent_filter import ask_llm
 
 
 class SearchPlan(BaseModel):

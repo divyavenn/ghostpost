@@ -10,6 +10,7 @@ from backend.config import (
     AUTH_COOKIE,
     BROWSER_STATE_FILE,
     CACHE_DIR,
+    MAX_TWEET_AGE_HOURS,
     TOKEN_FILE,
     USER_INFO_FILE,
 )
@@ -537,6 +538,112 @@ def log_background_task(username: str, task_type: str, tweets_scraped: int = 0, 
     except Exception as e:
         error("Failed to log background task", status_code=500, exception_text=str(e), function_name="log_background_task", username=username)
         notify(f"⚠️ Failed to log background task: {e}")
+
+
+def add_to_seen_tweets(username: str, tweet_ids: list[str]) -> None:
+    """
+    Add tweet IDs to the seen_tweets map in user_info with current timestamp.
+
+    Args:
+        username: Twitter handle of the user
+        tweet_ids: List of tweet IDs to mark as seen
+    """
+    user_info = read_user_info(username)
+    if not user_info:
+        notify(f"⚠️ Cannot add to seen_tweets: user {username} not found")
+        return
+
+    # Initialize seen_tweets if it doesn't exist
+    seen_tweets = user_info.get("seen_tweets", {})
+    if not isinstance(seen_tweets, dict):
+        seen_tweets = {}
+
+    # Add new tweet IDs with current timestamp
+    current_time = datetime.utcnow().isoformat() + "Z"
+    for tweet_id in tweet_ids:
+        if tweet_id:
+            seen_tweets[str(tweet_id)] = current_time
+
+    # Update user_info
+    user_info["seen_tweets"] = seen_tweets
+    write_user_info(user_info)
+    notify(f"👁️ Added {len(tweet_ids)} tweet(s) to seen_tweets for {username}")
+
+
+def cleanup_seen_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) -> int:
+    """
+    Remove tweet IDs older than specified hours from seen_tweets map.
+
+    Args:
+        username: Twitter handle of the user
+        hours: Age threshold in hours (default: MAX_TWEET_AGE_HOURS)
+
+    Returns:
+        Number of tweet IDs removed
+    """
+    from datetime import timedelta
+
+    try:  # Python 3.11+
+        from datetime import UTC  # type: ignore[attr-defined]
+    except ImportError:  # Python <3.11
+        UTC = UTC
+
+    user_info = read_user_info(username)
+    if not user_info:
+        return 0
+
+    seen_tweets = user_info.get("seen_tweets", {})
+    if not isinstance(seen_tweets, dict) or not seen_tweets:
+        return 0
+
+    now = datetime.now(UTC)
+    cutoff = now - timedelta(hours=hours)
+
+    # Filter out old entries
+    original_count = len(seen_tweets)
+    filtered_seen_tweets = {}
+
+    for tweet_id, timestamp_str in seen_tweets.items():
+        try:
+            # Parse ISO format timestamp
+            timestamp = datetime.fromisoformat(timestamp_str.replace("Z", "+00:00"))
+            if timestamp >= cutoff:
+                filtered_seen_tweets[tweet_id] = timestamp_str
+        except Exception:
+            # If we can't parse the timestamp, keep the entry (better safe than sorry)
+            filtered_seen_tweets[tweet_id] = timestamp_str
+
+    removed_count = original_count - len(filtered_seen_tweets)
+
+    # Update user_info if anything was removed
+    if removed_count > 0:
+        user_info["seen_tweets"] = filtered_seen_tweets
+        write_user_info(user_info)
+        notify(f"🧹 Cleaned {removed_count} old tweet ID(s) from seen_tweets for {username}")
+
+    return removed_count
+
+
+def is_tweet_seen(username: str, tweet_id: str) -> bool:
+    """
+    Check if a tweet ID exists in the seen_tweets map.
+
+    Args:
+        username: Twitter handle of the user
+        tweet_id: Tweet ID to check
+
+    Returns:
+        True if tweet has been seen before, False otherwise
+    """
+    user_info = read_user_info(username)
+    if not user_info:
+        return False
+
+    seen_tweets = user_info.get("seen_tweets", {})
+    if not isinstance(seen_tweets, dict):
+        return False
+
+    return str(tweet_id) in seen_tweets
 
 
 if __name__ == "__main__":

@@ -76,6 +76,13 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 # Default maximum tweets to retrieve per user or query
 DEFAULT_MAX_TWEETS_RETRIEVE = 30
 
+# Maximum age of tweets to scrape and retain (in hours)
+# Used for:
+# - Filtering tweets during scraping
+# - Cleaning up old cached tweets
+# - Purging old seen_tweets entries
+MAX_TWEET_AGE_HOURS = 48
+
 # Default Twitter credentials for scraping (if needed)
 # Note: These should ideally come from environment variables
 DEFAULT_TWITTER_USERNAME = "proudlurker"

@@ -10,7 +10,7 @@ from backend.utils import error, notify
 # Store securely (e.g., env/secret manager)
 async def _get_access_token_for_user(username: str) -> str:
     """Retrieve access token for a user from token store."""
-    from backend.oauth import ensure_access_token
+    from backend.backend.browser_management.twitter.oauth import ensure_access_token
     access_token = await ensure_access_token(username)
     if not access_token:
         # Log error but don't raise RuntimeError - we handle it with HTTPException
@@ -40,7 +40,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
 
     from backend.log_interactions import TweetAction, log_tweet_action
     from backend.posted_tweets_cache import add_posted_tweet
-    from backend.tweets_cache import get_user_tweet_cache
+    from backend.backend.data.twitter.edit_cache import get_user_tweet_cache
     from backend.utils import notify, read_user_info, write_user_info
 
     access_token = await _get_access_token_for_user(username)

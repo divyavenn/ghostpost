@@ -4,7 +4,7 @@
 import asyncio
 import json
 
-from backend.read_tweets import read_tweets, scraping_status
+from backend.backend.scraping.twitter.timeline import read_tweets, scraping_status
 from backend.utils import read_user_info
 
 
@@ -16,7 +16,7 @@ async def test_summary_in_status():
     print(f"🧪 Testing query summary flow for: {test_username}\n")
 
     # First, verify user has queries with summaries
-    print("="*80)
+    print("=" * 80)
     print("1. Checking user_info.json for query summaries...")
     user_info = read_user_info(test_username)
 
@@ -40,7 +40,7 @@ async def test_summary_in_status():
         print("\n❌ No queries with summaries found. Run test_full_query_flow.py first.")
         return
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("2. Testing scraping status updates...")
     print("   (This will actually scrape, so it may take a while)\n")
 
@@ -61,7 +61,7 @@ async def test_summary_in_status():
         import traceback
         traceback.print_exc()
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("3. Checking final scraping_status...")
 
     if test_username in scraping_status:
@@ -69,15 +69,15 @@ async def test_summary_in_status():
         print(f"✅ Status found: {json.dumps(status, indent=2)}")
 
         if status.get("type") == "query" and "summary" in status:
-            print(f"\n✅ SUCCESS: Summary field found in status!")
+            print("\n✅ SUCCESS: Summary field found in status!")
             print(f"   Summary: '{status['summary']}'")
             print(f"   Full query: '{status['value']}'")
         else:
-            print(f"\n⚠️ Status doesn't have summary field or is not a query type")
+            print("\n⚠️ Status doesn't have summary field or is not a query type")
     else:
         print(f"⚠️ No scraping status found for {test_username}")
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("Test complete!")
 
 

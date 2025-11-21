@@ -68,7 +68,8 @@ def fetch_tweet_metrics(access_token, tweet_ids):
                     "likes": public_metrics.get("like_count", 0),
                     "retweets": public_metrics.get("retweet_count", 0),
                     "quotes": public_metrics.get("quote_count", 0),
-                    "replies": public_metrics.get("reply_count", 0)
+                    "replies": public_metrics.get("reply_count", 0),
+                    "impressions": public_metrics.get("impression_count", 0)
                 }
 
         print(f"✅ Fetched metrics for {len(metrics_map)} tweets")

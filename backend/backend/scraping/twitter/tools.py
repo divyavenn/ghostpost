@@ -1,9 +1,10 @@
 import asyncio
 import re
 
+from backend.config import MAX_TWEET_AGE_HOURS
 from backend.utils import notify
 
-from .full_thread import get_thread, scroll
+from .full_threads import get_thread, scroll
 
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
@@ -642,7 +643,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                     created_at = legacy.get("created_at")
                     if not created_at:
                         continue
-                    if not within_hours(created_at, hours=48):  # keep your current 27h test window
+                    if not within_hours(created_at, hours=MAX_TWEET_AGE_HOURS):
                         continue
 
                     # optional: re-enable filters once debugged
@@ -687,6 +688,10 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                         if user_handle and not user_name:
                             user_name = user_handle.replace("_", " ")
 
+                    # Extract view/impression count
+                    views_data = node.get("views") or {}
+                    impressions = int(views_data.get("count", 0))
+
                     tweet_data = {
                         "id": tid,
                         "text": get_tweet_text(node),
@@ -694,6 +699,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                         "retweets": int(legacy.get("retweet_count", 0)),
                         "quotes": int(legacy.get("quote_count", 0)),
                         "replies": int(legacy.get("reply_count", 0)),
+                        "impressions": impressions,
                         "score": engagement_score(legacy),
                         "followers": extract_followers(node),
                         "created_at": created_at,
@@ -707,7 +713,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
 
                     # Apply initial intent filter (loose filter)
                     if username:
-                        from backend.intent_filter import check_tweet_matches_intent_initial
+                        from backend.backend.filtering.intent_filter import check_tweet_matches_intent_initial
                         matches_intent = await check_tweet_matches_intent_initial(tweet_data, username)
                         if not matches_intent:
                             # Skip this tweet - doesn't match intent
@@ -758,7 +764,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
 
             # Apply final intent filter (strict filter) after thread is collected
             if username:
-                from backend.intent_filter import check_tweet_matches_intent_final
+                from backend.backend.filtering.intent_filter import check_tweet_matches_intent_final
                 matches_intent = await check_tweet_matches_intent_final(t, username)
                 if not matches_intent:
                     # Mark for removal - doesn't match intent after full thread analysis

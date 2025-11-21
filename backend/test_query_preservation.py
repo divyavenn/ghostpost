@@ -1,18 +1,16 @@
 #!/usr/bin/env python3
 """Test that query summaries are preserved when settings are updated."""
 
-print("="*80)
+print("=" * 80)
 print("Testing Query Summary Preservation in write_user_settings")
-print("="*80)
+print("=" * 80)
 
 # Simulate existing user_info with tuple-format queries
 existing_user_info = {
-    "handle": "test_user",
-    "queries": [
-        ["\"raising seed\" (startup OR founder) -crypto -filter:links lang:en", "Seed Funding"],
-        ["YC OR \"Y Combinator\" (hiring OR jobs) -filter:replies lang:en", "YC Jobs"],
-        ["(founder OR \"tech startup\") (marketing OR growth) lang:en", "Startup Marketing"]
-    ]
+    "handle":
+    "test_user",
+    "queries": [["\"raising seed\" (startup OR founder) -crypto -filter:links lang:en", "Seed Funding"], ["YC OR \"Y Combinator\" (hiring OR jobs) -filter:replies lang:en", "YC Jobs"],
+                ["(founder OR \"tech startup\") (marketing OR growth) lang:en", "Startup Marketing"]]
 }
 
 print(f"\n1. BEFORE: User has {len(existing_user_info['queries'])} queries in tuple format:")
@@ -21,8 +19,7 @@ for i, q in enumerate(existing_user_info['queries'], 1):
 
 # Simulate what frontend sends (from read_user_settings - only query strings)
 incoming_queries = [
-    "\"raising seed\" (startup OR founder) -crypto -filter:links lang:en",
-    "YC OR \"Y Combinator\" (hiring OR jobs) -filter:replies lang:en",
+    "\"raising seed\" (startup OR founder) -crypto -filter:links lang:en", "YC OR \"Y Combinator\" (hiring OR jobs) -filter:replies lang:en",
     "(founder OR \"tech startup\") (marketing OR growth) lang:en"
 ]
 
@@ -55,7 +52,7 @@ for q in incoming_queries:
         updated_queries.append(q)
         print(f"   ➕ New query (no summary): {q[:40]}...")
 
-print(f"\n4. AFTER: Updated queries:")
+print("\n4. AFTER: Updated queries:")
 for i, q in enumerate(updated_queries, 1):
     if isinstance(q, list) and len(q) == 2:
         print(f"   {i}. ✅ TUPLE: [{q[1]}] {q[0][:50]}...")
@@ -63,10 +60,10 @@ for i, q in enumerate(updated_queries, 1):
         print(f"   {i}. ⚠️  STRING: {q[:50]}...")
 
 # Verify all summaries preserved
-print("\n" + "="*80)
+print("\n" + "=" * 80)
 all_preserved = all(isinstance(q, list) and len(q) == 2 for q in updated_queries)
 if all_preserved:
     print("✅ SUCCESS: All query summaries preserved!")
 else:
     print("❌ FAILURE: Some summaries were lost!")
-print("="*80)
+print("=" * 80)

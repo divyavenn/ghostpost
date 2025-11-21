@@ -5,17 +5,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from backend.account_routes import router as account_router
 from backend.auth_routes import router as auth_router
-from backend.browser_auth_routes import router as browser_auth_router
-from backend.generate_replies import router as generate_router
+from backend.backend.browser_management.browser_auth_routes import router as browser_auth_router
+from backend.backend.replying.generate_replies import router as generate_router
 from backend.intent_to_queries import router as intent_router
 from backend.log_interactions import router as logging_router
-from backend.performance_check import router as performance_router
-from backend.post_takes import router as post_router
+from backend.backend.scraping.twitter.metrics import router as performance_router
+from backend.backend.posting.twitter.post_takes import router as post_router
 from backend.posted_tweets import router as posted_router
-from backend.read_tweets import router as read_router
+from backend.backend.scraping.twitter.timeline import router as read_router
 from backend.scheduler import router as scheduler_router
 from backend.scheduler import start_scheduler, stop_scheduler
-from backend.tweets_cache import router as tweets_router
+from backend.backend.data.twitter.edit_cache import router as tweets_router
 from backend.user import router as user_router
 
 

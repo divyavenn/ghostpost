@@ -7,7 +7,6 @@
 # Workflow
 - research the codebase and come up with a plan of action
 - confirm the plan with the user 
-- make sure to typecheck and format check using fix-format.sh after making any code changes
 - run uv sync so the dependencies are updated 
 
 # Bash commands

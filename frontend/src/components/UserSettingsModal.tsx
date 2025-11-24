@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { api, type UserSettings } from '../api/client';
-import { AnimatedText } from './AnimatedText';
+import { AnimatedText } from './WordStyles';
 
 interface UserSettingsModalProps {
   isOpen: boolean;

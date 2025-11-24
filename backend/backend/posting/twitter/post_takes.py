@@ -38,9 +38,10 @@ class ReplyTweet(BaseModel):
 async def post(username, payload: dict, cache_id: str | None = None, reply_index: int | None = None) -> dict:
     import json
 
+    from backend.backend.data.twitter.edit_cache import get_user_tweet_cache
+
     from backend.log_interactions import TweetAction, log_tweet_action
     from backend.posted_tweets_cache import add_posted_tweet
-    from backend.backend.data.twitter.edit_cache import get_user_tweet_cache
     from backend.utils import notify, read_user_info, write_user_info
 
     access_token = await _get_access_token_for_user(username)

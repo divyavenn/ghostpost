@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { RecoilRoot } from 'recoil'
 import '@fortawesome/fontawesome-free/css/all.min.css'
+
 import './index.css'
 import App from './App.tsx'
 import { Login } from './pages/Login.tsx'

@@ -70,7 +70,7 @@ def get_user_input(field_name: str, field_type: str, current_value: Any = None, 
                     parsed = json.loads(user_input)
                     if isinstance(parsed, list):
                         return parsed
-                except:
+                except Exception:
                     # Fall back to comma-separated
                     return [item.strip() for item in user_input.split(',') if item.strip()]
             elif "dict" in field_type.lower():
@@ -105,7 +105,7 @@ def repair_user_entry(entry: dict[str, Any], index: int) -> dict[str, Any] | Non
 
     try:
         # Try to validate the entry
-        user = User(**entry)
+        User(**entry)
         print(f"✅ User '{handle}' is valid")
         return entry
     except ValidationError as e:
@@ -163,7 +163,7 @@ def repair_user_entry(entry: dict[str, Any], index: int) -> dict[str, Any] | Non
 
         # Validate repaired entry
         try:
-            user = User(**repaired_entry)
+            User(**repaired_entry)
             print(f"\n✅ User '{handle}' successfully repaired and validated!")
             return repaired_entry
         except ValidationError as e:

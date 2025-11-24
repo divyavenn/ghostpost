@@ -14,9 +14,10 @@ try:
     from .user import read_user_settings
     from .utils import error, notify
 except ImportError:
-    from backend.backend.scraping.twitter.timeline import gather_trending
     from user import read_user_settings
     from utils import error, notify
+
+    from backend.backend.scraping.twitter.timeline import gather_trending
 
 # Constants
 BACKEND_DIR = Path(__file__).resolve().parent

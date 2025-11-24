@@ -1,32 +1,11 @@
 import asyncio
+import os
 import re
 import time
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, status
 from playwright.async_api import async_playwright
 from pydantic import BaseModel
-
-# Handle imports for both package and standalone execution
-try:
-    from backend.config import SHOW_BROWSER
-    from backend.resolve_imports import ensure_standalone_imports
-except ModuleNotFoundError:  # Running from inside backend/
-    from config import SHOW_BROWSER
-    from resolve_imports import ensure_standalone_imports
-
-ensure_standalone_imports(globals())
-
-try:
-    from backend.backend.scraping.twitter.tools import collect_from_page
-    from backend.log_interactions import log_scrape_action
-    from backend.utils import error, notify, read_user_info, write_user_info
-except ImportError:
-    from backend.backend.scraping.twitter.tools import collect_from_page
-    from log_interactions import log_scrape_action
-    from utils import error, notify, read_user_info, write_user_info
-
-# -------- Config --------
-import os
 
 from backend.config import (
     DEFAULT_MAX_TWEETS_RETRIEVE as MAX_TWEETS_RETRIEVE,
@@ -39,6 +18,19 @@ from backend.config import (
     SHOW_BROWSER,
     USE_BROWSERBASE_FOR_SCRAPING,
 )
+from backend.resolve_imports import ensure_standalone_imports
+
+ensure_standalone_imports(globals())
+
+try:
+    from backend.backend.scraping.twitter.tools import collect_from_page
+
+    from backend.log_interactions import log_scrape_action
+    from backend.utils import error, notify, read_user_info, write_user_info
+except ImportError:
+    from backend.backend.scraping.twitter.tools import collect_from_page
+    from log_interactions import log_scrape_action
+    from utils import error, notify, read_user_info, write_user_info
 
 
 def should_use_headless_for_scraping() -> bool:
@@ -158,6 +150,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
         dict: Scraped tweets
     """
     from backend.backend.scraping.browerbase import fetch_search_browserbase, fetch_user_tweets_browserbase
+
     from backend.exceptions import CaptchaError, RateLimitError
 
     notify(f"🚀 [gather_trending] Starting for {username}: {len(usernames)} accounts, {len(queries)} queries, use_browserbase={use_browserbase}")
@@ -292,6 +285,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
     from backend.backend.data.twitter.edit_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
+
     from backend.user import read_user_settings
     from backend.utils import read_user_info
 

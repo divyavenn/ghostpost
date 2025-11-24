@@ -6,13 +6,13 @@ from fastapi import APIRouter, Query, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 
+from backend.backend.browser_management.twitter.oauth import exchange_code_for_token, get_authorization_url
 from backend.config import (
     BROWSER_STATE_FILE,
     BROWSERBASE_API_KEY,
     BROWSERBASE_PROJECT_ID,
     SHOW_BROWSER,
 )
-from backend.backend.browser_management.twitter.oauth import exchange_code_for_token, get_authorization_url
 from backend.user import get_user_info
 from backend.utils import atomic_file_update, notify, store_browser_state, store_token
 

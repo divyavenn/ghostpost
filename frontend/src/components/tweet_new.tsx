@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
-import { AnimatedText } from './AnimatedText';
+import { AnimatedText } from './WordStyles';
 import xLottie from '../assets/x.lottie';
 
 export interface TweetData {

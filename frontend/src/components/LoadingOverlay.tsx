@@ -1,6 +1,6 @@
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { useRecoilValue } from 'recoil';
-import { AnimatedText } from './AnimatedText';
+import { AnimatedText } from './WordStyles';
 import { loadingPhaseState, loadingStatusDataState } from '../atoms';
 import desktopLottie from '../assets/desktop.lottie';
 import writingLottie from '../assets/writing.lottie';

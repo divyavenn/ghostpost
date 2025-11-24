@@ -1,9 +1,10 @@
 import json
 
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
 
-from backend.config import OBELISK_KEY
 from backend.backend.filtering.intent_filter import ask_llm
+from backend.config import OBELISK_KEY
 from backend.utils import error, notify, read_user_info, write_user_info
 
 
@@ -119,9 +120,6 @@ Generate queries now as a JSON array:"""
         error(f"Error generating queries from intent: {e}", status_code=500, function_name="generate_queries_from_intent", username=username, critical=False)
         return []
 
-
-# API Router
-from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 router = APIRouter(prefix="/intent", tags=["intent"])
 

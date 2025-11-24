@@ -135,3 +135,12 @@ export const loadingStatusDataState = atom<{
   key: 'loadingStatusDataState',
   default: null,
 });
+
+/**
+ * Set of node IDs that are currently typing
+ * Used to disable links while their target is rendering
+ */
+export const typingIdsState = atom<Set<string>>({
+  key: 'typingIdsState',
+  default: new Set(['root']),
+});

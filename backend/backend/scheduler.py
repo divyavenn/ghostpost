@@ -15,8 +15,8 @@ from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter
 
 from backend.backend.replying.generate_replies import generate_replies
-from backend.log_interactions import log_scrape_action
 from backend.backend.scraping.twitter.timeline import read_tweets
+from backend.log_interactions import log_scrape_action
 from backend.utils import BROWSER_STATE_FILE, cookie_still_valid, log_background_task, notify
 
 # Global scheduler instance

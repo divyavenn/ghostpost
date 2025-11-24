@@ -36,7 +36,7 @@ async def start_browser_session(request: BrowserSessionRequest):
         return session_info
     except Exception as e:
         error("Failed to start browser session", status_code=500, exception_text=str(e), function_name="start_browser_session", username=request.username)
-        raise HTTPException(status_code=500, detail=f"Failed to start browser session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to start browser session: {str(e)}") from e
 
 
 @router.get("/status/{session_id}")
@@ -50,7 +50,7 @@ async def check_session_status(session_id: str):
         return status
     except Exception as e:
         error("Failed to check session status", status_code=500, exception_text=str(e), function_name="check_session_status")
-        raise HTTPException(status_code=500, detail=f"Failed to check session status: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to check session status: {str(e)}") from e
 
 
 @router.post("/save")
@@ -63,10 +63,10 @@ async def save_browser_session(request: SaveSessionRequest):
         return result
     except ValueError as e:
         error("Session not found", status_code=404, exception_text=str(e), function_name="save_browser_session")
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         error("Failed to save session", status_code=500, exception_text=str(e), function_name="save_browser_session")
-        raise HTTPException(status_code=500, detail=f"Failed to save session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to save session: {str(e)}") from e
 
 
 @router.delete("/cancel/{session_id}")
@@ -79,7 +79,7 @@ async def cancel_browser_session(session_id: str):
         return {"status": "cancelled"}
     except Exception as e:
         error("Failed to cancel session", status_code=500, exception_text=str(e), function_name="cancel_browser_session")
-        raise HTTPException(status_code=500, detail=f"Failed to cancel session: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to cancel session: {str(e)}") from e
 
 
 @router.get("/screenshot/{session_id}")
@@ -99,4 +99,4 @@ async def get_browser_screenshot(session_id: str):
         raise
     except Exception as e:
         error("Failed to get screenshot", status_code=500, exception_text=str(e), function_name="get_browser_screenshot")
-        raise HTTPException(status_code=500, detail=f"Failed to get screenshot: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get screenshot: {str(e)}") from e

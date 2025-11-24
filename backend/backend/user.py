@@ -338,8 +338,8 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
         generation_happened = False
         if payload.number_of_generations is not None and new_num_generations != old_num_generations:
             notify("✅ Number of generations changed! Starting automatic reply adjustment...")
-            from backend.backend.replying.generate_replies import generate_replies_for_tweet
             from backend.backend.data.twitter.edit_cache import read_from_cache, write_to_cache
+            from backend.backend.replying.generate_replies import generate_replies_for_tweet
 
             tweets = await read_from_cache(username=handle)
 
@@ -372,7 +372,7 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
                     scraping_status[handle] = {"type": "generating", "value": f"0/{tweets_to_update}", "phase": "generating"}
 
                     updated_count = 0
-                    for idx, tweet in enumerate(tweets):
+                    for _idx, tweet in enumerate(tweets):
                         if "generated_replies" not in tweet or not tweet["generated_replies"]:
                             continue
 

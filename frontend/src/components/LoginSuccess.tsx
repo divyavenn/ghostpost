@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
-import { AnimatedText } from './AnimatedText';
+import { AnimatedText } from './WordStyles';
 
 export function LoginSuccess() {
   const [countdown, setCountdown] = useState(3);

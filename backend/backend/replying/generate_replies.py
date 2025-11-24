@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from backend.config import OBELISK_KEY
+
 from ..scraping.twitter.timeline import USERNAME
 from ..utils import error, notify, read_user_info
 
@@ -14,19 +16,17 @@ try:
 except ModuleNotFoundError:  # Running from inside backend/
     from resolve_imports import ensure_standalone_imports
 
-ensure_standalone_imports(globals())
-
-# Load environment variables from .env file
-# Load .env from backend/ directory (one level up from backend/backend/)
-load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
-
-from backend.config import OBELISK_KEY
-
 # Import scraping status tracker from read_tweets for status updates
 try:
     from backend.backend.scraping.twitter.timeline import scraping_status, update_status_to_reflect_finished_scraping
 except ImportError:
     from backend.backend.scraping.twitter.timeline import scraping_status, update_status_to_reflect_finished_scraping
+
+ensure_standalone_imports(globals())
+
+# Load environment variables from .env file
+# Load .env from backend/ directory (one level up from backend/backend/)
+load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 REPLY_GAME = """You are an expert at online conversation. 
 Your job is to craft replies, comments, and recommendations that support the original poster (OP), elevate the discussion, 

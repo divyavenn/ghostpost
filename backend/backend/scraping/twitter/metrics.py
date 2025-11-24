@@ -3,10 +3,10 @@ Endpoint to check performance metrics for posted tweets.
 Fetches current likes, retweets, quotes, and replies from Twitter API.
 """
 import requests
+from backend.backend.browser_management.twitter.oauth import ensure_access_token
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from backend.backend.browser_management.twitter.oauth import ensure_access_token
 from backend.posted_tweets_cache import read_posted_tweets_cache, update_tweet_metrics
 from backend.utils import notify
 
@@ -75,7 +75,7 @@ async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[st
         return metrics_map
 
     except requests.RequestException as e:
-        raise HTTPException(status_code=503, detail=f"Failed to reach Twitter API: {str(e)}")
+        raise HTTPException(status_code=503, detail=f"Failed to reach Twitter API: {str(e)}") from e
 
 
 @router.post("/{username}/check-performance")

@@ -623,7 +623,6 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                     if ic:
                         candidates.append(ic)
 
-                found_any = False
                 for it_item in candidates:
                     raw = get(it_item, "tweet_results", "result") or get(content, "item", "content", "tweet_results", "result")
                     if not isinstance(raw, dict):
@@ -720,7 +719,6 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                             continue
 
                     tweets[tid] = tweet_data
-                    found_any = True
 
                     # Progressive write: save tweet immediately if callback provided
                     if write_callback and username:

@@ -385,14 +385,10 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                               placeholder="Post your reply"
                               value={text}
                               onChange={(e) => handleTextChange(index, e.target.value)}
-                              className="w-full min-h-[6rem] max-h-[12rem] resize-none overflow-y-auto bg-transparent text-lg text-white outline-none placeholder:text-neutral-600 pr-2 scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent hover:scrollbar-thumb-neutral-600"
-                              style={{
-                                maskImage: 'linear-gradient(to bottom, black calc(100% - 20px), transparent 100%)',
-                                WebkitMaskImage: 'linear-gradient(to bottom, black calc(100% - 20px), transparent 100%)'
-                              }}
+                              className="w-full min-h-[6rem] max-h-[12rem] resize-none overflow-y-auto bg-transparent text-lg text-white outline-none placeholder:text-neutral-600 pr-2 pb-8 scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent hover:scrollbar-thumb-neutral-600"
                             />
                             {/* Fade overlay at bottom */}
-                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-9 bg-gradient-to-t from-black to-transparent" />
+                            <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-black to-transparent" />
                           </div>
                           <button
                             type="button"
@@ -448,7 +444,7 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
             >
               <i className={`fa-solid fa-chevron-${otherRepliesExpanded ? 'up' : 'down'} text-xs transition-transform`} />
               <span className="font-medium">
-                {otherRepliesExpanded ? 'Hide' : 'Show'} other replies ({tweet.other_replies.length})
+                {otherRepliesExpanded ? 'Hide' : 'Show'} top replies ({tweet.other_replies.length})
               </span>
             </button>
 
@@ -469,7 +465,7 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                       </span>
                     </div>
                     <p className="text-sm text-neutral-400 mt-1 line-clamp-2 overflow-hidden">
-                      {tweet.other_replies[0].text}
+                      {tweet.other_replies[0].text.replace(/^@\w+\s*/, '')}
                     </p>
                   </div>
                 </div>
@@ -497,7 +493,7 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                         </span>
                       </div>
                       <p className="text-sm text-neutral-300 mt-1 whitespace-pre-wrap">
-                        {reply.text}
+                        {reply.text.replace(/^@\w+\s*/, '')}
                       </p>
                     </div>
                   </div>

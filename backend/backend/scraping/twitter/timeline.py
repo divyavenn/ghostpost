@@ -18,32 +18,19 @@ from backend.config import (
     SHOW_BROWSER,
     USE_BROWSERBASE_FOR_SCRAPING,
 )
-from backend.resolve_imports import ensure_standalone_imports
+from backend.utlils.resolve_imports import ensure_standalone_imports
 
 ensure_standalone_imports(globals())
 
 try:
-    from backend.backend.scraping.twitter.tools import collect_from_page
-
-    from backend.log_interactions import log_scrape_action
-    from backend.utils import error, notify, read_user_info, write_user_info
+    from backend.scraping.twitter.tools import collect_from_page
+    from backend.twitter.logging import log_scrape_action
+    from backend.utlils.utils import error, notify, read_user_info, write_user_info
 except ImportError:
-    from backend.backend.scraping.twitter.tools import collect_from_page
-    from log_interactions import log_scrape_action
-    from utils import error, notify, read_user_info, write_user_info
+    from backend.scraping.twitter.tools import collect_from_page
+    from backend.twitter.logging import log_scrape_action
+    from backend.utlils.utils import error, notify, read_user_info, write_user_info
 
-
-def should_use_headless_for_scraping() -> bool:
-    """
-    Return True if browser should run in headless mode for AUTOMATED SCRAPING.
-    Uses SHOW_BROWSER config variable (can be overridden by HEADLESS_BROWSER env var).
-    """
-    headless_env = os.getenv("HEADLESS_BROWSER")
-    if headless_env is not None:
-        # Environment variable override
-        return headless_env.lower() in ("true", "1", "yes")
-    # Use config value (inverted - SHOW_BROWSER=True means headless=False)
-    return not SHOW_BROWSER
 
 
 def should_use_browserbase_for_scraping() -> bool:
@@ -58,7 +45,7 @@ def should_use_browserbase_for_scraping() -> bool:
     return USE_BROWSERBASE_FOR_SCRAPING
 
 
-see_browser = not should_use_headless_for_scraping()  # Show browser only if not in headless mode
+see_browser = SHOW_BROWSER
 
 # Global status tracker for scraping progress
 scraping_status = {}  # {username: {"type": "account"/"query", "value": "handle/query", "phase": "scraping"/"complete"}}
@@ -84,7 +71,7 @@ async def update_status_to_reflect_finished_scraping(username: str):
 
 # headless login, legacy code, currently use oAuth instead
 async def log_in(username: str, password: str, browser=None):
-    from backend.utils import store_browser_state
+    from backend.utlils.utils import store_browser_state
 
     if browser is None:
         async with async_playwright() as p:
@@ -104,7 +91,7 @@ async def log_in(username: str, password: str, browser=None):
 
 
 async def get_home(browser=None, username=None):
-    from backend.utils import read_browser_state
+    from backend.utlils.utils import read_browser_state
 
     if browser is None:
         async with async_playwright() as p:
@@ -149,9 +136,9 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     Returns:
         dict: Scraped tweets
     """
-    from backend.backend.scraping.browerbase import fetch_search_browserbase, fetch_user_tweets_browserbase
-
     from backend.exceptions import CaptchaError, RateLimitError
+
+    from backend.browser_management.browerbase import fetch_search_browserbase, fetch_user_tweets_browserbase
 
     notify(f"🚀 [gather_trending] Starting for {username}: {len(usernames)} accounts, {len(queries)} queries, use_browserbase={use_browserbase}")
     results = {}
@@ -284,10 +271,9 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
 
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
-    from backend.backend.data.twitter.edit_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
-
-    from backend.user import read_user_settings
-    from backend.utils import read_user_info
+    from backend.data.twitter.edit_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
+    from backend.user.user import read_user_settings
+    from backend.utlils.utils import read_user_info
 
     user_settings = read_user_settings(username)
 
@@ -339,13 +325,13 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     await cleanup_old_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
     # Clean up old seen_tweets entries
-    from backend.utils import cleanup_seen_tweets
+    from backend.utlils.utils import cleanup_seen_tweets
     cleanup_seen_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
     # Define progressive write callback for incremental updates
     async def progressive_write(tweets_batch, target_username):
         """Write tweets incrementally as they're discovered, filtering out already-seen tweets"""
-        from backend.utils import is_tweet_seen
+        from backend.utlils.utils import is_tweet_seen
 
         # Filter out tweets that were already seen
         filtered_batch = []
@@ -369,7 +355,7 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     trending = await gather_trending(relevant_accounts, queries, username=username, write_callback=progressive_write, use_browserbase=use_browserbase, query_summary_map=query_summary_map)
 
     # Filter out tweets that were already seen
-    from backend.utils import is_tweet_seen
+    from backend.utlils.utils import is_tweet_seen
     original_count = len(trending)
     filtered_trending = {}
     filtered_out_count = 0
@@ -441,7 +427,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         account_type = user_info.get("account_type", "trial")
         if account_type == "premium":
             notify(f"💬 [Background] Generating replies for {username} (premium user)...")
-            from backend.backend.replying.generate_replies import generate_replies
+            from backend.twitter.generate_replies import generate_replies
             result = await generate_replies(username=username, overwrite=False)
             reply_count = sum(1 for t in result if t.get('generated_replies'))
             notify(f"✅ [Background] Generated {reply_count} replies for {username}")

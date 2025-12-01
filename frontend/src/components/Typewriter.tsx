@@ -1,23 +1,23 @@
-import { useState, useEffect, useRef, type ComponentType } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styled, { keyframes } from 'styled-components';
 import { useSetRecoilState } from 'recoil';
 import { typingIdsState } from '../atoms';
+import { ClickablePulsingText, ExternalLinkText } from './WordStyles';
 
 
 
-export type MultipleClickBehaviors = 'repeat' | 'toggle' 
+export type MultipleClickBehaviors = 'repeat' | 'toggle'
+export type DisplayType = 'new-paragraph' | 'next-sentence' | 'new-sentence' | 'retype';
 
 
 export class Text {
   text: string;
-  renderWith?: ComponentType<{ children: React.ReactNode; onClick?: () => void }>;
-  onClick?: () => void;
-  undoClick? : () => void;
-  onHover? : () => void;
-  onClickAgain?: MultipleClickBehaviors;
-  clicked: boolean = false;
   target?: string; // For Link instances - the target node id
-  displayType?: string; // For Link instances - how to display the target
+  displayType?: DisplayType; // For Link instances - how to display the target
+  url?: string; // For ExternalLink instances
+  isDeletable?: boolean; // For Link instances - whether the link can be deleted
+  clicked?: boolean; // For Link instances - track if link has been clicked
+  renderWith?: React.ComponentType<{ children: React.ReactNode; onClick?: () => void; url?: string }>;
 
   constructor(text: string) {
     this.text = text;
@@ -29,6 +29,8 @@ interface TypingTextProps {
   shouldStart: boolean;
   onComplete: () => void;
   shouldDelete?: boolean;
+  onNavigate?: (target: string, displayType: DisplayType) => void;
+  onDelete?: (target: string) => void;
 }
 
 interface TypewriterProps {
@@ -38,6 +40,8 @@ interface TypewriterProps {
   className?: string;
   delete?: boolean;
   nodeId?: string;
+  onNavigate?: (target: string, displayType: DisplayType) => void;
+  onDelete?: (target: string) => void;
 }
 
 const blink = keyframes`
@@ -57,8 +61,10 @@ const Cursor = styled.span`
 
 // Get a random typing speed to simulate human typing
 const getRandomTypingSpeed = (isDeleting = false) => {
+  // Make deletion almost instant
+  if (isDeleting) return 1;
+
   const baseline = 5;
-  const speedMultiplier = isDeleting ? 1.5 : 1;
   const rand = Math.random();
 
   let speed;
@@ -66,12 +72,12 @@ const getRandomTypingSpeed = (isDeleting = false) => {
   else if (rand < 0.3) speed = baseline + Math.random() * baseline * 6;
   else speed = baseline + Math.random() * baseline * 4;
 
-  return speed / speedMultiplier;
+  return speed;
 };
 
 
 // Word component - handles typing out a single word
-const TypeWord = ({ word, shouldStart, onComplete, shouldDelete = false }: TypingTextProps) => {
+const TypeWord = ({ word, shouldStart, onComplete, shouldDelete = false, onNavigate, onDelete: _onDelete }: TypingTextProps) => {
   const [visibleChars, setVisibleChars] = useState(shouldDelete ? word.text.length : 0);
   const [isComplete, setIsComplete] = useState(false);
   const onCompleteRef = useRef(onComplete);
@@ -112,13 +118,26 @@ const TypeWord = ({ word, shouldStart, onComplete, shouldDelete = false }: Typin
     animateChar();
   }, [shouldStart, word.text, shouldDelete]);
 
-  // If complete and has renderWith, use it (but not when deleting)
-  if (isComplete && word.renderWith && !shouldDelete) {
-    const WrapperComponent = word.renderWith;
-    return <WrapperComponent onClick={word.onClick}>{word.text}</WrapperComponent>;
+  // If complete and not deleting, render with appropriate wrapper
+  if (isComplete && !shouldDelete) {
+    // Check if this is an external link (has url property)
+    if (word.url) {
+      return <ExternalLinkText url={word.url}>{word.text}</ExternalLinkText>;
+    }
+
+    // Check if this is an internal link (has target property)
+    if (word.target && onNavigate) {
+      return (
+        <ClickablePulsingText
+          onClick={() => onNavigate(word.target!, word.displayType || 'new-paragraph')}
+        >
+          {word.text}
+        </ClickablePulsingText>
+      );
+    }
   }
 
-  // Otherwise show plain text
+  // Otherwise show plain text (typing or plain text)
   const visibleText = word.text.slice(0, visibleChars);
   return <span>{visibleText}</span>;
 };
@@ -130,6 +149,8 @@ export const Typewriter = ({
   className,
   delete: shouldDelete = false,
   nodeId,
+  onNavigate,
+  onDelete,
 }: TypewriterProps) => {
   const [currentWordIndex, setCurrentWordIndex] = useState(shouldDelete ? sentence.length - 1 : 0);
   const [isComplete, setIsComplete] = useState(false);
@@ -197,6 +218,8 @@ export const Typewriter = ({
             shouldStart={shouldStart}
             shouldDelete={shouldDelete}
             onComplete={isCurrentWord ? handleWordComplete : () => {}}
+            onNavigate={onNavigate}
+            onDelete={onDelete}
           />
         );
       })}

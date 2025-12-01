@@ -139,3 +139,36 @@ export function AnimatedText({ text, className = '' }: AnimatedTextProps) {
     </span>
   );
 }
+
+
+interface ExternalLinkTextProps {
+  children: React.ReactNode;
+  url?: string;
+}
+
+const ExternalLinkSpan = styled.a`
+  color: #E5E5E5;
+  text-decoration: underline;
+  cursor: pointer;
+  transition: color 0.2s ease;
+
+  &:hover {
+    color: #60a5fa;
+  }
+`;
+
+export function ExternalLinkText({ children, url }: ExternalLinkTextProps) {
+  if (!url) {
+    return <span>{children}</span>;
+  }
+
+  return (
+    <ExternalLinkSpan
+      href={url}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {children}
+    </ExternalLinkSpan>
+  );
+}

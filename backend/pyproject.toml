@@ -67,9 +67,20 @@ line-length = 300
 # ignore certain error codes
 lint.ignore = ["E501"]
 # select extra rule sets (flake8-bugbear, isort, etc.)
-# E = flake8 errors 
+# E = flake8 errors
 # F = pyflakes
 # B = flake8-bugbear
 # I = isort
-# UP = suggest newer python syntax 
+# UP = suggest newer python syntax
 lint.select = ["E", "F", "B", "I", "UP"]
+
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]

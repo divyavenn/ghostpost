@@ -1,30 +1,23 @@
-"""Custom exceptions for FloodMe backend."""
+"""
+Custom exceptions for the backend.
+"""
 
 
-class BotDetectionError(Exception):
-    """
-    Raised when bot detection is encountered during scraping.
-
-    This can include:
-    - CAPTCHA challenges
-    - Rate limiting errors (429)
-    - Account suspensions
-    - IP blocks
-    - "Unusual activity" warnings
-    """
+class ScrapingError(Exception):
+    """Base exception for scraping errors."""
     pass
 
 
-class RateLimitError(BotDetectionError):
-    """Raised when rate limiting (429) is encountered."""
+class CaptchaError(ScrapingError):
+    """Raised when a captcha is detected during scraping."""
     pass
 
 
-class CaptchaError(BotDetectionError):
-    """Raised when CAPTCHA challenge is detected."""
+class RateLimitError(ScrapingError):
+    """Raised when rate limiting is detected during scraping."""
     pass
 
 
-class AccountSuspendedError(BotDetectionError):
-    """Raised when account is suspended or locked."""
+class BotDetectionError(ScrapingError):
+    """Raised when bot detection is triggered during scraping."""
     pass

@@ -1,20 +1,49 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import styled from 'styled-components';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import styled, { keyframes } from 'styled-components';
+import { useRecoilValue, useSetRecoilState } from 'recoil';
+import {
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useScroll,
+  animate,
+  MotionValue,
+} from 'framer-motion';
 import { Text, Typewriter } from './Typewriter';
-import { ClickablePulsingText } from './WordStyles';
+import type { DisplayType } from './Typewriter';
+import { MediaComponent } from './MediaComponents';
+import type { MediaData } from './MediaComponents';
+import { ClickablePulsingText, ExternalLinkText } from './WordStyles';
 import { typingIdsState } from '../atoms';
-
-// --- Types ---
-export type DisplayType = 'retype' | 'next-sentence' | 'new-sentence' | 'new-paragraph';
+import screenshotImage from '../assets/screenshot.png';
 
 export interface TextNode {
   id: string;
   words: Text[];
+  media?: MediaData;
 }
 
+// --- Helper Functions to Create Links ---
+function Link(text: string, target: string, displayType: DisplayType = 'new-paragraph', isDeletable = false): Text {
+  const word = new Text(text);
+  word.target = target;
+  word.displayType = displayType;
+  word.isDeletable = isDeletable;
+  word.clicked = false; // Initialize as not clicked
+  word.renderWith = ClickablePulsingText;
+  return word;
+}
+
+function ExternalLink(text: string, url: string): Text {
+  const word = new Text(text);
+  word.url = url;
+  word.renderWith = ExternalLinkText;
+  return word;
+}
+
+
 // --- Styled Components ---
-const Paragraph = styled.p`
+const Paragraph = styled.div`
   margin-bottom: 2rem;
 
   &:last-child {
@@ -26,63 +55,156 @@ const TypewriterText = styled.span`
   display: inline;
 `;
 
-// --- Link Class ---
-class Link extends Text {
-  constructor(
-    text: string,
-    target: string,
-    displayType: DisplayType,
-    onNavigate: (target: string, displayType: DisplayType) => void,
-    onDelete?: (target: string) => void
-  ) {
-    super(text);
-    this.target = target; // Store the target id
-    this.displayType = displayType; // Store the display type
-    this.renderWith = ClickablePulsingText;
-    this.onClick = () => onNavigate(target, displayType);
-    if (onDelete) {
-      this.onClickAgain = 'toggle';
-      this.undoClick = () => onDelete(target);
-    }
+// --- Animations ---
+const highlightFlash = keyframes`
+  0% { background-color: transparent; }
+  25% { background-color: rgba(96, 165, 250, 0.3); }
+  75% { background-color: rgba(96, 165, 250, 0.3); }
+  100% { background-color: transparent; }
+`;
+
+const HighlightWrapper = styled.span<{ $isHighlighted: boolean }>`
+  display: inline;
+  animation: ${props => props.$isHighlighted ? highlightFlash : 'none'} 1.5s ease-in-out;
+  border-radius: 4px;
+`;
+
+const TreeContainer = styled(motion.div)`
+  height: 60vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* Hide scrollbar */
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE/Edge */
+  &::-webkit-scrollbar {
+    display: none; /* Chrome, Safari, Opera */
   }
+`;
+
+// Scroll-linked vertical fade mask
+const top = `0%`;
+const bottom = `100%`;
+const topInset = `25%`;
+const bottomInset = `75%`;
+const transparent = `#0000`;
+const opaque = `#000`;
+
+function useScrollOverflowMask(scrollYProgress: MotionValue<number>) {
+  const maskImage = useMotionValue(
+    `linear-gradient(180deg, ${opaque}, ${opaque} ${top}, ${opaque} ${bottomInset}, ${transparent})`
+  );
+
+  useMotionValueEvent(scrollYProgress, "change", (value: number) => {
+    if (value === 0) {
+      // At top: fade only at bottom
+      animate(
+        maskImage,
+        `linear-gradient(180deg, ${opaque}, ${opaque} ${top}, ${opaque} ${bottomInset}, ${transparent})`
+      );
+    } else if (value >= 0.99) {
+      // At bottom: fade only at top
+      animate(
+        maskImage,
+        `linear-gradient(180deg, ${transparent}, ${opaque} ${topInset}, ${opaque} ${bottom}, ${opaque})`
+      );
+    } else if (
+      scrollYProgress.getPrevious() === 0 ||
+      (scrollYProgress.getPrevious() ?? 0) >= 0.99
+    ) {
+      // In middle: fade both top and bottom
+      animate(
+        maskImage,
+        `linear-gradient(180deg, ${transparent}, ${opaque} ${topInset}, ${opaque} ${bottomInset}, ${transparent})`
+      );
+    }
+  });
+
+  return maskImage;
 }
 
-const extractTextContent = (words: Text[]): string => {
-  return words.map(word => word.text).join('');
-};
 
-// --- Text Tree Builder ---
-const buildTextTree = (
-  onNavigate: (target: string, displayType: DisplayType) => void,
-  onDelete: (target: string) => void
-): Record<string, TextNode> => ({
+// --- Text Tree Data (Pure Data - No Callbacks) ---
+const TEXT_TREE: Record<string, TextNode> = {
   root: {
     id: 'root',
     words: [
       new Text('Hello. Welcome to '),
-      new Link('Ghostpost', 'ghostpost', 'retype', onNavigate),
-      new Text('.'),
-    ],
+      Link('Ghostpost', 'ghostpost', 'new-paragraph'),
+      new Text('.')
+    ]
   },
   ghostpost: {
     id: 'ghostpost',
     words: [
-      new Link('Ghostpost', 'what-is-ghostpost', 'new-paragraph', onNavigate, onDelete),
-      new Text(' lets you become your own '),
-      new Link('ghostwriter', 'ghostwriter', 'new-paragraph', onNavigate, onDelete),
-      new Text('/'),
-      new Link('copywriter', 'copywriter', 'new-paragraph', onNavigate, onDelete),
-      new Text('/'),
-      new Link('social media expert', 'social-media', 'new-paragraph', onNavigate, onDelete),
+      new Text('Ghostpost puts '),
+      Link('your voice ', 'your-voice', 'new-paragraph'),
+      new Text('everywhere'),
+      Link(' it needs to be.', 'web-agents', 'new-paragraph'),
+      new Text(' You become your own '),
+      Link('ghostwriter', 'ghostwriter', 'new-paragraph'),
+      new Text(' + '),
+      Link('copywriter', 'copywriter', 'new-paragraph'),
+      new Text(' + '),
+      Link('social media expert', 'social-media', 'new-paragraph'),
       new Text('.'),
     ],
   },
-  'what-is-ghostpost': {
-    id: 'what-is-ghostpost',
+  extension: {
+    id: 'extension',
     words: [
-      new Text('Ghostpost is an AI that watches the internet for you. It finds '),
-      new Link('high-signal conversations', 'high-signal', 'new-paragraph', onNavigate, onDelete),
-      new Text(' and speaks in your voice, everywhere.'),
+      new Text('Our extension '),
+      ExternalLink('breadscraper', 'https://chromewebstore.google.com/detail/markdownload/cfifpopoddilhgdjiffnlmlhkkankgjd'),
+      new Text(` helps your agents navigate socials using your own browser state + lets you upload the contents of any article, video, voice note, PDF, or memo to your model's knowledge base with one click`),
+    ],
+    media: {
+      type: 'image',
+      url: screenshotImage
+    }
+  },
+  ghostwriter: {
+    id: 'ghostwriter',
+    words: [
+      new Text(`A good ghostwriter learns about your life and writes about it in a compelling way.
+        Ghostpost lets you skip the long, lossy conversations you would need to teach someone about your work. You can give your `),
+      Link('custom model', 'your-voice', 'new-paragraph'),
+      new Text(' new info just by clicking on our '),
+      Link('chrome extension.', 'extension', 'new-paragraph')
+    ],
+  },
+  'your-voice': {
+    id: 'your-voice',
+    words: [
+      new Text(`We train an bespoke LLM to write how you talk. The best part? The model automatically
+        learns from every approval and edit you make to get better and better with time. `),
+      new Text(`Armed with `),
+      Link('complete knowledge', 'ghostwriter', 'new-paragraph'),
+      new Text(' about your product and mission, your custom LLM engages with social media posts for you.')
+    ],
+  },
+  copywriter: {
+    id: 'copywriter',
+    words: [
+      new Text('A great copywriter knows how to find people whose pain points you solve and make you the obvious choice. Ghostphost automates this using '),
+      Link('web agents.', 'web-agents', 'new-paragraph')
+    ],
+  },
+  'social-media': {
+    id: 'social-media',
+    words: [
+      new Text(`The best social media experts grow your audience by 1) monitoring the internet for relevant conversations and 2) being helpful and authentic in public.
+        Ghostphost functions as a powerful social media team, handling all `),
+      Link('the discovery', 'web-agents', 'new-paragraph'),
+      new Text(' and '),
+      Link('drafting. ', 'your-voice', 'new-paragraph'),
+      new Text('All you have to do is edit and approve.')
+    ],
+  },
+  'web-agents': {
+    id: 'web-agents',
+    words: [
+      new Text('Web agents monitor all major socials, collect '),
+      Link('high-signal conversations', 'high-signal', 'next-sentence'),
+      new Text(', and puts them in one place for you to see. Updating these web agents is as easy as talking to them, giving you ultimate control over your brand presence. '),
     ],
   },
   'high-signal': {
@@ -90,42 +212,13 @@ const buildTextTree = (
     words: [
       new Text('High-signal means worth your time. Our agents analyze tweets, Reddit threads, and LinkedIn posts to find opportunities where your expertise matters. No doomscrolling required.'),
     ],
-  },
-  ghostwriter: {
-    id: 'ghostwriter',
-    words: [
-      new Text('A ghostwriter Our AI learns from every edit you make. It builds a '),
-      new Link('persistent model', 'persistent-model', 'new-paragraph', onNavigate, onDelete),
-      new Text(' of how you think and write.'),
-    ],
-  },
-  'persistent-model': {
-    id: 'persistent-model',
-    words: [
-      new Text('Every post you approve, every edit you make, every delete you issue teaches the model. It gets better on its own. Upload interviews, podcasts, blog posts—anything that sounds like you.'),
-    ],
-  },
-  copywriter: {
-    id: 'copywriter',
-    words: [
-      new Text('A copywriter sells without selling. Our agents draft replies that add value, build trust, and position you as an expert. '),
-      new Link('Grow your audience', 'grow-audience', 'new-paragraph', onNavigate, onDelete),
-      new Text(' without trying to grow your audience.'),
-    ],
-  },
-  'grow-audience': {
-    id: 'grow-audience',
-    words: [
-      new Text('The best way to grow is to be consistently helpful in public. Ghostpost handles the discovery and drafting. You handle the approval and authenticity.'),
-    ],
-  },
-  'social-media': {
-    id: 'social-media',
-    words: [
-      new Text('Social media experts monitor the internet for relevant conversation Ghostpost does both. It monitors X (Twitter), Reddit, LinkedIn, and finds threads where your voice belongs.'),
-    ],
-  },
-});
+  }
+};
+
+// --- Helper Function ---
+const extractTextContent = (words: Text[]): string => {
+  return words.map(word => word.text).join('');
+};
 
 // --- Erase Hook ---
 const useEraser = (text: string, speed: number = 30) => {
@@ -152,65 +245,50 @@ const useEraser = (text: string, speed: number = 30) => {
 };
 
 // --- Sentence Component ---
-const Sentence = ({ words }: { words: Text[] }) => {
-  const [, forceUpdate] = useState(0);
+const Sentence = ({
+  words,
+  onNavigate
+}: {
+  words: Text[];
+  onNavigate?: (target: string, displayType: DisplayType) => void;
+}) => {
   const typingIds = useRecoilValue(typingIdsState);
-
-  // Subscribe to typingIds changes for words in this sentence
-  useEffect(() => {
-    // Force re-render when typingIds changes and affects any word in this sentence
-    const hasAffectedWord = words.some(word => word.target && typingIds.has(word.target));
-    if (hasAffectedWord) {
-      forceUpdate(n => n + 1);
-    }
-  }, [typingIds, words]);
-
-  const handleWordClick = (word: Text, originalOnClick?: () => void) => {
-    // Call the original onClick handler
-    if (originalOnClick) {
-      originalOnClick();
-    }
-
-    // Toggle the word's clicked state
-    word.clicked = !word.clicked;
-
-    // Force re-render
-    forceUpdate(n => n + 1);
-  };
 
   return (
     <>
       {words.map((word, index) => {
-        const WrapperComponent = word.renderWith;
-        if (WrapperComponent) {
-          // Check if this link's target is currently typing
-          const isTargetTyping = word.target && typingIds.has(word.target);
+        // Check if word has a custom renderWith component
+        if (word.renderWith) {
+          const WrapperComponent = word.renderWith;
 
-          // If target is typing, render as plain text
-          if (isTargetTyping) {
-            return <span key={index}>{word.text}</span>;
+          // For external links (has url property)
+          if (word.url) {
+            return <WrapperComponent key={index} url={word.url}>{word.text}</WrapperComponent>;
           }
 
-          // First click - not yet clicked
-          if (!word.clicked) {
-            return <WrapperComponent key={index} onClick={() => handleWordClick(word, word.onClick)}>{word.text}</WrapperComponent>;
-          }
-          // Already clicked - check behavior
-          else {
-            // Toggle behavior: call undoClick on second click
-            if (word.onClickAgain === 'toggle' && word.undoClick) {
-              return <WrapperComponent key={index} onClick={() => handleWordClick(word, word.undoClick)}>{word.text}</WrapperComponent>;
-            }
-            // Repeat behavior: call onClick again on second click
-            else if (word.onClickAgain === 'repeat' && word.onClick) {
-              return <WrapperComponent key={index} onClick={() => handleWordClick(word, word.onClick)}>{word.text}</WrapperComponent>;
-            }
-            // No behavior (null/undefined): render as plain text
-            else {
+          // For internal links (has target property)
+          if (word.target && onNavigate) {
+            // Check if this link's target is currently typing
+            const isTargetTyping = typingIds.has(word.target);
+
+            // If target is typing, render as plain text
+            if (isTargetTyping) {
               return <span key={index}>{word.text}</span>;
             }
+
+            // Render as clickable link with custom wrapper
+            return (
+              <WrapperComponent
+                key={index}
+                onClick={() => onNavigate(word.target!, word.displayType || 'new-paragraph')}
+              >
+                {word.text}
+              </WrapperComponent>
+            );
           }
         }
+
+        // Plain text
         return <span key={index}>{word.text}</span>;
       })}
     </>
@@ -222,12 +300,16 @@ const SegmentComponent = ({
   node,
   isDone,
   isDeleting,
-  onComplete
+  onComplete,
+  onNavigate,
+  onDelete
 }: {
   node: TextNode;
   isDone: boolean;
   isDeleting: boolean;
   onComplete: () => void;
+  onNavigate?: (target: string, displayType: DisplayType) => void;
+  onDelete?: (target: string) => void;
 }) => {
   if (isDeleting) {
     return (
@@ -236,12 +318,14 @@ const SegmentComponent = ({
         onComplete={onComplete}
         inline
         delete
+        onNavigate={onNavigate}
+        onDelete={onDelete}
       />
     );
   }
 
   if (isDone) {
-    return <Sentence words={node.words} />;
+    return <Sentence words={node.words} onNavigate={onNavigate} />;
   }
 
   return (
@@ -250,6 +334,8 @@ const SegmentComponent = ({
       onComplete={onComplete}
       nodeId={node.id}
       inline
+      onNavigate={onNavigate}
+      onDelete={onDelete}
     />
   );
 };
@@ -258,11 +344,19 @@ const SegmentComponent = ({
 const ParagraphComponent = ({
   sentences,
   deletingIds,
-  onDeleteComplete
+  onDeleteComplete,
+  highlightedNodeId,
+  nodeRefs,
+  onNavigate,
+  onDelete
 }: {
   sentences: TextNode[];
   deletingIds: Set<string>;
   onDeleteComplete: (id: string) => void;
+  highlightedNodeId: string | null;
+  nodeRefs: React.MutableRefObject<Record<string, React.RefObject<HTMLSpanElement>>>;
+  onNavigate?: (target: string, displayType: DisplayType) => void;
+  onDelete?: (target: string) => void;
 }) => {
   const [completionState, setCompletionState] = useState<boolean[]>([]);
 
@@ -296,21 +390,39 @@ const ParagraphComponent = ({
         if (!node) return null;
 
         const isDeleting = deletingIds.has(node.id);
+        const isDone = completionState[idx] || false;
+
+        // Create ref if it doesn't exist
+        if (!nodeRefs.current[node.id]) {
+          nodeRefs.current[node.id] = React.createRef<HTMLSpanElement>();
+        }
 
         return (
-          <SegmentComponent
-            key={`${node.id}-${idx}`}
-            node={node}
-            isDone={completionState[idx] || false}
-            isDeleting={isDeleting}
-            onComplete={() => {
-              if (isDeleting) {
-                onDeleteComplete(node.id);
-              } else {
-                handleSegmentComplete(idx);
-              }
-            }}
-          />
+          <React.Fragment key={`${node.id}-${idx}`}>
+            <HighlightWrapper
+              $isHighlighted={highlightedNodeId === node.id}
+              ref={nodeRefs.current[node.id]}
+            >
+              <SegmentComponent
+                node={node}
+                isDone={isDone}
+                isDeleting={isDeleting}
+                onComplete={() => {
+                  if (isDeleting) {
+                    onDeleteComplete(node.id);
+                  } else {
+                    handleSegmentComplete(idx);
+                  }
+                }}
+                onNavigate={onNavigate}
+                onDelete={onDelete}
+              />
+            </HighlightWrapper>
+            {/* Render media below the text when segment is done and not deleting */}
+            {node.media && isDone && !isDeleting && (
+              <MediaComponent media={node.media} />
+            )}
+          </React.Fragment>
         );
       })}
     </Paragraph>
@@ -332,14 +444,41 @@ export function TextTree({ className }: TextTreeProps) {
   const [nextAction, setNextAction] = useState<{ target: string; displayType: DisplayType } | null>(null);
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set());
   const setTypingIds = useSetRecoilState(typingIdsState);
+  const [highlightedNodeId, setHighlightedNodeId] = useState<string | null>(null);
+  const nodeRefs = useRef<Record<string, React.RefObject<HTMLSpanElement>>>({});
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // Memoize the textTree so Word instances persist across renders
-  const finalTextTree = useMemo(() => {
-    // Dummy navigate/delete handlers for initial build
-    const dummyNavigate = () => {};
-    const dummyDelete = () => {};
+  // Scroll-linked fade effect - track scroll within the container
+  const { scrollYProgress } = useScroll({ container: containerRef });
+  const maskImage = useScrollOverflowMask(scrollYProgress);
 
-    return buildTextTree(dummyNavigate, dummyDelete);
+  // Use the constant text tree (no need for dummy functions!)
+  const finalTextTree = TEXT_TREE;
+
+  // Scroll a node to 15% below top of container (waits for ref if needed)
+  const scrollToNode = useCallback((nodeId: string) => {
+    const attemptScroll = () => {
+      const ref = nodeRefs.current[nodeId];
+      const element = ref?.current;
+
+      if (!element || !containerRef.current) {
+        // Ref not ready yet, try again
+        requestAnimationFrame(attemptScroll);
+        return;
+      }
+
+      const container = containerRef.current;
+      const containerHeight = container.clientHeight;
+      const scrollTarget = element.offsetTop - (containerHeight * 0.30);
+
+      container.scrollTo({
+        top: scrollTarget,
+        behavior: 'smooth'
+      });
+    };
+
+    // Start attempting to scroll
+    requestAnimationFrame(attemptScroll);
   }, []);
 
   // DFS to find all descendants of a node
@@ -369,6 +508,27 @@ export function TextTree({ className }: TextTreeProps) {
   }, [finalTextTree]);
 
   const handleNavigate = useCallback((targetId: string, displayType: DisplayType) => {
+    // Check if node already exists in paragraphs and is not being deleted
+    const nodeExists = paragraphs.some(paragraph => paragraph.includes(targetId));
+    const isBeingDeleted = deletingIds.has(targetId);
+
+    if (nodeExists && !isBeingDeleted) {
+      // Node exists and is visible - scroll to it and highlight it
+      setHighlightedNodeId(targetId);
+      scrollToNode(targetId);
+      setTimeout(() => setHighlightedNodeId(null), 1500);
+      return;
+    }
+
+    // If the node is being deleted (e.g., was a child of a deleted parent), cancel its deletion
+    if (isBeingDeleted) {
+      setDeletingIds(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(targetId);
+        return newSet;
+      });
+    }
+
     // Add target to typing state
     setTypingIds(prev => new Set(prev).add(targetId));
 
@@ -389,6 +549,8 @@ export function TextTree({ className }: TextTreeProps) {
         ...prev,
         [targetId]
       ]);
+      // Scroll to the new paragraph
+      scrollToNode(targetId);
     } else if (displayType === 'next-sentence' || displayType === 'new-sentence') {
       // Add to current paragraph
       setParagraphs(prev => {
@@ -398,8 +560,10 @@ export function TextTree({ className }: TextTreeProps) {
         newParagraphs[newParagraphs.length - 1] = lastParagraph;
         return newParagraphs;
       });
+      // Scroll to the new sentence
+      scrollToNode(targetId);
     }
-  }, [finalTextTree, setTypingIds]);
+  }, [paragraphs, deletingIds, finalTextTree, setTypingIds, scrollToNode]);
 
   const handleDelete = useCallback((targetId: string) => {
     const allToDelete = findAllDescendants(targetId);
@@ -431,20 +595,6 @@ export function TextTree({ className }: TextTreeProps) {
   }, [findAllDescendants, finalTextTree, setTypingIds]);
 
   // Attach the real handlers to the tree after it's created
-  useEffect(() => {
-    Object.values(finalTextTree).forEach(node => {
-      node.words.forEach(word => {
-        if (word.target && word.displayType) {
-          // This is a Link - update its handlers
-          word.onClick = () => handleNavigate(word.target!, word.displayType as DisplayType);
-          if (word.onClickAgain === 'toggle') {
-            word.undoClick = () => handleDelete(word.target!);
-          }
-        }
-      });
-    });
-  }, [finalTextTree, handleNavigate, handleDelete]);
-
   const handleDeleteComplete = useCallback((id: string) => {
     // Remove the sentence from paragraphs
     setParagraphs(prev => {
@@ -479,22 +629,33 @@ export function TextTree({ className }: TextTreeProps) {
     }
   }, [eraseComplete, isErasing, nextAction]);
 
+  // Center the root node on initial mount
+  useEffect(() => {
+    scrollToNode('root');
+  }, [scrollToNode]);
+
   return (
-    <div className={className}>
-      {isErasing ? (
-        <TypewriterText>{erasedText}</TypewriterText>
-      ) : (
-        <>
-          {paragraphs.map((sentenceIds, idx) => (
-            <ParagraphComponent
-              key={`p-${idx}`}
-              sentences={sentenceIds.map(id => finalTextTree[id]).filter(Boolean)}
-              deletingIds={deletingIds}
-              onDeleteComplete={handleDeleteComplete}
-            />
-          ))}
-        </>
-      )}
-    </div>
+    <TreeContainer ref={containerRef} style={{ maskImage }} className={className}>
+      <div style={{ paddingTop: '50vh', paddingBottom: '50vh' }}>
+        {isErasing ? (
+          <TypewriterText>{erasedText}</TypewriterText>
+        ) : (
+          <>
+            {paragraphs.map((sentenceIds, idx) => (
+              <ParagraphComponent
+                key={`p-${idx}`}
+                sentences={sentenceIds.map(id => finalTextTree[id]).filter(Boolean)}
+                deletingIds={deletingIds}
+                onDeleteComplete={handleDeleteComplete}
+                highlightedNodeId={highlightedNodeId}
+                nodeRefs={nodeRefs}
+                onNavigate={handleNavigate}
+                onDelete={handleDelete}
+              />
+            ))}
+          </>
+        )}
+      </div>
+    </TreeContainer>
   );
 }

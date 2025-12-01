@@ -1,15 +1,15 @@
 # GhostPoster Regression Test Suite
 
-**Last Updated:** 2025-10-19
-**Version:** 3.0 (Docker + noVNC Production Setup)
+**Last Updated:** 2025-11-24
+**Version:** 4.0 (Docker + Chrome Extension OAuth Monitoring)
 
 ## Table of Contents
 1. [Introduction](#introduction)
 2. [Test Environment Setup](#test-environment-setup)
-3. [Docker + noVNC Tests](#docker--novnc-tests) ⭐ NEW
+3. [Chrome Extension OAuth Tests](#chrome-extension-oauth-tests)
 4. [Authentication Tests](#authentication-tests)
 5. [Core Workflow Tests](#core-workflow-tests)
-6. [Scheduler & Automation Tests](#scheduler--automation-tests) ⭐ NEW
+6. [Scheduler & Automation Tests](#scheduler--automation-tests)
 7. [User Settings Tests](#user-settings-tests)
 8. [Data Management Tests](#data-management-tests)
 9. [Error Handling Tests](#error-handling-tests)
@@ -18,25 +18,24 @@
 
 ## Introduction
 
-This document provides comprehensive testing procedures for GhostPoster's Docker-based production deployment with noVNC remote browser access, unified OAuth + browser state authentication, and automated 24-hour scraping.
+This document provides comprehensive testing procedures for GhostPoster's Docker-based production deployment with Chrome extension OAuth monitoring, unified OAuth + browser state authentication, and automated 24-hour scraping.
 
-### Recent Major Updates (2025-10-19)
+### Recent Major Updates (2025-11-24)
 
-#### Docker + noVNC Production Setup ⭐ NEW
+#### Chrome Extension OAuth Monitoring ⭐ NEW
 - **Complete Docker Compose deployment** - One command deployment
-- **Integrated noVNC** - Web-based remote browser access on any device
-- **No manual setup scripts** - Xvfb, x11vnc, noVNC auto-configured
-- **Production-ready** - Works on headless Linux servers
-- **Health check endpoint** - `/health/vnc` verifies services ready
+- **Chrome extension integration** - Monitors browser state and sends updates to backend
+- **CDP remote debugging** - Chrome DevTools Protocol for remote browser access
+- **Production-ready** - Works on headless Linux servers with remote debugging
 
 #### Unified OAuth + Browser State Flow
-- **OAuth browser accessible via noVNC** at `http://server:6080/vnc.html`
-- Works on ANY device (Mac, Windows, Linux, iPad, Android)
-- Browser state (cookies/localStorage) **automatically saved** after OAuth
+- **OAuth browser accessible via CDP** - Chrome DevTools Protocol on port 9222
+- Chrome extension monitors OAuth flow and communicates state to backend
+- Browser state (cookies/localStorage) **automatically captured by extension** after OAuth
 - Frontend polls for login completion (no redirect flow)
 - Automation reuses saved browser state (no re-authentication)
 
-#### 24-Hour Automated Scraping ⭐ NEW
+#### 24-Hour Automated Scraping
 - **Background scheduler** runs every 24 hours for all users with valid sessions
 - **Automatic cache cleanup** - Removes tweets older than 3 days (72 hours)
 - **Headless scraping** - Runs silently in background (production)
@@ -44,9 +43,9 @@ This document provides comprehensive testing procedures for GhostPoster's Docker
 
 #### Key Implementation Changes:
 1. **Docker deployment:** `docker-compose up -d` starts everything
-2. **VNC services:** Xvfb, x11vnc, noVNC auto-start in container
-3. `POST /auth/twitter/start` launches Playwright browser (visible via noVNC)
-4. User opens `http://server:6080/vnc.html` to complete OAuth
+2. **Chrome extension:** Loaded in browser to monitor OAuth state
+3. `POST /auth/twitter/start` launches Playwright browser with CDP enabled
+4. Chrome extension detects OAuth completion and sends state to backend
 5. `GET /auth/callback` saves both OAuth tokens AND browser state
 6. Browser navigates to Twitter home to capture all cookies
 7. Frontend polls `GET /auth/twitter/status/{session_id}` for completion

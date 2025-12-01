@@ -6,7 +6,6 @@ import { usernameState } from '../atoms';
 import { LoginLoading } from '../components/LoginLoading';
 import { Background } from '../components/Background';
 import { TextTree } from '../components/TextTree';
-import '@fontsource/fraunces';
 
 // --- Theme ---
 const theme = {
@@ -19,7 +18,7 @@ const theme = {
   },
   fonts: {
     body: '"Fraunces", serif',
-    mono: '"Courier New", monospace',
+    mono: '"Geist Mono", monospace',
   },
 };
 
@@ -28,29 +27,38 @@ const LoginButton = styled.button`
   position: fixed;
   top: 40px;
   right: 40px;
-  background: transparent;
-  border: 1px solid ${theme.colors.text};
-  color: ${theme.colors.text};
-  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  border: none;
+  border-radius: 9999px;
+  color: #000000;
+  padding: 10px 30px;
   font-family: ${theme.fonts.mono};
-  font-size: 0.9rem;
+  font-size: 1.2rem;
+  font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  transition: background-color 0.2s ease;
 
   &:hover {
-    background: ${theme.colors.text};
-    color: ${theme.colors.background};
+    background: #e7e7e7;
+  }
+
+  svg {
+    width: 18px;
+    height: 18px;
   }
 `;
 
 const ContactText = styled.div`
   position: fixed;
-  bottom: 40px;
-  left: 40px;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
   font-family: ${theme.fonts.mono};
-  font-size: 0.85rem;
+  font-size: 1.3rem;
   color: ${theme.colors.textSecondary};
 
   a {
@@ -66,13 +74,14 @@ const ContactText = styled.div`
 `;
 
 const TextContainer = styled.div`
-  max-width: 800px;
+  max-width: 1000px;
   margin: 0 auto;
-  margin-top: 400px;
+  margin-top: 10%;
   padding: 100px 20px;
   font-size: 1.8rem;
   line-height: 2.2;
   letter-spacing: -0.01em;
+  text-align: center;
   flex: 1;
 
   @media (max-width: 768px) {
@@ -173,7 +182,12 @@ export function Login() {
 
   return (
       <Background>
-        <LoginButton onClick={handleLogin}>Log In</LoginButton>
+        <LoginButton onClick={handleLogin}>
+          Log in with
+          <svg viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+        </LoginButton>
 
         <TextContainer>
           {error && (
@@ -191,7 +205,7 @@ export function Login() {
         </TextContainer>
 
         <ContactText>
-          for more information, contact <a href="mailto:divya@aibread.com">divya@aibread.com</a>
+          questions? email <a href="mailto:divya@aibread.com">divya@aibread.com</a>
         </ContactText>
       </Background>
   );

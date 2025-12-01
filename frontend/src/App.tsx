@@ -275,8 +275,17 @@ function App() {
           setLoadingStatusData(null);
           await loadUserInfo(username);
           await loadTweets(username);
-        } else if (status.type !== 'idle') {
-          // Log unexpected status types (idle is expected when not scraping)
+        } else if (status.type === 'idle') {
+          // If we're in a loading state and status is idle, scraping finished
+          // This handles the case where we missed the 'complete' status
+          console.log('[Polling] Status idle while loading, stopping polling');
+          clearInterval(pollInterval);
+          setLoadingPhase(null);
+          setLoadingStatusData(null);
+          await loadUserInfo(username);
+          await loadTweets(username);
+        } else {
+          // Log unexpected status types
           console.warn('[Polling] Unexpected status type:', status.type);
         } 
 

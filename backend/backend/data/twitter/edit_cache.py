@@ -7,12 +7,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from backend.config import MAX_TWEET_AGE_HOURS
-from backend.utils import _cache_key, atomic_file_update, error, notify
+from backend.config import CACHE_DIR, MAX_TWEET_AGE_HOURS
+from backend.utlils.utils import _cache_key, atomic_file_update, error, notify
 
-BACKEND_DIR = Path(__file__).resolve().parent
-# Cache is one level up from backend/backend/ -> backend/cache/
-CACHE_DIR = BACKEND_DIR.parent / "cache"
 USERNAME = "proudlurker"
 
 
@@ -25,8 +22,8 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
 
     from pydantic import ValidationError
 
-    from backend.data_validation import ScrapedTweet
-    from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.data.twitter.data_validation import ScrapedTweet
+    from backend.twitter.logging import TweetAction, log_tweet_action
 
     # Read existing cache
     existing_tweets = await read_from_cache(username)
@@ -70,7 +67,7 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
     # notify(f"💾{description} and wrote to cache")
 
     # Track newly written tweets in seen_tweets
-    from backend.utils import add_to_seen_tweets
+    from backend.utlils.utils import add_to_seen_tweets
     tweet_ids_to_track = []
     for tweet in tweets:
         tweet_id = tweet.get("id") or tweet.get("tweet_id")
@@ -121,7 +118,7 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
 async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
     from pydantic import ValidationError
 
-    from backend.data_validation import ScrapedTweet
+    from backend.data.twitter.data_validation import ScrapedTweet
 
     path = get_user_tweet_cache(username)
     # notify(f"💾 Reading tweets from cache ({path.name})")
@@ -149,7 +146,7 @@ async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
 
 
 async def purge_unedited_tweets(username: str) -> int:
-    from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.twitter.logging import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)
 
@@ -200,7 +197,7 @@ async def cleanup_old_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) ->
     """
     from datetime import datetime, timedelta
 
-    from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.twitter.logging import TweetAction, log_tweet_action
 
     try:  # Python 3.11+
         from datetime import UTC  # type: ignore[attr-defined]
@@ -277,7 +274,7 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
         tweet_id: The ID of the tweet to delete
         log_deletion: Whether to log this deletion (False when deleting after posting)
     """
-    from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.twitter.logging import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)
 
@@ -318,7 +315,7 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str, reply_i
     """Edit the reply text for a specific tweet in the cache at a specific index."""
     import difflib
 
-    from backend.log_interactions import TweetAction, log_tweet_action
+    from backend.twitter.logging import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)
 
@@ -439,7 +436,7 @@ async def delete_tweet_endpoint(username: str, tweet_id: str, log_deletion: bool
         tweet_id: The ID of the tweet to delete
         log_deletion: Whether to log this deletion (default True, use False when deleting after posting)
     """
-    from backend.utils import error
+    from backend.utlils.utils import error
     deleted = await delete_tweet(username, tweet_id, log_deletion=log_deletion)
     if not deleted:
         error(f"Tweet {tweet_id} not found for user {username}", status_code=404, function_name="delete_tweet_endpoint", username=username)
@@ -452,7 +449,7 @@ async def delete_tweet_endpoint(username: str, tweet_id: str, log_deletion: bool
 @router.patch("/{username}/{tweet_id}/reply")
 async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRequest) -> dict[str, Any]:
     """Edit the reply text for a specific tweet at a specific index."""
-    from backend.utils import error
+    from backend.utlils.utils import error
     updated = await edit_tweet_reply(username, tweet_id, payload.new_reply, payload.reply_index)
     if not updated:
         error(f"Tweet {tweet_id} not found for user {username} or invalid reply index", status_code=404, function_name="edit_reply_endpoint", username=username, critical=True)
@@ -466,7 +463,7 @@ async def edit_reply_endpoint(username: str, tweet_id: str, payload: EditReplyRe
 @router.get("/{username}/{tweet_id}")
 async def get_single_tweet_endpoint(username: str, tweet_id: str) -> dict[str, Any]:
     """Get a single tweet by ID."""
-    from backend.utils import error
+    from backend.utlils.utils import error
     tweet = await get_single_tweet(username, tweet_id)
     if not tweet:
         error(f"Tweet {tweet_id} not found for user {username}", status_code=404, function_name="get_single_tweet_endpoint", username=username)
@@ -479,15 +476,6 @@ async def get_single_tweet_endpoint(username: str, tweet_id: str) -> dict[str, A
 
 @router.post("/{username}/cleanup")
 async def cleanup_tweets_endpoint(username: str, hours: int = MAX_TWEET_AGE_HOURS) -> dict[str, Any]:
-    """Manually trigger cleanup of tweets older than the specified hours.
-
-    Args:
-        username: The username whose cache to clean
-        hours: Age threshold in hours (default: MAX_TWEET_AGE_HOURS)
-
-    Returns:
-        Cleanup summary with count of removed tweets
-    """
     removed_count = await cleanup_old_tweets(username, hours)
     return {
         "message": f"Cleanup completed for user {username}",

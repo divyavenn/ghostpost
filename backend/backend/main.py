@@ -3,20 +3,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.account_routes import router as account_router
-from backend.auth_routes import router as auth_router
-from backend.backend.browser_management.browser_auth_routes import router as browser_auth_router
-from backend.backend.data.twitter.edit_cache import router as tweets_router
-from backend.backend.posting.twitter.post_takes import router as post_router
-from backend.backend.replying.generate_replies import router as generate_router
-from backend.backend.scraping.twitter.metrics import router as performance_router
-from backend.backend.scraping.twitter.timeline import router as read_router
-from backend.intent_to_queries import router as intent_router
-from backend.log_interactions import router as logging_router
-from backend.posted_tweets import router as posted_router
-from backend.scheduler import router as scheduler_router
-from backend.scheduler import start_scheduler, stop_scheduler
-from backend.user import router as user_router
+from backend.data.twitter.edit_cache import router as tweets_router
+from backend.scraping.twitter.metrics import router as performance_router
+from backend.scraping.twitter.timeline import router as read_router
+from backend.twitter.auth_routes import router as auth_router
+from backend.twitter.generate_replies import router as generate_router
+from backend.twitter.intent_to_queries import router as intent_router
+from backend.twitter.logging import router as logging_router
+from backend.twitter.posted_tweets import router as posted_router
+from backend.twitter.posting import router as post_router
+from backend.user.user import router as user_router
+from backend.utlils.scheduler import router as scheduler_router
+from backend.utlils.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
@@ -46,9 +44,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(account_router)
 app.include_router(auth_router)
-app.include_router(browser_auth_router)
 app.include_router(tweets_router)
 app.include_router(post_router)
 app.include_router(posted_router)
@@ -65,43 +61,3 @@ app.include_router(scheduler_router)
 async def health_check():
     """Basic health check endpoint for Docker healthcheck."""
     return {"status": "healthy"}
-
-
-@app.get("/health/vnc")
-async def vnc_health_check():
-    """Check if VNC services are ready for OAuth."""
-    import os
-    import socket
-
-    checks = {
-        "display": False,
-        "x11vnc": False,
-        "novnc": False,
-    }
-
-    # Check DISPLAY environment variable
-    checks["display"] = os.getenv("DISPLAY") == ":99"
-
-    # Check if x11vnc is listening on port 5900
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(('localhost', 5900))
-        checks["x11vnc"] = result == 0
-        sock.close()
-    except Exception:
-        checks["x11vnc"] = False
-
-    # Check if noVNC is listening on port 6080
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(1)
-        result = sock.connect_ex(('localhost', 6080))
-        checks["novnc"] = result == 0
-        sock.close()
-    except Exception:
-        checks["novnc"] = False
-
-    all_ready = all(checks.values())
-
-    return {"ready": all_ready, "checks": checks, "message": "VNC services ready for OAuth" if all_ready else "VNC services not ready yet"}

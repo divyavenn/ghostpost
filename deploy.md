@@ -21,7 +21,7 @@
 The script will:
 - Commit cache files (except user_info.json)
 - Pull latest changes from GitHub
-- Rebuild Docker containers with the new Dockerfile (includes noVNC)
+- Rebuild Docker containers with the new Dockerfile
 - Restart all services
 - Show deployment status
 
@@ -31,14 +31,10 @@ The Cloudflare tunnel is already set up to point to port 80 (default port). This
 
 - **Frontend**: https://x.ghostposter.app
 - **Backend API**: https://x.ghostposter.app/api/
-- **noVNC (Browser View)**: http://45.63.85.26:6080/vnc.html
 
 If for whatever reason the Cloudflare tunnel is down, use this:
 - **Frontend**: http://45.63.85.26:80 (port 80)
 - **Backend API**: http://45.63.85.26:8000
-- **noVNC (Browser View)**: http://45.63.85.26:6080/vnc.html
-
-**Note**: noVNC provides a web-based view of the browser during OAuth flows and automation tasks. Very useful for debugging!
 
 
 ## Maintanence

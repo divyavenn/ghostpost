@@ -95,3 +95,6 @@ DEFAULT_QUERIES = [
 
 # Default usernames to scrape (can be overridden per user)
 DEFAULT_USERNAMES = ["divya_venn"]
+
+# Test user for unit tests (must have saved browser state)
+TEST_USER = "divya_venn"

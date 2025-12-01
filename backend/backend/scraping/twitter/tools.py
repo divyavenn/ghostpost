@@ -2,7 +2,7 @@ import asyncio
 import re
 
 from backend.config import MAX_TWEET_AGE_HOURS
-from backend.utils import notify
+from backend.utlils.utils import notify
 
 from .full_threads import get_thread, scroll
 
@@ -12,9 +12,9 @@ except ImportError:  # Python <3.11
     UTC = UTC
 
 try:
-    from backend.resolve_imports import ensure_standalone_imports
+    from backend.utlils.resolve_imports import ensure_standalone_imports
 except ModuleNotFoundError:  # Running from inside backend/
-    from resolve_imports import ensure_standalone_imports
+    from backend.utlils.resolve_imports import ensure_standalone_imports
 
 ensure_standalone_imports(globals())
 
@@ -712,17 +712,15 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
 
                     # Apply initial intent filter (loose filter)
                     if username:
-                        from backend.backend.filtering.intent_filter import check_tweet_matches_intent_initial
+                        from backend.twitter.filtering import check_tweet_matches_intent_initial
                         matches_intent = await check_tweet_matches_intent_initial(tweet_data, username)
                         if not matches_intent:
                             # Skip this tweet - doesn't match intent
                             continue
 
                     tweets[tid] = tweet_data
-
-                    # Progressive write: save tweet immediately if callback provided
-                    if write_callback and username:
-                        await write_callback([tweet_data], username)
+                    # NOTE: Don't write here - wait until threads are collected
+                    # to avoid marking tweets as "seen" before they have thread data
 
     def event_handler(resp):
         t = asyncio.create_task(grab(resp))
@@ -750,34 +748,19 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
 
     await page.close()
 
-    # Collect threads for all tweets with progressive writing
-    # Also apply final intent filter after thread collection
-    tweets_to_remove = []
+    # Collect threads and other replies for all tweets with progressive writing
     for tid, t in tweets.items():
-        t["thread"] = await get_thread(ctx, t["url"], root_id=t["id"])
+        thread_data = await get_thread(ctx, t["url"], root_id=t["id"])
+        t["thread"] = thread_data.get("thread", [])
+        t["other_replies"] = thread_data.get("other_replies", [])
 
         # Replace the truncated text with the full text from the thread (first element)
         if t["thread"] and len(t["thread"]) > 0:
             t["text"] = t["thread"][0]
 
-            # Apply final intent filter (strict filter) after thread is collected
-            if username:
-                from backend.backend.filtering.intent_filter import check_tweet_matches_intent_final
-                matches_intent = await check_tweet_matches_intent_final(t, username)
-                if not matches_intent:
-                    # Mark for removal - doesn't match intent after full thread analysis
-                    tweets_to_remove.append(tid)
-                    continue
-
-            # Progressive write: save thread immediately if callback provided (only if passed filter)
+            # Progressive write: save thread immediately if callback provided
             if write_callback and username:
                 await write_callback([t], username)
-
-    # Remove tweets that failed the final intent filter
-    for tid in tweets_to_remove:
-        if tid in tweets:
-            del tweets[tid]
-            notify(f"🗑️ Removed tweet {tid} from results (failed final intent filter)")
 
     # NOTE: We no longer remove tweets without threads - they stay in cache
     # but frontend will filter them out for display

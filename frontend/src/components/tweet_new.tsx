@@ -3,6 +3,13 @@ import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { AnimatedText } from './WordStyles';
 import xLottie from '../assets/x.lottie';
 
+export interface OtherReply {
+  text: string;
+  author_handle: string;
+  author_name: string;
+  likes: number;
+}
+
 export interface TweetData {
   id: string;
   cache_id?: string;
@@ -19,6 +26,7 @@ export interface TweetData {
   followers: number;
   reply?: string; // Deprecated - kept for backward compatibility
   generated_replies?: Array<[string, string]>; // Array of tuples: [reply_text, model_name]
+  other_replies?: OtherReply[];  // Top replies from other users
   created_at: string;
   url: string;
   thread?: string[];
@@ -71,6 +79,7 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
   const [editedTexts, setEditedTexts] = useState<string[]>(generatedReplies);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean[]>(generatedReplies.map(() => false));
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
+  const [otherRepliesExpanded, setOtherRepliesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -427,6 +436,75 @@ export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
               </div>
             </>
           )
+        )}
+
+        {/* Other Replies Section - collapsible */}
+        {tweet.other_replies && tweet.other_replies.length > 0 && (
+          <div className="mt-6 pt-4 border-t border-neutral-800">
+            <button
+              type="button"
+              onClick={() => setOtherRepliesExpanded(!otherRepliesExpanded)}
+              className="flex items-center gap-2 text-sm text-neutral-400 hover:text-neutral-300 transition-colors w-full"
+            >
+              <i className={`fa-solid fa-chevron-${otherRepliesExpanded ? 'up' : 'down'} text-xs transition-transform`} />
+              <span className="font-medium">
+                {otherRepliesExpanded ? 'Hide' : 'Show'} other replies ({tweet.other_replies.length})
+              </span>
+            </button>
+
+            {/* Preview of first reply when collapsed */}
+            {!otherRepliesExpanded && tweet.other_replies[0] && (
+              <div className="mt-3 relative">
+                <div className="flex items-start gap-2">
+                  <div className="h-6 w-6 rounded-full bg-neutral-700 flex items-center justify-center flex-shrink-0">
+                    <i className="fa-solid fa-user text-xs text-neutral-400" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 text-xs text-neutral-500">
+                      <span className="font-medium text-neutral-400">@{tweet.other_replies[0].author_handle}</span>
+                      <span>·</span>
+                      <span className="flex items-center gap-1">
+                        <i className="fa-regular fa-heart" />
+                        {tweet.other_replies[0].likes}
+                      </span>
+                    </div>
+                    <p className="text-sm text-neutral-400 mt-1 line-clamp-2 overflow-hidden">
+                      {tweet.other_replies[0].text}
+                    </p>
+                  </div>
+                </div>
+                {/* Fade to black overlay */}
+                <div className="absolute bottom-0 left-0 right-0 h-8 bg-gradient-to-t from-black to-transparent pointer-events-none" />
+              </div>
+            )}
+
+            {/* Expanded view of all replies */}
+            {otherRepliesExpanded && (
+              <div className="mt-4 space-y-4 max-h-80 overflow-y-auto scrollbar-thin scrollbar-thumb-neutral-700 scrollbar-track-transparent pr-2">
+                {tweet.other_replies.map((reply, idx) => (
+                  <div key={idx} className="flex items-start gap-2">
+                    <div className="h-6 w-6 rounded-full bg-neutral-700 flex items-center justify-center flex-shrink-0">
+                      <i className="fa-solid fa-user text-xs text-neutral-400" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 text-xs text-neutral-500">
+                        <span className="font-medium text-neutral-400">{reply.author_name}</span>
+                        <span className="text-neutral-600">@{reply.author_handle}</span>
+                        <span>·</span>
+                        <span className="flex items-center gap-1">
+                          <i className="fa-regular fa-heart" />
+                          {reply.likes}
+                        </span>
+                      </div>
+                      <p className="text-sm text-neutral-300 mt-1 whitespace-pre-wrap">
+                        {reply.text}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         )}
       </div>
 

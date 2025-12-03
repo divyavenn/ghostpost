@@ -1,12 +1,14 @@
 import asyncio
 import os
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
 from fastapi import APIRouter
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from backend.config import OBELISK_KEY
+from backend.data.twitter.data_validation import ScrapedTweet
 
 from ..scraping.twitter.timeline import USERNAME
 from ..utlils.utils import error, notify, read_user_info
@@ -30,9 +32,10 @@ load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 REPLY_GAME = """You are an expert at online conversation. 
 Your job is to craft replies, comments, and recommendations that support the original poster (OP), elevate the discussion, 
-and make the OP feel accurately understood. Your tone should feel like an insightful, socially intelligent expert casually and informally texting a friend, using the emojis, abbreviations, and slang you'd normally use — concise, intuitive, supportive, never pompous.
+and make the OP feel accurately understood. Your tone should feel like an insightful, socially intelligent expert casually and informally texting a friend, using the emojis, abbreviations, and slang you'd normally use — concise, intuitive, supportive, never pompous. 
+Do not include citations. 
 
-The quoted content is marked [QUOTED TWEET] if it exists and the user's response is marked [RESPONSE].
+The quoted content is marked [QUOTED TWEET] if it exists and the user's response is marked [RESPONSE]. Responses from other users are marked [TOP REPLIES FROM OTHERS]
 
 
 I. Core Philosophy: What every reply must accomplish
@@ -183,34 +186,49 @@ async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nak
     return {"message": message}
 
 
-def build_prompt(tweet):
-    tweet_id = tweet['id'] if 'id' in tweet else (tweet['tweet_id'] if 'tweet_id' in tweet else None)
+def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], bool, str | None] | None:
+    """
+    Build a prompt for reply generation from a tweet.
 
-    thread = tweet['thread'] if 'thread' in tweet else []
-    if not thread:
+    Args:
+        tweet: Tweet data (dict or ScrapedTweet model)
+
+    Returns:
+        Tuple of (text_prompt, image_urls, has_quoted_tweet, tweet_id) or None if invalid
+    """
+    # Validate and convert to model if needed
+    if isinstance(tweet, dict):
+        try:
+            validated_tweet = ScrapedTweet.model_validate(tweet)
+        except ValidationError as e:
+            tweet_id = tweet.get('id') or tweet.get('tweet_id')
+            error_msg = e.errors()[0]['msg'] if e.errors() else str(e)
+            notify(f"⚠️ Tweet {tweet_id} validation failed: {error_msg}")
+            return None
+    else:
+        validated_tweet = tweet
+
+    tweet_id = validated_tweet.id
+
+    # Check thread content
+    if not validated_tweet.thread:
         notify(f"⚠️ Tweet {tweet_id} has no thread content, skipping")
         return None
 
-    # Build structured text prompt with quoted tweet context if present
+    # Build structured text prompt
     text_prompt = ""
-    image_urls = []
+    image_urls: list[str] = []
 
-    # Extract quoted tweet if present
-    quoted_tweet = tweet['quoted_tweet'] if 'quoted_tweet' in tweet else None
-    has_quoted_tweet = bool(quoted_tweet and ('text' in quoted_tweet and quoted_tweet['text']))
+    # Extract quoted tweet info
+    has_quoted = bool(validated_tweet.quoted_tweet and validated_tweet.quoted_tweet.text)
 
-    if has_quoted_tweet:
-        # Add quoted tweet context first
-        qt_author = quoted_tweet['author_handle'] if 'author_handle' in quoted_tweet else 'unknown'
-        qt_name = quoted_tweet['author_name'] if 'author_name' in quoted_tweet else qt_author
-        qt_text = quoted_tweet['text'] if 'text' in quoted_tweet else ''
-
-        text_prompt += f"[QUOTED TWEET by @{qt_author} ({qt_name})]\n"
-        text_prompt += f"{qt_text}\n"
+    if has_quoted:
+        qt = validated_tweet.quoted_tweet
+        text_prompt += f"[QUOTED TWEET by @{qt.author_handle} ({qt.author_name})]\n"
+        text_prompt += f"{qt.text}\n"
 
         # Add QT images first
-        qt_media = quoted_tweet['media'] if 'media' in quoted_tweet else []
-        qt_images = [item['url'] for item in qt_media if 'type' in item and item['type'] == 'photo']
+        qt_images = [item.url for item in qt.media if item.type == 'photo']
         if qt_images:
             image_urls.extend(qt_images)
             text_prompt += f"[This quoted tweet contains {len(qt_images)} image(s)]\n"
@@ -218,86 +236,112 @@ def build_prompt(tweet):
         text_prompt += "\n---\n\n"
 
     # Add main tweet/thread
-    username_display = tweet['username'] if 'username' in tweet else (tweet['handle'] if 'handle' in tweet else 'User')
-    if has_quoted_tweet:
-        text_prompt += f"[{username_display}'s RESPONSE]\n"
+    display_name = validated_tweet.username or validated_tweet.handle or "User"
+    if has_quoted:
+        text_prompt += f"[{display_name}'s RESPONSE]\n"
 
-    text_prompt += str(thread)
+    text_prompt += str(validated_tweet.thread)
 
-    # Add main tweet images after QT images
-    media = tweet['media'] if 'media' in tweet else []
-    main_images = [item['url'] for item in media if 'type' in item and item['type'] == 'photo']
+    # Add main tweet images
+    main_images = [item.url for item in validated_tweet.media if item.type == 'photo']
     if main_images:
         image_urls.extend(main_images)
-        if has_quoted_tweet:
+        if has_quoted:
             text_prompt += f"\n[Response contains {len(main_images)} image(s)]"
 
-    # Add alt text context if available (for all images)
-    all_media = (quoted_tweet['media'] if quoted_tweet and 'media' in quoted_tweet else []) + media
-    alt_texts = [item['alt_text'] for item in all_media if 'alt_text' in item and item['alt_text']]
+    # Add alt text context if available
+    alt_texts: list[str] = []
+    if validated_tweet.quoted_tweet:
+        alt_texts.extend([item.alt_text for item in validated_tweet.quoted_tweet.media if item.alt_text])
+    alt_texts.extend([item.alt_text for item in validated_tweet.media if item.alt_text])
     if alt_texts:
         text_prompt += f"\n\n[Image descriptions: {'; '.join(alt_texts)}]"
 
-    # Add other replies context (top replies from other users)
-    other_replies = tweet.get('other_replies', [])
-    if other_replies:
+    # Add other replies context (top 5)
+    if validated_tweet.other_replies:
         text_prompt += "\n\n---\n\n[TOP REPLIES FROM OTHERS]\n"
-        for reply in other_replies[:5]:  # Limit to 5 replies
-            author = reply.get('author_handle', 'unknown')
-            name = reply.get('author_name', author)
-            likes = reply.get('likes', 0)
-            reply_text = reply.get('text', '')
-            text_prompt += f"\n@{author} ({name}) - {likes} likes:\n{reply_text}\n"
+        for reply in validated_tweet.other_replies[:5]:
+            text_prompt += f"\n@{reply.author_handle} ({reply.author_name}) - {reply.likes} likes:\n{reply.text}\n"
 
-    return text_prompt, image_urls, has_quoted_tweet, tweet_id
+    return text_prompt, image_urls, has_quoted, tweet_id
 
 
-async def generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds=1, batch=False, username="unknown"):
+async def generate_replies_for_tweet(
+    tweet: dict[str, Any] | ScrapedTweet,
+    models: list[str],
+    needed_generations: int,
+    delay_seconds: float = 1,
+    batch: bool = False,
+    username: str = "unknown"
+) -> list[tuple[str, str]]:
+    """
+    Generate AI replies for a single tweet.
+
+    Args:
+        tweet: Tweet data (dict or validated TweetForGeneration)
+        models: List of model names to use for generation
+        needed_generations: Number of replies to generate
+        delay_seconds: Delay between API calls
+        batch: If True, don't raise critical errors (batch processing mode)
+        username: Username for logging
+
+    Returns:
+        List of (reply_text, model_name) tuples
+    """
     import random
 
-    replies = []
+    replies: list[tuple[str, str]] = []
 
-    if needed_generations > 0:
-        prompt = build_prompt(tweet)
-        if prompt is None:
-            return []
+    if needed_generations <= 0:
+        return replies
 
-        text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt
+    # Build prompt (includes validation)
+    prompt_result = build_prompt(tweet)
+    if prompt_result is None:
+        return []
 
-        for gen_idx in range(needed_generations):
-            # Model selection logic:
-            # - If fewer models than replies: cycle through models
-            # - If more models than replies: randomly select a model for each reply
-            if len(models) < (needed_generations):
-                # Cycle through models
-                selected_model = models[gen_idx % len(models)]
-            else:
-                # Randomly select from available models
-                selected_model = random.choice(models)
+    text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt_result
 
-            if image_urls:
-                notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} with {len(image_urls)} image(s)...")
-            else:
-                notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model}...")
+    for gen_idx in range(needed_generations):
+        # Model selection logic:
+        # - If fewer models than replies: cycle through models
+        # - If more models than replies: randomly select a model for each reply
+        if len(models) < needed_generations:
+            selected_model = models[gen_idx % len(models)]
+        else:
+            selected_model = random.choice(models)
 
-            # Pass has_quoted_tweet flag to enable appropriate system prompt
-            response = await ask_model(prompt=text_prompt, model=selected_model, image_urls=image_urls, has_quoted_tweet=has_quoted_tweet, username=username)
+        if image_urls:
+            notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} with {len(image_urls)} image(s)...")
+        else:
+            notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model}...")
 
-            reply = response.get('message', '')
-            if reply:
-                replies.append((reply, selected_model))
-                notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
-            else:
-                error_msg = response.get('error', 'Unknown error')
-                error(f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}: {error_msg}",
-                      status_code=500,
-                      function_name="generate_replies_for_tweet",
-                      username=username,
-                      critical=(not batch))
+        # Pass has_quoted_tweet flag to enable appropriate system prompt
+        response = await ask_model(
+            prompt=text_prompt,
+            model=selected_model,
+            image_urls=image_urls,
+            has_quoted_tweet=has_quoted_tweet,
+            username=username
+        )
 
-            # Delay between generations to avoid rate limiting
-            if gen_idx < needed_generations - 1:
-                await asyncio.sleep(delay_seconds)
+        reply = response.get('message', '')
+        if reply:
+            replies.append((reply, selected_model))
+            notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
+        else:
+            error_msg = response.get('error', 'Unknown error')
+            error(
+                f"⚠️ Empty reply received for generation {gen_idx+1} of tweet {tweet_id}: {error_msg}",
+                status_code=500,
+                function_name="generate_replies_for_tweet",
+                username=username,
+                critical=(not batch)
+            )
+
+        # Delay between generations to avoid rate limiting
+        if gen_idx < needed_generations - 1:
+            await asyncio.sleep(delay_seconds)
 
     return replies
 

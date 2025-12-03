@@ -4,7 +4,8 @@ import re
 from backend.config import MAX_TWEET_AGE_HOURS
 from backend.utlils.utils import notify
 
-from .full_threads import get_thread, scroll
+from .scraping_utils import scroll
+from .thread import get_thread
 
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]

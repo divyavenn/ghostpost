@@ -3,19 +3,14 @@ from typing import Any
 
 from fastapi import APIRouter, Query
 
-from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+from backend.data.twitter.posted_tweets_cache import get_posted_tweets_list
 
 router = APIRouter(prefix="/posted", tags=["posted"])
 
 
 def get_posted_tweets(username: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-    # Read from new posted_tweets.json cache
-    tweets = read_posted_tweets_cache(username)
-
-    # Apply pagination
-    start_idx = offset
-    end_idx = offset + limit
-    return tweets[start_idx:end_idx]
+    """Get posted tweets with pagination using the new map-based cache."""
+    return get_posted_tweets_list(username, limit=limit, offset=offset)
 
 
 @router.get("/{username}/tweets")

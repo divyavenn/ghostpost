@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MediaItem(BaseModel):
@@ -96,6 +96,12 @@ class ScrapedTweet(BaseModel):
     edited: bool = False  # True if user has edited any generated reply
 
 
+MonitoringState = Literal["active", "warm", "cold"]
+TweetSource = Literal["app_posted", "external"]
+ResurrectionSource = Literal["none", "notification", "search"]
+CommentStatus = Literal["pending", "replied", "skipped"]
+
+
 class PostedTweet(BaseModel):
     id: str
     text: str
@@ -110,13 +116,91 @@ class PostedTweet(BaseModel):
     # metadata
     created_at: str  # ISO 8601 datetime string
     url: str
-    last_metrics_update: str  # ISO 8601 datetime string
+    last_metrics_update: str | None = None  # ISO 8601 datetime string
 
-    # data about tweet it's responding to
-    response_to_thread: list[str]  # Thread of the original tweet
-    responding_to: str  # Handle of the person being replied to
-    replying_to_pfp: str  # Profile pic URL of person being replied to
-    original_tweet_url: str  # URL of the original tweet
+    # Parent chain tracking - array of ancestor IDs from root to immediate parent
+    parent_chain: list[str] = Field(default_factory=list)
+
+    # Legacy fields (keep for frontend compatibility)
+    response_to_thread: list[str] = Field(default_factory=list)  # Thread of the original tweet
+    responding_to: str = ""  # Handle of the person being replied to
+    replying_to_pfp: str = ""  # Profile pic URL of person being replied to
+    original_tweet_url: str = ""  # URL of the original tweet
+
+    # Source tracking
+    source: TweetSource = "app_posted"
+
+    # Monitoring state machine
+    monitoring_state: MonitoringState = "active"
+
+    # Timestamps for monitoring
+    last_activity_at: str | None = None
+    last_deep_scrape: str | None = None
+    last_shallow_scrape: str | None = None
+
+    # Metrics snapshot for activity detection
+    last_reply_count: int | None = None
+    last_quote_count: int | None = None
+    last_like_count: int | None = None
+    last_retweet_count: int | None = None
+
+    # Resurrection info
+    resurrected_via: ResurrectionSource = "none"
+
+    # Reply tracking for activity detection
+    last_scraped_reply_ids: list[str] = Field(default_factory=list)
+
+
+class CommentRecord(BaseModel):
+    """A comment (reply from someone else) on user's tweet or thread."""
+    id: str
+    text: str
+
+    # Commenter info
+    handle: str
+    username: str
+    author_profile_pic_url: str = ""
+    followers: int = 0
+
+    # performance
+    likes: int = 0
+    retweets: int = 0
+    quotes: int = 0
+    replies: int = 0
+    impressions: int = 0
+
+    # metadata
+    created_at: str
+    url: str
+    last_metrics_update: str | None = None
+
+    # Parent chain tracking
+    parent_chain: list[str] = Field(default_factory=list)
+    in_reply_to_status_id: str | None = None  # Immediate parent tweet ID
+
+    # Comment-specific
+    status: CommentStatus = "pending"
+    generated_replies: list[tuple[str, str]] = Field(default_factory=list)  # [(reply_text, model_name)]
+    edited: bool = False
+
+    # Monitoring (same as PostedTweet)
+    source: TweetSource = "external"
+    monitoring_state: MonitoringState = "active"
+    last_activity_at: str | None = None
+    last_deep_scrape: str | None = None
+    last_shallow_scrape: str | None = None
+    last_reply_count: int | None = None
+    last_quote_count: int | None = None
+    last_like_count: int | None = None
+    last_retweet_count: int | None = None
+    resurrected_via: ResurrectionSource = "none"
+    last_scraped_reply_ids: list[str] = Field(default_factory=list)
+
+    # Optional fields from scraping
+    thread: list[str] = Field(default_factory=list)
+    other_replies: list["OtherReply"] = Field(default_factory=list)
+    quoted_tweet: "QuotedTweet | None" = None
+    media: list["MediaItem"] = Field(default_factory=list)
 
 
 class Token(BaseModel):

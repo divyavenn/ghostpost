@@ -122,15 +122,19 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
         log_key = original_tweet_id or posted_tweet_id
         log_tweet_action(username, TweetAction.POSTED, str(log_key), metadata=metadata)
 
-        # Add to posted_tweets.json cache
+        # Add to posted_tweets.json cache with parent_chain support
         try:
+            # Get the in_reply_to_id for building parent_chain
+            in_reply_to_id = payload.get("reply", {}).get("in_reply_to_tweet_id") or payload.get("quote_tweet_id")
+
             add_posted_tweet(username=username,
                              posted_tweet_id=posted_tweet_id,
                              text=payload.get("text", ""),
                              original_tweet_url=original_tweet_url,
                              responding_to_handle=responding_to_handle,
                              replying_to_pfp=replying_to_pfp,
-                             response_to_thread=response_to_thread)
+                             response_to_thread=response_to_thread,
+                             in_reply_to_id=in_reply_to_id)
         except Exception as e:
             error("Failed to add to posted_tweets cache", status_code=500, exception_text=str(e), function_name="post", username=username)
             notify(f"⚠️ Failed to add to posted_tweets cache: {e}")

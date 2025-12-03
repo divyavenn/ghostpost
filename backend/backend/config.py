@@ -98,3 +98,15 @@ DEFAULT_USERNAMES = ["divya_venn"]
 
 # Test user for unit tests (must have saved browser state)
 TEST_USER = "divya_venn"
+
+# =============================================================================
+# MONITORING STATE CONFIGURATION
+# =============================================================================
+# Thresholds for tweet monitoring state transitions
+ACTIVE_MAX_AGE_HOURS = 12      # After this, tweet becomes "warm"
+WARM_MAX_AGE_DAYS = 3          # After this + inactivity, tweet becomes "cold"
+INACTIVITY_TO_COLD_HOURS = 24  # No activity for this long -> "cold"
+HARDCUTOFF_COLD_DAYS = 7       # Beyond this age, always treat as "cold"
+
+# Activity threshold for promotion back to "active"
+ACTIVITY_PROMOTION_THRESHOLD = 5  # New replies needed to promote to "active"

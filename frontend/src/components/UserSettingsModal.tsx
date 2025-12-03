@@ -23,6 +23,11 @@ interface EditableTextProps {
 function EditableText({ text, onSave }: EditableTextProps) {
   const [value, setValue] = useState(text);
 
+  // Sync internal state when prop changes (e.g., when new queries are generated from intent)
+  useEffect(() => {
+    setValue(text);
+  }, [text]);
+
   const handleSave = () => {
     if (value.trim() && value !== text) {
       onSave(value);

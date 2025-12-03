@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
-import {TweetDisplay, type TweetData } from './components/tweet_new';
+import {TweetDisplay, type TweetData } from './components/TweetDisplay';
 import {PostedTweetDisplay, type PostedTweetData } from './components/posted_tweet';
-import { api } from './api/client';
+import { CommentDisplay } from './components/CommentDisplay';
+import { api, type CommentData, type ThreadContext } from './api/client';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { StatsDashboard } from './components/StatsDashboard';
 import { Background } from './components/Background';
@@ -47,6 +48,16 @@ function App() {
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
   const [isLoadingMorePosted, setIsLoadingMorePosted] = useState(false);
+  // Comments state
+  const [comments, setComments] = useState<CommentData[]>([]);
+  const [commentContexts, setCommentContexts] = useState<Map<string, ThreadContext[]>>(new Map());
+  const [pendingCommentsCount, setPendingCommentsCount] = useState(0);
+  const [hasMoreComments, setHasMoreComments] = useState(true);
+  const [isLoadingMoreComments, setIsLoadingMoreComments] = useState(false);
+  const [postingCommentIds, setPostingCommentIds] = useState<Set<string>>(new Set());
+  const [skippingCommentIds, setSkippingCommentIds] = useState<Set<string>>(new Set());
+  const [regeneratingCommentIds, setRegeneratingCommentIds] = useState<Set<string>>(new Set());
+  const commentsOffsetRef = useRef(0);
   const [numberOfGenerations, setNumberOfGenerations] = useState<number>(1);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [showPaidModal, setShowPaidModal] = useState(false);
@@ -180,6 +191,168 @@ function App() {
     } finally {
       setIsLoadingMorePosted(false);
     }
+  };
+
+  // Load comments with thread contexts
+  const loadComments = useCallback(async (user: string, reset: boolean = true) => {
+    try {
+      if (reset) {
+        commentsOffsetRef.current = 0;
+        setHasMoreComments(true);
+      }
+
+      const data = await api.getComments(user, 20, reset ? 0 : commentsOffsetRef.current, 'pending');
+
+      // Load thread context for each comment
+      const contexts = new Map<string, ThreadContext[]>();
+      for (const comment of data.comments) {
+        try {
+          const contextData = await api.getComment(user, comment.id);
+          contexts.set(comment.id, contextData.thread_context);
+        } catch (err) {
+          console.error(`Failed to load context for comment ${comment.id}:`, err);
+          contexts.set(comment.id, []);
+        }
+      }
+
+      if (reset) {
+        setComments(data.comments);
+        setCommentContexts(contexts);
+      } else {
+        setComments(prev => [...prev, ...data.comments]);
+        setCommentContexts(prev => new Map([...prev, ...contexts]));
+      }
+
+      commentsOffsetRef.current = reset ? data.comments.length : commentsOffsetRef.current + data.comments.length;
+      setHasMoreComments(data.has_more);
+
+      // Also get pending count for tab badge
+      const stats = await api.getCommentsStats(user);
+      setPendingCommentsCount(stats.pending);
+    } catch (error) {
+      console.error('Failed to load comments:', error);
+    }
+  }, []);
+
+  // Load comments when switching to Comments tab
+  useEffect(() => {
+    if (activeTab === 'comments' && username) {
+      loadComments(username, true);
+    }
+  }, [activeTab, username, loadComments]);
+
+  // Load more comments (for infinite scroll)
+  const loadMoreComments = async () => {
+    if (!username || isLoadingMoreComments || !hasMoreComments) return;
+
+    setIsLoadingMoreComments(true);
+    try {
+      await loadComments(username, false);
+    } finally {
+      setIsLoadingMoreComments(false);
+    }
+  };
+
+  // Comment handlers
+  const handlePublishCommentReply = async (commentId: string, text: string, replyIndex: number = 0) => {
+    if (!username) return;
+
+    setPostingCommentIds(prev => new Set(prev).add(commentId));
+
+    setTimeout(async () => {
+      try {
+        await api.postCommentReply(username, commentId, text, replyIndex);
+
+        // Remove from local state
+        setComments(prev => prev.filter(c => c.id !== commentId));
+        setPostingCommentIds(prev => {
+          const next = new Set(prev);
+          next.delete(commentId);
+          return next;
+        });
+
+        // Update pending count
+        setPendingCommentsCount(prev => Math.max(0, prev - 1));
+
+        // Reload user info to update post count
+        await loadUserInfo(username);
+      } catch (error) {
+        console.error('Failed to post comment reply:', error);
+        alert('Failed to post reply. Please try again.');
+        setPostingCommentIds(prev => {
+          const next = new Set(prev);
+          next.delete(commentId);
+          return next;
+        });
+      }
+    }, 400);
+  };
+
+  const handleSkipComment = async (commentId: string) => {
+    if (!username) return;
+
+    setSkippingCommentIds(prev => new Set(prev).add(commentId));
+
+    setTimeout(async () => {
+      try {
+        await api.skipComment(username, commentId);
+
+        // Remove from local state
+        setComments(prev => prev.filter(c => c.id !== commentId));
+        setSkippingCommentIds(prev => {
+          const next = new Set(prev);
+          next.delete(commentId);
+          return next;
+        });
+
+        // Update pending count
+        setPendingCommentsCount(prev => Math.max(0, prev - 1));
+      } catch (error) {
+        console.error('Failed to skip comment:', error);
+        alert('Failed to skip comment. Please try again.');
+        setSkippingCommentIds(prev => {
+          const next = new Set(prev);
+          next.delete(commentId);
+          return next;
+        });
+      }
+    }, 300);
+  };
+
+  const handleRegenerateCommentReply = async (commentId: string) => {
+    if (!username) return;
+
+    setRegeneratingCommentIds(prev => new Set(prev).add(commentId));
+
+    try {
+      const result = await api.regenerateCommentReply(username, commentId);
+      // Update local state with new replies
+      setComments(prev => prev.map(c =>
+        c.id === commentId ? { ...c, generated_replies: result.new_replies } : c
+      ));
+    } catch (error) {
+      console.error('Failed to regenerate comment reply:', error);
+      alert('Failed to regenerate reply. Please try again.');
+    } finally {
+      setRegeneratingCommentIds(prev => {
+        const next = new Set(prev);
+        next.delete(commentId);
+        return next;
+      });
+    }
+  };
+
+  const handleEditCommentReply = async (commentId: string, newReply: string, replyIndex: number) => {
+    // Update local state only (no backend call needed for editing)
+    setComments(prev => prev.map(c => {
+      if (c.id === commentId) {
+        const updatedReplies = [...(c.generated_replies || [])];
+        const currentModel = updatedReplies[replyIndex]?.[1] || 'edited';
+        updatedReplies[replyIndex] = [newReply, currentModel];
+        return { ...c, generated_replies: updatedReplies, edited: true };
+      }
+      return c;
+    }));
   };
 
   const loadUserInfo = async (user: string) => {
@@ -769,6 +942,7 @@ function App() {
         onTabChange={setActiveTab}
         generatedCount={tweets.length}
         postedCount={userInfo?.lifetime_posts || 0}
+        commentsCount={pendingCommentsCount}
       />
 
       {/* Content Area - Show tweets or empty state */}
@@ -778,18 +952,18 @@ function App() {
         <div
           className="flex-1 overflow-y-auto scrollbar-hide"
           onScroll={(e) => {
-            if (activeTab === 'posted') {
-              const element = e.currentTarget;
-              const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 500;
+            const element = e.currentTarget;
+            const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 500;
 
-              if (isNearBottom && !isLoadingMorePosted && hasMorePostedTweets) {
-                loadMorePostedTweets();
-              }
+            if (activeTab === 'posted' && isNearBottom && !isLoadingMorePosted && hasMorePostedTweets) {
+              loadMorePostedTweets();
+            } else if (activeTab === 'comments' && isNearBottom && !isLoadingMoreComments && hasMoreComments) {
+              loadMoreComments();
             }
           }}
         >
           <div className="flex gap-6 py-10 px-6">
-            {activeTab === 'generated' ? (
+            {activeTab === 'generated' && (
               <>
                 {/* Left Column */}
                 <div className="flex-1 flex flex-col gap-6">
@@ -828,54 +1002,114 @@ function App() {
                   ))}
                 </div>
               </>
-            ) : (
-            <>
-              {postedTweets.length === 0 ? (
-                <div className="w-full flex items-center justify-center h-64">
-                  <p className="text-neutral-400 text-lg">No tweets posted yet</p>
-                </div>
-              ) : (
-              <>
-                {/* Left Column */}
-                <div className="flex-1 flex flex-col gap-6">
-                  {postedTweets.filter((_, index) => index % 2 === 0).map((tweet) => (
-                    <PostedTweetDisplay
-                      key={tweet.id}
-                      tweet={tweet}
-                      myProfilePicUrl={userInfo!.profile_pic_url}
-                      myHandle={userInfo!.handle}
-                      myUsername={userInfo!.username}
-                      onDelete={(tweetId) => handleDeletePosted(tweetId)}
-                      isDeleting={deletingTweetIds.has(tweet.id)}
-                    />
-                  ))}
-                </div>
-                {/* Right Column */}
-                <div className="flex-1 flex flex-col gap-6">
-                  {postedTweets.filter((_, index) => index % 2 === 1).map((tweet) => (
-                    <PostedTweetDisplay
-                      key={tweet.id}
-                      tweet={tweet}
-                      myProfilePicUrl={userInfo!.profile_pic_url}
-                      myHandle={userInfo!.handle}
-                      myUsername={userInfo!.username}
-                      onDelete={(tweetId) => handleDeletePosted(tweetId)}
-                      isDeleting={deletingTweetIds.has(tweet.id)}
-                    />
-                  ))}
-                </div>
-              </>
-              )}
+            )}
 
-              {/* Loading indicator for infinite scroll */}
-              {isLoadingMorePosted && (
-                <div className="w-full flex justify-center py-8">
-                  <div className="text-neutral-400 text-sm">Loading more tweets...</div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+            {activeTab === 'posted' && (
+              <>
+                {postedTweets.length === 0 ? (
+                  <div className="w-full flex items-center justify-center h-64">
+                    <p className="text-neutral-400 text-lg">No tweets posted yet</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Left Column */}
+                    <div className="flex-1 flex flex-col gap-6">
+                      {postedTweets.filter((_, index) => index % 2 === 0).map((tweet) => (
+                        <PostedTweetDisplay
+                          key={tweet.id}
+                          tweet={tweet}
+                          myProfilePicUrl={userInfo!.profile_pic_url}
+                          myHandle={userInfo!.handle}
+                          myUsername={userInfo!.username}
+                          onDelete={(tweetId) => handleDeletePosted(tweetId)}
+                          isDeleting={deletingTweetIds.has(tweet.id)}
+                        />
+                      ))}
+                    </div>
+                    {/* Right Column */}
+                    <div className="flex-1 flex flex-col gap-6">
+                      {postedTweets.filter((_, index) => index % 2 === 1).map((tweet) => (
+                        <PostedTweetDisplay
+                          key={tweet.id}
+                          tweet={tweet}
+                          myProfilePicUrl={userInfo!.profile_pic_url}
+                          myHandle={userInfo!.handle}
+                          myUsername={userInfo!.username}
+                          onDelete={(tweetId) => handleDeletePosted(tweetId)}
+                          isDeleting={deletingTweetIds.has(tweet.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Loading indicator for infinite scroll */}
+                {isLoadingMorePosted && (
+                  <div className="w-full flex justify-center py-8">
+                    <div className="text-neutral-400 text-sm">Loading more tweets...</div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {activeTab === 'comments' && (
+              <>
+                {comments.length === 0 ? (
+                  <div className="w-full flex items-center justify-center h-64">
+                    <p className="text-neutral-400 text-lg">No pending comments to review</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Left Column */}
+                    <div className="flex-1 flex flex-col gap-6">
+                      {comments.filter((_, index) => index % 2 === 0).map((comment) => (
+                        <CommentDisplay
+                          key={comment.id}
+                          comment={comment}
+                          threadContext={commentContexts.get(comment.id) || []}
+                          myProfilePicUrl={userInfo!.profile_pic_url}
+                          maxReplies={numberOfGenerations}
+                          onPublish={(text, replyIndex) => handlePublishCommentReply(comment.id, text, replyIndex)}
+                          onSkip={() => handleSkipComment(comment.id)}
+                          onEditReply={(newReply, replyIndex) => handleEditCommentReply(comment.id, newReply, replyIndex)}
+                          onRegenerate={() => handleRegenerateCommentReply(comment.id)}
+                          isDeleting={skippingCommentIds.has(comment.id)}
+                          isPosting={postingCommentIds.has(comment.id)}
+                          isRegenerating={regeneratingCommentIds.has(comment.id)}
+                        />
+                      ))}
+                    </div>
+                    {/* Right Column */}
+                    <div className="flex-1 flex flex-col gap-6">
+                      {comments.filter((_, index) => index % 2 === 1).map((comment) => (
+                        <CommentDisplay
+                          key={comment.id}
+                          comment={comment}
+                          threadContext={commentContexts.get(comment.id) || []}
+                          myProfilePicUrl={userInfo!.profile_pic_url}
+                          maxReplies={numberOfGenerations}
+                          onPublish={(text, replyIndex) => handlePublishCommentReply(comment.id, text, replyIndex)}
+                          onSkip={() => handleSkipComment(comment.id)}
+                          onEditReply={(newReply, replyIndex) => handleEditCommentReply(comment.id, newReply, replyIndex)}
+                          onRegenerate={() => handleRegenerateCommentReply(comment.id)}
+                          isDeleting={skippingCommentIds.has(comment.id)}
+                          isPosting={postingCommentIds.has(comment.id)}
+                          isRegenerating={regeneratingCommentIds.has(comment.id)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                {/* Loading indicator for infinite scroll */}
+                {isLoadingMoreComments && (
+                  <div className="w-full flex justify-center py-8">
+                    <div className="text-neutral-400 text-sm">Loading more comments...</div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 

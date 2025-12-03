@@ -1,7 +1,46 @@
-import { type TweetData } from '../components/tweet_new';
+import { type TweetData } from '../components/TweetDisplay';
 import { type PostedTweetData } from '../components/posted_tweet';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://x.ghostposter.app/api';
+
+// Comment data type
+export interface CommentData {
+  id: string;
+  text: string;
+  handle: string;
+  username: string;
+  author_profile_pic_url: string;
+  followers: number;
+  likes: number;
+  retweets: number;
+  quotes: number;
+  replies: number;
+  impressions: number;
+  created_at: string;
+  url: string;
+  parent_chain: string[];
+  in_reply_to_status_id: string | null;
+  status: 'pending' | 'replied' | 'skipped';
+  generated_replies: Array<[string, string]>; // [(text, model), ...]
+  edited: boolean;
+  thread?: string[];
+  other_replies?: Array<{
+    text: string;
+    author_handle: string;
+    author_name: string;
+    likes: number;
+  }>;
+}
+
+export interface ThreadContext {
+  id: string;
+  text: string;
+  handle: string;
+  username: string;
+  author_profile_pic_url: string;
+  is_user: boolean;
+  deleted?: boolean;
+}
 console.log('Using API_BASE_URL:', API_BASE_URL);
 
 // Flag to prevent multiple auth redirects
@@ -440,6 +479,131 @@ export const api = {
     });
     await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to check tweet performance');
+    return response.json();
+  },
+
+  // Comments endpoints
+  getComments: async (username: string, limit: number = 20, offset: number = 0, status?: string): Promise<{
+    comments: CommentData[];
+    total: number;
+    limit: number;
+    offset: number;
+    has_more: boolean;
+  }> => {
+    let url = `${API_BASE_URL}/comments/${encodeURIComponent(username)}?limit=${limit}&offset=${offset}`;
+    if (status) {
+      url += `&status=${encodeURIComponent(status)}`;
+    }
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to get comments');
+    return response.json();
+  },
+
+  getComment: async (username: string, commentId: string): Promise<{
+    comment: CommentData;
+    thread_context: ThreadContext[];
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/${encodeURIComponent(commentId)}`);
+    if (!response.ok) throw new Error('Failed to get comment');
+    return response.json();
+  },
+
+  updateCommentStatus: async (username: string, commentId: string, status: 'pending' | 'replied' | 'skipped'): Promise<{
+    message: string;
+    comment_id: string;
+    new_status: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/${encodeURIComponent(commentId)}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) throw new Error('Failed to update comment status');
+    return response.json();
+  },
+
+  postCommentReply: async (username: string, commentId: string, text: string, replyIndex?: number): Promise<{
+    message: string;
+    comment_id: string;
+    posted_tweet_id: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/${encodeURIComponent(commentId)}/reply`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text, reply_index: replyIndex }),
+    });
+    await handleAuthError(response);
+    if (!response.ok) throw new Error('Failed to post comment reply');
+    return response.json();
+  },
+
+  skipComment: async (username: string, commentId: string): Promise<{
+    message: string;
+    comment_id: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/${encodeURIComponent(commentId)}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) throw new Error('Failed to skip comment');
+    return response.json();
+  },
+
+  getCommentsStats: async (username: string): Promise<{
+    total: number;
+    pending: number;
+    replied: number;
+    skipped: number;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/stats/summary`);
+    if (!response.ok) throw new Error('Failed to get comments stats');
+    return response.json();
+  },
+
+  generateCommentReplies: async (username: string, commentIds?: string[], overwrite?: boolean): Promise<{
+    message: string;
+    processed: number;
+    skipped: number;
+    errors: number;
+    total_replies_generated: number;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/generate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ comment_ids: commentIds, overwrite }),
+    });
+    await handleAuthError(response);
+    if (!response.ok) throw new Error('Failed to generate comment replies');
+    return response.json();
+  },
+
+  regenerateCommentReply: async (username: string, commentId: string): Promise<{
+    message: string;
+    comment_id: string;
+    new_replies: Array<[string, string]>;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/generate/${encodeURIComponent(commentId)}`, {
+      method: 'POST',
+    });
+    await handleAuthError(response);
+    if (!response.ok) throw new Error('Failed to regenerate comment reply');
+    return response.json();
+  },
+
+  startEngagementMonitoring: async (username: string): Promise<{
+    message: string;
+    username: string;
+    handle: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/monitor/start`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error('Failed to start engagement monitoring');
     return response.json();
   },
 };

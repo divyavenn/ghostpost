@@ -5,7 +5,8 @@ This module sets up scheduled tasks to:
 - Scrape tweets from configured accounts/queries for all active users
 - Generate AI replies for newly scraped tweets
 - Clean up tweets older than 3 days
-- Run at configurable intervals (default: every 24 hours)
+- Run engagement monitoring to discover comments on posted tweets
+- Run at configurable intervals (default: every 24 hours for scraping, every 6 hours for engagement)
 """
 
 import json
@@ -18,6 +19,10 @@ from backend.scraping.twitter.timeline import read_tweets
 from backend.twitter.generate_replies import generate_replies
 from backend.twitter.logging import log_scrape_action
 from backend.utlils.utils import BROWSER_STATE_FILE, cookie_still_valid, log_background_task, notify
+
+# Default intervals
+DEFAULT_SCRAPE_INTERVAL_HOURS = 24
+DEFAULT_ENGAGEMENT_INTERVAL_HOURS = 6
 
 # Global scheduler instance
 scheduler = AsyncIOScheduler()
@@ -181,12 +186,101 @@ async def auto_scrape_all_users():
         notify(f"❌ [Auto-scrape] Fatal error in batch scraping: {e}")
 
 
-def start_scheduler(interval_hours: int = 24):
+async def engagement_monitoring_for_user(username: str):
     """
-    Start the background scheduler with specified interval.
+    Run engagement monitoring for a single user.
+    Discovers comments on posted tweets and generates replies.
 
     Args:
-        interval_hours: Hours between automatic scraping runs (default: 24)
+        username: Twitter handle of the user
+    """
+    from backend.twitter.comment_replies import generate_comment_replies
+    from backend.backend.twitter.monitoring import run_engagement_monitoring
+    from backend.utlils.utils import read_user_info
+
+    try:
+        notify(f"🔍 [Engagement] Starting monitoring for user: {username}")
+
+        user_info = read_user_info(username)
+        if not user_info:
+            notify(f"⚠️ [Engagement] No user info found for {username}")
+            return
+
+        user_handle = user_info.get("handle", username)
+
+        # Run engagement monitoring jobs
+        result = await run_engagement_monitoring(username, user_handle)
+
+        new_comments = result.get("total_new_comments", 0)
+        notify(f"📊 [Engagement] Found {new_comments} new comment(s) for @{user_handle}")
+
+        # Generate replies for new comments
+        if new_comments > 0:
+            notify("💬 [Engagement] Generating replies for new comments...")
+            gen_result = await generate_comment_replies(username)
+            generated_count = gen_result.get("generated_count", 0)
+            notify(f"✅ [Engagement] Generated replies for {generated_count} comment(s)")
+
+        # Log to background tasks
+        log_background_task(
+            username=username,
+            task_type="engagement_monitoring",
+            tweets_scraped=0,
+            replies_generated=new_comments,
+            initiated_by="auto"
+        )
+
+        notify(f"🎉 [Engagement] Completed for {username}")
+
+    except Exception as e:
+        from backend.utlils.utils import error
+        error(f"Engagement monitoring failed for {username}", status_code=500, exception_text=str(e), function_name="engagement_monitoring_for_user", username=username)
+        notify(f"❌ [Engagement] Failed for {username}: {e}")
+
+
+async def engagement_monitoring_all_users():
+    """
+    Run engagement monitoring for all users with valid browser sessions.
+    Discovers comments on posted tweets and generates AI replies.
+    """
+    notify("🚀 [Engagement] Starting engagement monitoring for all users...")
+
+    try:
+        users = get_users_with_valid_sessions()
+
+        if not users:
+            notify("⚠️ [Engagement] No users with valid browser sessions found")
+            return
+
+        notify(f"👥 [Engagement] Found {len(users)} user(s) with valid sessions")
+
+        for username in users:
+            try:
+                await engagement_monitoring_for_user(username)
+            except Exception as e:
+                from backend.utlils.utils import error
+                error("Error in engagement monitoring", status_code=500, exception_text=str(e), function_name="engagement_monitoring_all_users", username=username)
+                notify(f"❌ [Engagement] Error processing {username}: {e}")
+                continue
+
+        notify(f"✅ [Engagement] Completed for {len(users)} user(s)")
+
+    except Exception as e:
+        from backend.utlils.utils import error
+        error("Fatal error in engagement monitoring", status_code=500, exception_text=str(e), function_name="engagement_monitoring_all_users")
+        notify(f"❌ [Engagement] Fatal error: {e}")
+
+
+def start_scheduler(
+    scrape_interval_hours: int = DEFAULT_SCRAPE_INTERVAL_HOURS,
+    engagement_interval_hours: int = DEFAULT_ENGAGEMENT_INTERVAL_HOURS
+):
+    """
+    Start the background scheduler with specified intervals.
+
+    Args:
+        scrape_interval_hours: Hours between automatic scraping runs (default: 24)
+        engagement_interval_hours: Hours between engagement monitoring runs (default: 6)
     """
     if scheduler.running:
         notify("⚠️ Scheduler is already running")
@@ -195,11 +289,21 @@ def start_scheduler(interval_hours: int = 24):
     # Add the auto-scrape job
     scheduler.add_job(
         auto_scrape_all_users,
-        trigger=IntervalTrigger(hours=interval_hours),
+        trigger=IntervalTrigger(hours=scrape_interval_hours),
         id='auto_scrape_all_users',
-        name=f'Auto-scrape tweets every {interval_hours} hours',
+        name=f'Auto-scrape tweets every {scrape_interval_hours} hours',
         replace_existing=True,
         max_instances=1  # Prevent overlapping runs
+    )
+
+    # Add engagement monitoring job (runs more frequently)
+    scheduler.add_job(
+        engagement_monitoring_all_users,
+        trigger=IntervalTrigger(hours=engagement_interval_hours),
+        id='engagement_monitoring_all_users',
+        name=f'Engagement monitoring every {engagement_interval_hours} hours',
+        replace_existing=True,
+        max_instances=1
     )
 
     # Add browser session cleanup job (runs every hour to prevent zombie processes)
@@ -211,9 +315,12 @@ def start_scheduler(interval_hours: int = 24):
                       max_instances=1)
 
     scheduler.start()
-    notify(f"✅ Background scheduler started (interval: {interval_hours} hours)")
+    notify(f"✅ Background scheduler started (scrape: {scrape_interval_hours}h, engagement: {engagement_interval_hours}h)")
     notify("🧹 Browser session cleanup scheduled every hour")
-    notify(f"📅 Next auto-scrape: {scheduler.get_jobs()[0].next_run_time}")
+
+    jobs = scheduler.get_jobs()
+    for job in jobs:
+        notify(f"📅 {job.name}: next run at {job.next_run_time}")
 
 
 def stop_scheduler():
@@ -260,6 +367,22 @@ def trigger_manual_scrape():
     return True
 
 
+def trigger_manual_engagement():
+    """
+    Manually trigger engagement monitoring for all users.
+    Returns immediately, runs in background.
+    """
+    if not scheduler.running:
+        notify("⚠️ Scheduler is not running, cannot trigger manual engagement monitoring")
+        return False
+
+    # Schedule the job to run immediately
+    scheduler.add_job(engagement_monitoring_all_users, id='manual_engagement', replace_existing=True)
+
+    notify("🔄 Manual engagement monitoring triggered")
+    return True
+
+
 @router.get("/status")
 async def get_status_endpoint():
     """Get the current status of the background scheduler."""
@@ -274,3 +397,13 @@ async def trigger_manual_scrape_endpoint():
         return {"message": "Manual scrape triggered successfully"}
     else:
         return {"message": "Failed to trigger manual scrape", "error": "Scheduler not running"}
+
+
+@router.post("/trigger-engagement")
+async def trigger_manual_engagement_endpoint():
+    """Manually trigger engagement monitoring for all users immediately."""
+    success = trigger_manual_engagement()
+    if success:
+        return {"message": "Manual engagement monitoring triggered successfully"}
+    else:
+        return {"message": "Failed to trigger engagement monitoring", "error": "Scheduler not running"}

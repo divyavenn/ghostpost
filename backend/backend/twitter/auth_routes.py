@@ -9,6 +9,7 @@ from fastapi.responses import HTMLResponse
 from playwright.async_api import async_playwright
 from pydantic import BaseModel
 
+from backend.browser_management.context import cleanup_browser_session
 from backend.config import (
     BROWSER_STATE_FILE,
     BROWSERBASE_API_KEY,
@@ -192,7 +193,7 @@ async def check_browser_login(session_id: str) -> dict:
             notify(f"💾 Browser state saved for {username}")
 
             # Clean up browser session
-            await _cleanup_browser(browser_session)
+            await cleanup_browser_session(browser_session)
             _browser_sessions.pop(session_id, None)
 
             # Update login status
@@ -348,32 +349,6 @@ async def get_login_status(session_id: str) -> LoginStatus:
     if not status:
         return LoginStatus(status="not_found", error="Session not found")
     return status
-
-
-async def _cleanup_browser(browser_session: dict):
-    """Helper to cleanup browser session (works for both local and Browserbase)"""
-    try:
-        # Close Playwright connection
-        if "context" in browser_session:
-            await browser_session["context"].close()
-        if "browser" in browser_session:
-            await browser_session["browser"].close()
-        if "playwright" in browser_session:
-            await browser_session["playwright"].stop()
-
-        # Stop Browserbase session if it exists
-        if "browserbase_session_id" in browser_session and "browserbase_client" in browser_session:
-            bb_session_id = browser_session["browserbase_session_id"]
-            bb_client = browser_session["browserbase_client"]
-            try:
-                notify(f"🛑 Stopping Browserbase session: {bb_session_id}")
-                bb_client.sessions.complete(bb_session_id, status="completed")
-                notify(f"✅ Browserbase session {bb_session_id} stopped")
-            except Exception as e:
-                error(f"Warning: Error stopping Browserbase session: {e}")
-
-    except Exception as e:
-        notify(f"Error cleaning up browser: {e}")
 
 
 class LoginUrlRequest(BaseModel):

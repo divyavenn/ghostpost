@@ -7,6 +7,8 @@ from backend.data.twitter.edit_cache import router as tweets_router
 from backend.scraping.twitter.metrics import router as performance_router
 from backend.scraping.twitter.timeline import router as read_router
 from backend.twitter.auth_routes import router as auth_router
+from backend.twitter.comment_replies import router as comment_replies_router
+from backend.twitter.comments_routes import router as comments_router
 from backend.twitter.generate_replies import router as generate_router
 from backend.twitter.intent_to_queries import router as intent_router
 from backend.twitter.logging import router as logging_router
@@ -21,7 +23,7 @@ from backend.utlils.scheduler import start_scheduler, stop_scheduler
 async def lifespan(app: FastAPI):
     """Handle startup and shutdown events for the FastAPI app."""
     # Startup: Start the background scheduler
-    start_scheduler(interval_hours=24)  # Run auto-scrape every 24 hours
+    start_scheduler(scrape_interval_hours=24, engagement_interval_hours=6)  # Scrape every 24h, engagement every 6h
     yield
     # Shutdown: Stop the scheduler
     stop_scheduler()
@@ -55,6 +57,8 @@ app.include_router(intent_router)
 app.include_router(logging_router)
 app.include_router(user_router)
 app.include_router(scheduler_router)
+app.include_router(comments_router)
+app.include_router(comment_replies_router)
 
 
 @app.get("/health")

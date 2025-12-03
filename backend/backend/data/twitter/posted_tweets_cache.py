@@ -1,16 +1,27 @@
 """
 Manage posted tweets cache in [handle]_posted_tweets.json files.
 Stores full tweet data including performance metrics.
+
+Storage format: Map with _order array for pagination
+{
+    "_order": ["id3", "id2", "id1"],  // newest first
+    "id1": { tweet data },
+    "id2": { tweet data },
+    ...
+}
 """
 import json
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 try:  # Python 3.11+
-    from datetime import UTC  # type: ignore[attr-defined]
-except ImportError:  # Python <3.11
-    UTC = UTC
+    from datetime import UTC
+except ImportError:
+    from datetime import timezone
+    UTC = timezone.utc
 
+from backend.config import HARDCUTOFF_COLD_DAYS
 from backend.utlils.utils import CACHE_DIR, _cache_key, notify
 
 
@@ -19,10 +30,81 @@ def get_posted_tweets_path(username: str) -> Path:
     return CACHE_DIR / f"{_cache_key(username)}_posted_tweets.json"
 
 
-def read_posted_tweets_cache(username: str) -> list[dict[str, Any]]:
+def _is_older_than_days(created_at: str, days: int) -> bool:
+    """Check if a tweet is older than the specified number of days."""
+    try:
+        # Try ISO format first
+        if "T" in created_at:
+            dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+        else:
+            # Twitter format: "Sun Nov 30 14:26:48 +0000 2025"
+            dt = datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
+
+        now = datetime.now(UTC)
+        return (now - dt) > timedelta(days=days)
+    except Exception:
+        return False
+
+
+def _migrate_if_needed(data: Any, username: str) -> dict[str, Any]:
+    """
+    Migrate from array format to map format if needed.
+    Also adds default values for new fields.
+    """
+    from backend.utlils.utils import error
+
+    # Already a map
+    if isinstance(data, dict) and "_order" in data:
+        return data
+
+    # Convert from array
+    if isinstance(data, list):
+        new_data: dict[str, Any] = {"_order": []}
+
+        # Sort by created_at descending for order
+        try:
+            data.sort(key=lambda t: t.get("created_at", ""), reverse=True)
+        except Exception:
+            pass
+
+        for tweet in data:
+            if not isinstance(tweet, dict):
+                continue
+
+            tweet_id = tweet.get("id")
+            if not tweet_id:
+                continue
+
+            # Add default values for new fields
+            tweet.setdefault("parent_chain", [])
+            tweet.setdefault("source", "app_posted")
+            tweet.setdefault("monitoring_state",
+                             "cold" if _is_older_than_days(tweet.get("created_at", ""), HARDCUTOFF_COLD_DAYS) else "active")
+            tweet.setdefault("last_activity_at", tweet.get("created_at"))
+            tweet.setdefault("last_deep_scrape", None)
+            tweet.setdefault("last_shallow_scrape", None)
+            tweet.setdefault("last_reply_count", tweet.get("replies", 0))
+            tweet.setdefault("last_like_count", tweet.get("likes", 0))
+            tweet.setdefault("last_quote_count", tweet.get("quotes", 0))
+            tweet.setdefault("last_retweet_count", tweet.get("retweets", 0))
+            tweet.setdefault("resurrected_via", "none")
+            tweet.setdefault("last_scraped_reply_ids", [])
+
+            new_data[tweet_id] = tweet
+            new_data["_order"].append(tweet_id)
+
+        notify(f"📦 Migrated posted_tweets for @{username} from array to map format ({len(new_data) - 1} tweets)")
+        return new_data
+
+    # Invalid format
+    error("Invalid posted tweets cache format", status_code=500, function_name="_migrate_if_needed", username=username)
+    return {"_order": []}
+
+
+def read_posted_tweets_cache(username: str) -> dict[str, Any]:
     """
     Read posted tweets from cache file.
-    Returns list of tweet objects sorted by created_at (newest first).
+    Returns map with _order array for pagination.
     """
     from pydantic import ValidationError
 
@@ -32,38 +114,36 @@ def read_posted_tweets_cache(username: str) -> list[dict[str, Any]]:
     cache_path = get_posted_tweets_path(username)
 
     if not cache_path.exists():
-        return []
+        return {"_order": []}
 
     try:
         with open(cache_path, encoding="utf-8") as f:
-            tweets = json.load(f)
+            data = json.load(f)
 
-        # Ensure it's a list
-        if not isinstance(tweets, list):
-            error("Invalid posted tweets cache format: expected list", status_code=500, function_name="read_posted_tweets_cache", username=username)
-            return []
+        # Migrate if needed
+        tweets_map = _migrate_if_needed(data, username)
 
-        # Validate each tweet
-        validated_tweets = []
-        for idx, tweet in enumerate(tweets):
+        # Validate each tweet (skip _order)
+        for tweet_id, tweet in list(tweets_map.items()):
+            if tweet_id == "_order":
+                continue
+
             try:
                 validated = PostedTweet(**tweet)
-                validated_tweets.append(validated.model_dump())
+                tweets_map[tweet_id] = validated.model_dump()
             except ValidationError as e:
-                tweet_id = tweet.get("id", f"index_{idx}")
                 error(f"Invalid posted tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="read_posted_tweets_cache", username=username)
-                # Include invalid tweet but log the error
-                validated_tweets.append(tweet)
+                # Keep invalid tweet but log the error
 
-        return validated_tweets
+        return tweets_map
 
     except Exception as e:
         error("Error reading posted tweets cache", status_code=500, exception_text=str(e), function_name="read_posted_tweets_cache", username=username)
         notify(f"❌ Error reading posted tweets cache for {username}: {e}")
-        return []
+        return {"_order": []}
 
 
-def write_posted_tweets_cache(username: str, tweets: list[dict[str, Any]]) -> None:
+def write_posted_tweets_cache(username: str, tweets_map: dict[str, Any]) -> None:
     """
     Write posted tweets to cache file.
     Overwrites the entire file.
@@ -76,35 +156,65 @@ def write_posted_tweets_cache(username: str, tweets: list[dict[str, Any]]) -> No
     cache_path = get_posted_tweets_path(username)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Validate each tweet before writing
-    validated_tweets = []
-    for idx, tweet in enumerate(tweets):
+    # Ensure _order exists
+    if "_order" not in tweets_map:
+        tweets_map["_order"] = [k for k in tweets_map.keys() if k != "_order"]
+
+    # Validate each tweet before writing (skip _order)
+    for tweet_id, tweet in list(tweets_map.items()):
+        if tweet_id == "_order":
+            continue
+
         try:
             validated = PostedTweet(**tweet)
-            validated_tweets.append(validated.model_dump())
+            tweets_map[tweet_id] = validated.model_dump()
         except ValidationError as e:
-            tweet_id = tweet.get("id", f"index_{idx}")
             error(f"Invalid posted tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="write_posted_tweets_cache", username=username)
             # Still include the tweet but log the error
-            validated_tweets.append(tweet)
 
     try:
         with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(validated_tweets, f, indent=2, ensure_ascii=False)
+            json.dump(tweets_map, f, indent=2, ensure_ascii=False)
     except Exception as e:
         error("Error writing posted tweets cache", status_code=500, exception_text=str(e), function_name="write_posted_tweets_cache", username=username)
         notify(f"❌ Error writing posted tweets cache for {username}: {e}")
         raise
 
 
-def add_posted_tweet(username: str,
-                     posted_tweet_id: str,
-                     text: str,
-                     original_tweet_url: str,
-                     responding_to_handle: str,
-                     replying_to_pfp: str,
-                     response_to_thread: list[str],
-                     created_at: str | None = None) -> dict[str, Any]:
+def get_posted_tweets_list(username: str, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
+    """
+    Get posted tweets as a list for pagination.
+    Returns tweets in order (newest first).
+    """
+    tweets_map = read_posted_tweets_cache(username)
+    order = tweets_map.get("_order", [])
+
+    # Apply pagination
+    if limit is not None:
+        ids = order[offset:offset + limit]
+    else:
+        ids = order[offset:]
+
+    return [tweets_map[tid] for tid in ids if tid in tweets_map]
+
+
+def get_posted_tweet(username: str, tweet_id: str) -> dict[str, Any] | None:
+    """Get a single posted tweet by ID."""
+    tweets_map = read_posted_tweets_cache(username)
+    return tweets_map.get(tweet_id)
+
+
+def add_posted_tweet(
+    username: str,
+    posted_tweet_id: str,
+    text: str,
+    original_tweet_url: str = "",
+    responding_to_handle: str = "",
+    replying_to_pfp: str = "",
+    response_to_thread: list[str] | None = None,
+    in_reply_to_id: str | None = None,
+    created_at: str | None = None
+) -> dict[str, Any]:
     """
     Add a new posted tweet to the cache.
 
@@ -116,17 +226,35 @@ def add_posted_tweet(username: str,
         responding_to_handle: Handle of the user being replied to
         replying_to_pfp: Profile picture URL of the original author
         response_to_thread: List of strings representing the original thread
+        in_reply_to_id: The tweet ID this is replying to (for parent_chain)
         created_at: ISO timestamp of when tweet was created (defaults to now)
 
     Returns:
         The created tweet object
     """
-    from datetime import datetime
+    from backend.data.twitter.comments_cache import read_comments_cache
 
     if created_at is None:
         created_at = datetime.now(UTC).isoformat()
 
-    # Create tweet object with initial metrics (all 0)
+    if response_to_thread is None:
+        response_to_thread = []
+
+    # Read existing caches
+    tweets_map = read_posted_tweets_cache(username)
+    comments_map = read_comments_cache(username)
+
+    # Build parent_chain
+    parent_chain: list[str] = []
+    if in_reply_to_id:
+        parent = tweets_map.get(in_reply_to_id) or comments_map.get(in_reply_to_id)
+        if parent and isinstance(parent, dict):
+            parent_chain = parent.get("parent_chain", []) + [in_reply_to_id]
+        else:
+            # Replying to external tweet we don't track
+            parent_chain = [in_reply_to_id]
+
+    # Create tweet object
     tweet = {
         "id": posted_tweet_id,
         "text": text,
@@ -134,57 +262,76 @@ def add_posted_tweet(username: str,
         "retweets": 0,
         "quotes": 0,
         "replies": 0,
+        "impressions": 0,
         "created_at": created_at,
         "url": f"https://x.com/{username}/status/{posted_tweet_id}",
+        "last_metrics_update": created_at,
+        "parent_chain": parent_chain,
         "response_to_thread": response_to_thread,
         "responding_to": responding_to_handle,
         "replying_to_pfp": replying_to_pfp,
         "original_tweet_url": original_tweet_url,
-        "last_metrics_update": created_at  # Use creation time as initial value
+        "source": "app_posted",
+        "monitoring_state": "active",
+        "last_activity_at": created_at,
+        "last_deep_scrape": None,
+        "last_shallow_scrape": None,
+        "last_reply_count": 0,
+        "last_like_count": 0,
+        "last_quote_count": 0,
+        "last_retweet_count": 0,
+        "resurrected_via": "none",
+        "last_scraped_reply_ids": []
     }
 
-    # Read existing tweets
-    tweets = read_posted_tweets_cache(username)
+    # Add to map
+    tweets_map[posted_tweet_id] = tweet
 
-    # Add new tweet at the beginning (newest first)
-    tweets.insert(0, tweet)
+    # Update order (prepend for newest-first)
+    order = tweets_map.get("_order", [])
+    tweets_map["_order"] = [posted_tweet_id] + [oid for oid in order if oid != posted_tweet_id]
 
     # Write back to cache
-    write_posted_tweets_cache(username, tweets)
+    write_posted_tweets_cache(username, tweets_map)
 
     notify(f"✅ Added posted tweet {posted_tweet_id} to cache for @{username}")
 
     return tweet
 
 
-def update_tweet_metrics(username: str, posted_tweet_id: str, likes: int, retweets: int, quotes: int, replies: int) -> dict[str, Any] | None:
+def update_tweet_metrics(
+    username: str,
+    posted_tweet_id: str,
+    likes: int,
+    retweets: int,
+    quotes: int,
+    replies: int,
+    impressions: int = 0
+) -> dict[str, Any] | None:
     """
     Update performance metrics for a posted tweet.
 
     Returns:
         Updated tweet object, or None if not found
     """
-    from datetime import datetime
+    tweets_map = read_posted_tweets_cache(username)
 
-    tweets = read_posted_tweets_cache(username)
+    if posted_tweet_id not in tweets_map or posted_tweet_id == "_order":
+        notify(f"⚠️ Tweet {posted_tweet_id} not found in cache for @{username}")
+        return None
 
-    # Find the tweet and update metrics
-    for tweet in tweets:
-        if tweet.get("id") == posted_tweet_id:
-            tweet["likes"] = likes
-            tweet["retweets"] = retweets
-            tweet["quotes"] = quotes
-            tweet["replies"] = replies
-            tweet["last_metrics_update"] = datetime.now(UTC).isoformat()
+    tweet = tweets_map[posted_tweet_id]
+    tweet["likes"] = likes
+    tweet["retweets"] = retweets
+    tweet["quotes"] = quotes
+    tweet["replies"] = replies
+    tweet["impressions"] = impressions
+    tweet["last_metrics_update"] = datetime.now(UTC).isoformat()
 
-            # Write back to cache
-            write_posted_tweets_cache(username, tweets)
+    write_posted_tweets_cache(username, tweets_map)
 
-            notify(f"✅ Updated metrics for tweet {posted_tweet_id}: {likes}L {retweets}RT {quotes}Q {replies}R")
-            return tweet
-
-    notify(f"⚠️ Tweet {posted_tweet_id} not found in cache for @{username}")
-    return None
+    notify(f"✅ Updated metrics for tweet {posted_tweet_id}: {likes}L {retweets}RT {quotes}Q {replies}R")
+    return tweet
 
 
 def delete_posted_tweet_from_cache(username: str, posted_tweet_id: str) -> bool:
@@ -198,17 +345,57 @@ def delete_posted_tweet_from_cache(username: str, posted_tweet_id: str) -> bool:
     Returns:
         True if tweet was found and deleted, False otherwise
     """
-    tweets = read_posted_tweets_cache(username)
+    tweets_map = read_posted_tweets_cache(username)
 
-    # Find and remove the tweet
-    original_count = len(tweets)
-    tweets = [t for t in tweets if t.get("id") != posted_tweet_id]
-
-    if len(tweets) < original_count:
-        # Tweet was found and removed
-        write_posted_tweets_cache(username, tweets)
-        notify(f"✅ Deleted posted tweet {posted_tweet_id} from cache for @{username}")
-        return True
-    else:
+    if posted_tweet_id not in tweets_map or posted_tweet_id == "_order":
         notify(f"⚠️ Tweet {posted_tweet_id} not found in posted tweets cache for @{username}")
         return False
+
+    # Remove from map
+    del tweets_map[posted_tweet_id]
+
+    # Remove from order
+    order = tweets_map.get("_order", [])
+    tweets_map["_order"] = [oid for oid in order if oid != posted_tweet_id]
+
+    write_posted_tweets_cache(username, tweets_map)
+    notify(f"✅ Deleted posted tweet {posted_tweet_id} from cache for @{username}")
+    return True
+
+
+def get_user_tweet_ids(username: str) -> set[str]:
+    """Get set of all tweet IDs authored by the user."""
+    tweets_map = read_posted_tweets_cache(username)
+    return set(k for k in tweets_map.keys() if k != "_order")
+
+
+def get_tweets_by_monitoring_state(username: str, states: list[str]) -> list[dict[str, Any]]:
+    """Get tweets filtered by monitoring state, sorted by last_activity_at descending."""
+    tweets_map = read_posted_tweets_cache(username)
+
+    tweets = [
+        t for tid, t in tweets_map.items()
+        if tid != "_order" and isinstance(t, dict) and t.get("monitoring_state") in states
+    ]
+
+    # Sort by last_activity_at descending
+    tweets.sort(key=lambda t: t.get("last_activity_at") or "", reverse=True)
+
+    return tweets
+
+
+def update_monitoring_state(username: str, tweet_id: str, new_state: str, resurrected_via: str | None = None) -> bool:
+    """Update the monitoring state of a tweet."""
+    tweets_map = read_posted_tweets_cache(username)
+
+    if tweet_id not in tweets_map or tweet_id == "_order":
+        return False
+
+    tweets_map[tweet_id]["monitoring_state"] = new_state
+    tweets_map[tweet_id]["last_activity_at"] = datetime.now(UTC).isoformat()
+
+    if resurrected_via:
+        tweets_map[tweet_id]["resurrected_via"] = resurrected_via
+
+    write_posted_tweets_cache(username, tweets_map)
+    return True

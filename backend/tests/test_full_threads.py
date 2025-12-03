@@ -13,7 +13,7 @@ async def test_get_thread_scrapes_thread_and_replies(browser_context):
 
     Tests URL: https://x.com/divya_venn/status/1991059548111843523
     """
-    from backend.scraping.twitter.full_threads import get_thread
+    from backend.scraping.twitter.thread import get_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
     test_root_id = "1991059548111843523"
@@ -41,7 +41,7 @@ async def test_get_thread_returns_correct_structure(browser_context):
     """
     Test that get_thread returns the expected dict structure.
     """
-    from backend.scraping.twitter.full_threads import get_thread
+    from backend.scraping.twitter.thread import get_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
 

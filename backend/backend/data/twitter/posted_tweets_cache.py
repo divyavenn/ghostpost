@@ -184,18 +184,21 @@ def write_posted_tweets_cache(username: str, tweets_map: dict[str, Any]) -> None
 def get_posted_tweets_list(username: str, limit: int | None = None, offset: int = 0) -> list[dict[str, Any]]:
     """
     Get posted tweets as a list for pagination.
-    Returns tweets in order (newest first).
+    Returns tweets sorted by created_at (newest first).
     """
     tweets_map = read_posted_tweets_cache(username)
-    order = tweets_map.get("_order", [])
+
+    # Get all tweets (excluding _order key)
+    tweets = [t for tid, t in tweets_map.items() if tid != "_order" and isinstance(t, dict)]
+
+    # Sort by created_at descending (newest first)
+    tweets.sort(key=lambda t: t.get("created_at") or "", reverse=True)
 
     # Apply pagination
     if limit is not None:
-        ids = order[offset:offset + limit]
+        return tweets[offset:offset + limit]
     else:
-        ids = order[offset:]
-
-    return [tweets_map[tid] for tid in ids if tid in tweets_map]
+        return tweets[offset:]
 
 
 def get_posted_tweet(username: str, tweet_id: str) -> dict[str, Any] | None:
@@ -213,7 +216,8 @@ def add_posted_tweet(
     replying_to_pfp: str = "",
     response_to_thread: list[str] | None = None,
     in_reply_to_id: str | None = None,
-    created_at: str | None = None
+    created_at: str | None = None,
+    media: list[dict] | None = None
 ) -> dict[str, Any]:
     """
     Add a new posted tweet to the cache.
@@ -228,6 +232,7 @@ def add_posted_tweet(
         response_to_thread: List of strings representing the original thread
         in_reply_to_id: The tweet ID this is replying to (for parent_chain)
         created_at: ISO timestamp of when tweet was created (defaults to now)
+        media: List of media attachments [{type: "photo", url: "...", alt_text: "..."}]
 
     Returns:
         The created tweet object
@@ -239,6 +244,9 @@ def add_posted_tweet(
 
     if response_to_thread is None:
         response_to_thread = []
+
+    if media is None:
+        media = []
 
     # Read existing caches
     tweets_map = read_posted_tweets_cache(username)
@@ -266,6 +274,7 @@ def add_posted_tweet(
         "created_at": created_at,
         "url": f"https://x.com/{username}/status/{posted_tweet_id}",
         "last_metrics_update": created_at,
+        "media": media,
         "parent_chain": parent_chain,
         "response_to_thread": response_to_thread,
         "responding_to": responding_to_handle,
@@ -331,6 +340,36 @@ def update_tweet_metrics(
     write_posted_tweets_cache(username, tweets_map)
 
     notify(f"✅ Updated metrics for tweet {posted_tweet_id}: {likes}L {retweets}RT {quotes}Q {replies}R")
+    return tweet
+
+
+def update_tweet_media(
+    username: str,
+    posted_tweet_id: str,
+    media: list[dict]
+) -> dict[str, Any] | None:
+    """
+    Update media for a posted tweet.
+
+    Args:
+        username: User's cache key
+        posted_tweet_id: Tweet ID to update
+        media: List of media items [{type: "photo", url: "...", alt_text: "..."}]
+
+    Returns:
+        Updated tweet object, or None if not found
+    """
+    tweets_map = read_posted_tweets_cache(username)
+
+    if posted_tweet_id not in tweets_map or posted_tweet_id == "_order":
+        return None
+
+    tweet = tweets_map[posted_tweet_id]
+    tweet["media"] = media
+
+    write_posted_tweets_cache(username, tweets_map)
+
+    notify(f"✅ Updated media for tweet {posted_tweet_id}: {len(media)} items")
     return tweet
 
 

@@ -21,6 +21,36 @@ from backend.scraping.twitter.scraping_utils import (
 )
 
 
+def _extract_media(node: dict) -> list[dict]:
+    """
+    Extract image URLs and metadata from tweet media.
+    Returns list of dicts: [{type: "photo", url: "...", alt_text: "..."}]
+    """
+    inner_node = node.get("tweet") or node
+    legacy = inner_node.get("legacy", {})
+
+    media_items = []
+
+    # Prefer extended_entities over entities (has full resolution)
+    extended = legacy.get("extended_entities", {})
+    entities = legacy.get("entities", {})
+
+    media_list = extended.get("media") or entities.get("media") or []
+
+    for media_item in media_list:
+        media_type = media_item.get("type")
+
+        # Only extract photos
+        if media_type == "photo":
+            media_url = media_item.get("media_url_https") or media_item.get("media_url")
+            alt_text = media_item.get("ext_alt_text", "")
+
+            if media_url:
+                media_items.append({"type": "photo", "url": media_url, "alt_text": alt_text})
+
+    return media_items
+
+
 async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) -> list[dict[str, Any]]:
     """
     Scrape recent tweets from a user's profile (Tweets & Replies tab).
@@ -55,6 +85,25 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
         # Try both API structures: timeline_v2.timeline and timeline.timeline
         user_result = (data.get("data") or {}).get("user", {}).get("result", {})
 
+        # Get target user ID from user_result (more reliable than first tweet)
+        # This is the profile owner's ID, not the author of the first tweet in timeline
+        if target_user_id is None:
+            # Try multiple paths to find the user ID
+            target_user_id = user_result.get("rest_id")
+
+            # Try legacy path
+            if not target_user_id:
+                target_user_id = user_result.get("id_str") or user_result.get("id")
+
+            # Try nested user data
+            if not target_user_id:
+                legacy_user = user_result.get("legacy", {})
+                target_user_id = legacy_user.get("id_str")
+
+            # Debug logging only when target_user_id is found
+            # if target_user_id:
+            #     notify(f"🔍 [scrape_user_recent_tweets] Captured target_user_id: {target_user_id} for @{username}")
+
         # Try timeline_v2 first (older API)
         timeline = user_result.get("timeline_v2", {}).get("timeline", {})
 
@@ -68,64 +117,87 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
             entries = inst.get("entries", [])
             for entry in entries:
                 content = entry.get("content", {})
+
+                # Collect all item candidates - handles both direct items and modules
+                candidates = []
                 item_content = content.get("itemContent", {})
-                tweet_results = item_content.get("tweet_results", {})
-                raw = tweet_results.get("result", {})
+                if item_content:
+                    candidates.append(item_content)
+                # Handle item wrapper
+                ic2 = (content.get("item") or {}).get("itemContent") or {}
+                if ic2:
+                    candidates.append(ic2)
+                # Handle module entries (for pinned tweets, threads, etc.)
+                for it in (content.get("items") or content.get("moduleItems") or []):
+                    cand = (it.get("item") or {}).get("itemContent") or it.get("itemContent") or {}
+                    if cand:
+                        candidates.append(cand)
 
-                if not isinstance(raw, dict):
-                    continue
+                for item_content in candidates:
+                    tweet_results = item_content.get("tweet_results", {})
+                    raw = tweet_results.get("result", {})
 
-                node = raw.get("tweet") or raw
-                legacy = node.get("legacy") or {}
-                if not legacy:
-                    continue
+                    if not isinstance(raw, dict):
+                        continue
 
-                tid = legacy.get("id_str") or str(node.get("rest_id") or "")
-                uid = legacy.get("user_id_str")
-                if not tid or not uid:
-                    continue
+                    node = raw.get("tweet") or raw
+                    legacy = node.get("legacy") or {}
+                    if not legacy:
+                        continue
 
-                # Set target user ID from first tweet
-                if target_user_id is None:
-                    target_user_id = uid
+                    tid = legacy.get("id_str") or str(node.get("rest_id") or "")
+                    uid = legacy.get("user_id_str")
+                    if not tid or not uid:
+                        continue
 
-                # Only include tweets from the target user
-                if uid != target_user_id:
-                    continue
+                    # Only include tweets from the target user (profile owner)
+                    # Skip tweets from others (e.g., tweets user replied to)
+                    tweet_user_info = extract_user_info(node)
+                    tweet_handle = (tweet_user_info.get("handle") or "").lower()
 
-                if tid in tweets:
-                    continue
+                    # Primary filter: by user ID (most reliable when available)
+                    if target_user_id and uid != target_user_id:
+                        continue
 
-                user_info = extract_user_info(node)
-                metrics = extract_metrics(node)
-                text = extract_text(node)
+                    # Fallback filter: by handle (when target_user_id is not available)
+                    if not target_user_id and tweet_handle != username.lower():
+                        continue
 
-                # Get created_at
-                created_at = legacy.get("created_at", "")
-                try:
-                    if created_at:
-                        dt = datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
-                        created_at = dt.isoformat()
-                except Exception:
-                    created_at = datetime.now(UTC).isoformat()
+                    if tid in tweets:
+                        continue
 
-                in_reply_to = legacy.get("in_reply_to_status_id_str")
+                    # user_info already extracted above for filtering
+                    metrics = extract_metrics(node)
+                    text = extract_text(node)
+                    media = _extract_media(node)
 
-                tweets[tid] = {
-                    "id": tid,
-                    "text": text,
-                    "handle": user_info["handle"] or username,
-                    "username": user_info["username"],
-                    "author_profile_pic_url": user_info["author_profile_pic_url"],
-                    "followers": user_info["followers"],
-                    "in_reply_to_status_id": in_reply_to,
-                    "created_at": created_at,
-                    "url": f"https://x.com/{username}/status/{tid}",
-                    **metrics
-                }
+                    # Get created_at
+                    created_at = legacy.get("created_at", "")
+                    try:
+                        if created_at:
+                            dt = datetime.strptime(created_at, "%a %b %d %H:%M:%S %z %Y")
+                            created_at = dt.isoformat()
+                    except Exception:
+                        created_at = datetime.now(UTC).isoformat()
 
-                if len(tweets) >= max_tweets:
-                    return
+                    in_reply_to = legacy.get("in_reply_to_status_id_str")
+
+                    tweets[tid] = {
+                        "id": tid,
+                        "text": text,
+                        "handle": tweet_user_info["handle"] or username,
+                        "username": tweet_user_info["username"],
+                        "author_profile_pic_url": tweet_user_info["author_profile_pic_url"],
+                        "followers": tweet_user_info["followers"],
+                        "in_reply_to_status_id": in_reply_to,
+                        "created_at": created_at,
+                        "url": f"https://x.com/{username}/status/{tid}",
+                        "media": media,
+                        **metrics
+                    }
+
+                    if len(tweets) >= max_tweets:
+                        return
 
     page.on("response", lambda r: asyncio.create_task(on_response(r)))
 

@@ -84,6 +84,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
         responding_to_handle = ""
         replying_to_pfp = ""
         original_tweet_url = ""
+        media = []
         model_name = "unknown"
 
         if cache_id:
@@ -100,6 +101,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                             responding_to_handle = tweet.get("handle", "")
                             replying_to_pfp = tweet.get("author_profile_pic_url", "")
                             original_tweet_url = tweet.get("url", "")
+                            media = tweet.get("media", [])
 
                             # Get model information for the posted reply
                             # generated_replies is now an array of tuples: [(reply_text, model_name), ...]
@@ -134,7 +136,8 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                              responding_to_handle=responding_to_handle,
                              replying_to_pfp=replying_to_pfp,
                              response_to_thread=response_to_thread,
-                             in_reply_to_id=in_reply_to_id)
+                             in_reply_to_id=in_reply_to_id,
+                             media=media)
         except Exception as e:
             error("Failed to add to posted_tweets cache", status_code=500, exception_text=str(e), function_name="post", username=username)
             notify(f"⚠️ Failed to add to posted_tweets cache: {e}")

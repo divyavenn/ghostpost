@@ -209,7 +209,7 @@ interface CommentDisplayProps {
 export function CommentDisplay({
   comment,
   threadContext,
-  myProfilePicUrl,
+  myProfilePicUrl: _myProfilePicUrl,
   maxReplies = 2,
   onPublish,
   onSkip,

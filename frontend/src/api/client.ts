@@ -41,6 +41,35 @@ export interface ThreadContext {
   is_user: boolean;
   deleted?: boolean;
 }
+
+// Post data for grouped comments view
+export interface PostSummary {
+  id: string;
+  text: string;
+  url: string;
+  created_at: string;
+  likes: number;
+  retweets: number;
+  quotes: number;
+  replies: number;
+  impressions: number;
+  response_to_thread: string[];
+  responding_to: string;
+  original_tweet_url: string;
+  media: Array<{ type: string; url: string; alt_text?: string }>;
+}
+
+// Comment with thread context for grouped view
+export interface CommentWithContext extends CommentData {
+  thread_context: ThreadContext[];
+}
+
+// A post with all its comments grouped together
+export interface PostWithComments {
+  post: PostSummary;
+  comments: CommentWithContext[];
+  total_pending: number;
+}
 console.log('Using API_BASE_URL:', API_BASE_URL);
 
 // Flag to prevent multiple auth redirects
@@ -496,6 +525,17 @@ export const api = {
     }
     const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to get comments');
+    return response.json();
+  },
+
+  getCommentsGroupedByPost: async (username: string, status: string = 'pending'): Promise<{
+    posts_with_comments: PostWithComments[];
+    total_posts: number;
+    total_comments: number;
+  }> => {
+    const url = `${API_BASE_URL}/comments/${encodeURIComponent(username)}/grouped?status=${encodeURIComponent(status)}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('Failed to get grouped comments');
     return response.json();
   },
 

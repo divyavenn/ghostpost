@@ -111,20 +111,29 @@ def extract_user_info(node: dict) -> dict[str, Any]:
             pass
 
     if user_result and isinstance(user_result, dict):
-        # Try core first (new API)
+        legacy_user = user_result.get("legacy", {})
+
+        # Get profile pic - try avatar first (new API), then legacy
+        avatar = user_result.get("avatar", {})
+        if avatar.get("image_url"):
+            profile_pic = avatar.get("image_url", "")
+            result["author_profile_pic_url"] = profile_pic.replace("_normal", "_400x400")
+        elif legacy_user.get("profile_image_url_https"):
+            profile_pic = legacy_user.get("profile_image_url_https", "")
+            result["author_profile_pic_url"] = profile_pic.replace("_normal", "_400x400")
+
+        # Get followers from legacy
+        if legacy_user:
+            result["followers"] = legacy_user.get("followers_count", 0)
+
+        # Get handle/username - try core first (new API), then legacy
         core = user_result.get("core", {})
         if core.get("screen_name"):
             result["handle"] = core.get("screen_name", "")
             result["username"] = core.get("name", "")
-
-        # Fall back to legacy
-        if not result["handle"]:
-            legacy_user = user_result.get("legacy", {})
-            if legacy_user.get("screen_name"):
-                result["handle"] = legacy_user.get("screen_name", "")
-                result["username"] = legacy_user.get("name", "")
-                result["author_profile_pic_url"] = legacy_user.get("profile_image_url_https", "")
-                result["followers"] = legacy_user.get("followers_count", 0)
+        elif legacy_user.get("screen_name"):
+            result["handle"] = legacy_user.get("screen_name", "")
+            result["username"] = legacy_user.get("name", "")
 
     return result
 

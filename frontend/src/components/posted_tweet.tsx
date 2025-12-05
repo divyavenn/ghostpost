@@ -17,6 +17,11 @@ export interface PostedTweetData {
   replying_to_pfp: string;  // Profile pic URL of original tweet author
   original_tweet_url: string;  // URL of original tweet
   last_metrics_update: string | null;
+  media?: Array<{
+    type: 'photo';
+    url: string;
+    alt_text?: string;
+  }>;
 }
 
 interface PostedTweetDisplayProps {
@@ -25,15 +30,25 @@ interface PostedTweetDisplayProps {
   myHandle: string;
   myUsername: string;
   onDelete: (tweetId: string) => void;
+  onViewTweet?: (tweetId: string) => void;  // Callback to refresh metrics when viewing tweet
   isDeleting?: boolean;
 }
 
-export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsername, onDelete, isDeleting = false }: PostedTweetDisplayProps) {
+export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsername, onDelete, onViewTweet, isDeleting = false }: PostedTweetDisplayProps) {
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
 
-  // Original tweet author info
+  // Original tweet author info - only used if this is a reply
+  const isReply = tweet.responding_to && tweet.responding_to.length > 0;
   const originalHandle = tweet.responding_to;
   const originalAvatar = tweet.replying_to_pfp || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
+
+  // Handle click on view tweet link - open in new tab and refresh metrics
+  const handleViewTweet = () => {
+    if (onViewTweet) {
+      onViewTweet(tweet.id);
+    }
+    window.open(tweet.url, '_blank', 'noopener,noreferrer');
+  };
 
   // Thread messages from the original tweet - only show first 280 characters
   const threadMessages = useMemo(() => {
@@ -98,63 +113,68 @@ export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsernam
             <span className="text-xl text-white">×</span>
           )}
         </button>
-        <a
-          href={tweet.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="ml-auto text-neutral-400 hover:text-sky-400 transition-colors"
+        <button
+          type="button"
+          onClick={handleViewTweet}
+          className="ml-auto text-neutral-400 hover:text-sky-400 transition-colors bg-transparent border-none cursor-pointer"
           aria-label="View your posted tweet on Twitter"
           title="View on Twitter"
         >
           <i className="fa-solid fa-arrow-up-right-from-square text-sm" />
-        </a>
+        </button>
       </div>
 
       <div className="px-5 py-3">
-        {/* Original Tweet Thread */}
-        <div className="space-y-4 pb-1">
-          {threadMessages.map((message, index) => (
-            <div key={`${tweet.id}-original-${index}`} className="relative flex gap-3">
-              {index === 0 ? (
-                <img src={originalAvatar} alt={originalHandle} className="h-12 w-12 rounded-full" />
-              ) : (
-                <div className="h-12 w-12" aria-hidden="true" />
-              )}
-              <div className="flex-1 space-y-1 pb-4">
-                {index === 0 && (
-                  <div className="flex items-center gap-2 text-sm text-neutral-400">
-                    <span className="text-base font-bold text-white">@{originalHandle}</span>
+        {/* Original Tweet Thread - only show for replies */}
+        {isReply && threadMessages.length > 0 && (
+          <>
+            <div className="space-y-4 pb-1">
+              {threadMessages.map((message, index) => (
+                <div key={`${tweet.id}-original-${index}`} className="relative flex gap-3">
+                  {index === 0 ? (
+                    <img src={originalAvatar} alt={originalHandle} className="h-12 w-12 rounded-full" />
+                  ) : (
+                    <div className="h-12 w-12" aria-hidden="true" />
+                  )}
+                  <div className="flex-1 space-y-1 pb-4">
+                    {index === 0 && (
+                      <div className="flex items-center gap-2 text-sm text-neutral-400">
+                        <span className="text-base font-bold text-white">@{originalHandle}</span>
+                      </div>
+                    )}
+                    <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>
+
+                    {index < threadMessages.length - 1 && (
+                      <div className="absolute inset-x-14 bottom-0 border-t border-neutral-800" aria-hidden="true" />
+                    )}
                   </div>
-                )}
-                <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{message}</p>
-
-                {index < threadMessages.length - 1 && (
-                  <div className="absolute inset-x-14 bottom-0 border-t border-neutral-800" aria-hidden="true" />
-                )}
-              </div>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Link to original tweet */}
-        {tweet.original_tweet_url && (
-          <div className="pl-14 pb-4">
-            <a
-              href={tweet.original_tweet_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm text-sky-400 hover:underline"
-            >
-              View original thread
-            </a>
-          </div>
+            {/* Link to original tweet */}
+            {tweet.original_tweet_url && (
+              <div className="pl-14 pb-4">
+                <a
+                  href={tweet.original_tweet_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-sm text-sky-400 hover:underline"
+                >
+                  View original thread
+                </a>
+              </div>
+            )}
+          </>
         )}
 
-        {/* Your Posted Reply */}
-        <p className="text-sm text-neutral-500 pt-7">
-          Your reply to <span className="text-sky-400">@{originalHandle}</span>
-        </p>
-        <div className="flex gap-3 pt-6">
+        {/* Your Posted Reply/Tweet */}
+        {isReply && (
+          <p className="text-sm text-neutral-500 pt-7">
+            Your reply to <span className="text-sky-400">@{originalHandle}</span>
+          </p>
+        )}
+        <div className={`flex gap-3 ${isReply ? 'pt-6' : 'pt-2'}`}>
           <img src={myProfilePicUrl} alt={myUsername} className="h-12 w-12 rounded-full" />
           <div className="flex-1">
             <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
@@ -163,6 +183,31 @@ export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsernam
               {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
             </div>
             <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{tweet.text}</p>
+
+            {/* Media Grid */}
+            {tweet.media && tweet.media.length > 0 && (
+              <div
+                className={`mt-3 rounded-2xl overflow-hidden border border-neutral-800 ${
+                  tweet.media.length >= 2 ? 'grid grid-cols-2 gap-0.5' : 'max-w-2xl'
+                }`}
+              >
+                {tweet.media.map((media, mediaIndex) => (
+                  <img
+                    key={mediaIndex}
+                    src={media.url}
+                    alt={media.alt_text || `Image ${mediaIndex + 1}`}
+                    className={`w-full ${
+                      tweet.media?.length === 1
+                        ? 'object-contain max-h-[600px]'
+                        : tweet.media?.length === 3 && mediaIndex === 0
+                          ? 'row-span-2 h-full object-cover'
+                          : 'h-48 object-cover'
+                    }`}
+                    loading="lazy"
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

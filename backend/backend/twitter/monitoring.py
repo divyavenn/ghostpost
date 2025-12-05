@@ -128,7 +128,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
         write_posted_tweets_cache,
     )
     from backend.scraping.twitter.posted_tweets import scrape_user_recent_tweets
-    from backend.scraping.twitter.thread import deep_scrape_thread
+    from backend.scraping.twitter.thread import deep_scrape_thread, get_thread
 
     notify(f"🔍 [discover_recently_posted] Starting for @{user_handle}")
 
@@ -175,6 +175,38 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 temp_tweet = {"created_at": created_at, "last_activity_at": created_at}
                 initial_state = _determine_monitoring_state(temp_tweet)
 
+                # Get media from scraped tweet
+                media = tweet.get("media", [])
+
+                # Default reply context (empty for original tweets)
+                response_to_thread = []
+                responding_to = ""
+                replying_to_pfp = ""
+                original_tweet_url = ""
+
+                # For replies, fetch the original tweet to get context
+                if in_reply_to:
+                    try:
+                        original_url = f"https://x.com/i/status/{in_reply_to}"
+                        thread_result = await get_thread(context, original_url, root_id=in_reply_to)
+
+                        if thread_result:
+                            # Get thread text from the original tweet
+                            thread_texts = thread_result.get("thread", [])
+                            if thread_texts:
+                                response_to_thread = thread_texts
+
+                            # Get author info
+                            responding_to = thread_result.get("author_handle", "")
+                            replying_to_pfp = thread_result.get("author_profile_pic_url", "")
+
+                            # Build original tweet URL
+                            if responding_to:
+                                original_tweet_url = f"https://x.com/{responding_to}/status/{in_reply_to}"
+
+                    except Exception as e:
+                        notify(f"⚠️ Could not fetch original tweet {in_reply_to}: {e}")
+
                 tweet_data = {
                     "id": tweet_id,
                     "text": tweet.get("text", ""),
@@ -186,11 +218,12 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                     "created_at": created_at,
                     "url": url,
                     "last_metrics_update": datetime.now(UTC).isoformat(),
+                    "media": media,
                     "parent_chain": [in_reply_to] if in_reply_to else [],
-                    "response_to_thread": [],
-                    "responding_to": "",
-                    "replying_to_pfp": "",
-                    "original_tweet_url": "",
+                    "response_to_thread": response_to_thread,
+                    "responding_to": responding_to,
+                    "replying_to_pfp": replying_to_pfp,
+                    "original_tweet_url": original_tweet_url,
                     "source": "external",
                     "monitoring_state": initial_state,
                     "last_activity_at": created_at,

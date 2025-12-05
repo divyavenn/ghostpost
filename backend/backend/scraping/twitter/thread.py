@@ -22,6 +22,45 @@ from backend.scraping.twitter.scraping_utils import (
     scroll,
 )
 
+
+def _extract_media(node: dict) -> list[dict]:
+    """
+    Extract image URLs and metadata from tweet media.
+    Returns list of dicts: [{type: "photo", url: "...", alt_text: "..."}]
+    """
+    inner_node = node.get("tweet") or node
+    legacy = inner_node.get("legacy", {})
+
+    media_items = []
+
+    # Prefer extended_entities over entities (has full resolution)
+    extended = legacy.get("extended_entities", {})
+    entities = legacy.get("entities", {})
+
+    media_list = extended.get("media") or entities.get("media") or []
+
+    for media_item in media_list:
+        media_type = media_item.get("type")
+
+        # Only extract photos
+        if media_type == "photo":
+            media_url = media_item.get("media_url_https") or media_item.get("media_url")
+            alt_text = media_item.get("ext_alt_text", "")
+
+            if media_url:
+                media_items.append({"type": "photo", "url": media_url, "alt_text": alt_text})
+
+    return media_items
+
+
+def _extract_author_profile_pic(node: dict) -> str:
+    """Extract author's profile picture URL."""
+    inner_node = node.get("tweet") or node
+    core = inner_node.get("core", {})
+    user_results = core.get("user_results", {}).get("result", {}) or {}
+    legacy = user_results.get("legacy", {})
+    return legacy.get("profile_image_url_https", "").replace("_normal", "_400x400")
+
 # Match TweetDetail GraphQL calls
 TWEET_DETAIL_RE = re.compile(r"/i/api/graphql/[^/]+/TweetDetail")
 
@@ -43,17 +82,23 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
             - thread: list[str] - texts from the original poster's thread
             - other_replies: list[dict] - up to 5 top replies from other users
               Each reply has: text, author_handle, author_name, likes
+            - author_handle: str - handle of the thread author
+            - author_profile_pic_url: str - profile pic URL of thread author
+            - media: list[dict] - media from the root tweet
     """
     page = await ctx.new_page()
 
     thread_results: list[str] = []
     top_replies: list[dict] = []
     root_author_id: str | None = None
+    root_author_handle: str = ""
+    root_author_profile_pic: str = ""
+    root_media: list[dict] = []
     seen_tweet_ids: set[str] = set()
     thread_tweet_ids: set[str] = set()
 
     async def on_response(resp):
-        nonlocal root_author_id
+        nonlocal root_author_id, root_author_handle, root_author_profile_pic, root_media
         if not (TWEET_DETAIL_RE.search(resp.url) and resp.ok):
             return
         try:
@@ -105,9 +150,19 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
                         if root_id and tid == str(root_id):
                             root_author_id = uid
                             thread_tweet_ids.add(tid)
+                            # Capture author info and media from root tweet
+                            handle, _ = extract_user_info_simple(node)
+                            root_author_handle = handle
+                            root_author_profile_pic = _extract_author_profile_pic(node)
+                            root_media = _extract_media(node)
                         elif not root_id:
                             root_author_id = uid
                             thread_tweet_ids.add(tid)
+                            # Capture author info and media from first tweet
+                            handle, _ = extract_user_info_simple(node)
+                            root_author_handle = handle
+                            root_author_profile_pic = _extract_author_profile_pic(node)
+                            root_media = _extract_media(node)
 
                     in_reply_to_status_id = legacy.get("in_reply_to_status_id_str")
 
@@ -183,7 +238,10 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
 
     return {
         "thread": thread_results,
-        "other_replies": top_replies
+        "other_replies": top_replies,
+        "author_handle": root_author_handle,
+        "author_profile_pic_url": root_author_profile_pic,
+        "media": root_media
     }
 
 

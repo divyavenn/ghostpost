@@ -366,6 +366,37 @@ def get_pending_comments_count(username: str) -> int:
     )
 
 
+def get_user_replied_comment_ids(username: str) -> set[str]:
+    """
+    Get the set of comment IDs that the user has already replied to.
+
+    Checks posted_tweets cache for any tweets that are replies to comments.
+
+    Returns:
+        Set of comment IDs that the user has responded to
+    """
+    from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+
+    posted_tweets = read_posted_tweets_cache(username)
+    replied_to_ids = set()
+
+    for tweet_id, tweet in posted_tweets.items():
+        if tweet_id == "_order" or not isinstance(tweet, dict):
+            continue
+
+        # Check in_reply_to_status_id (direct reply parent)
+        in_reply_to = tweet.get("in_reply_to_status_id")
+        if in_reply_to:
+            replied_to_ids.add(in_reply_to)
+
+        # Also check parent_chain for nested replies
+        parent_chain = tweet.get("parent_chain", [])
+        for parent_id in parent_chain:
+            replied_to_ids.add(parent_id)
+
+    return replied_to_ids
+
+
 def get_thread_context(tweet_id: str, username: str) -> list[dict[str, Any]]:
     """
     Get full thread context for a tweet/comment.
@@ -426,6 +457,9 @@ def process_scraped_replies(
     """
     Process scraped replies and add new comments to cache.
 
+    Only adds comments that the user has NOT already replied to.
+    Also removes any existing cached comments that user has replied to externally.
+
     Args:
         username: User's Twitter handle (for cache)
         scraped_replies: List of reply dicts from scraping
@@ -440,6 +474,35 @@ def process_scraped_replies(
     comments_map = read_comments_cache(username)
     user_tweet_ids = set(k for k in posted_tweets.keys() if k != "_order")
 
+    # Get IDs of comments the user has already replied to
+    user_replied_ids = get_user_replied_comment_ids(username)
+
+    # First pass: Check if any scraped replies are FROM the user
+    # If so, their parent comment should be removed from cache
+    user_reply_parent_ids = set()
+    for reply in scraped_replies:
+        reply_handle = reply.get("handle", "")
+        if reply_handle.lower() == user_handle.lower():
+            # This is a user's reply - mark its parent for removal
+            parent_id = reply.get("in_reply_to_status_id")
+            if parent_id:
+                user_reply_parent_ids.add(parent_id)
+
+    # Remove cached comments that user has replied to (externally or from scraped data)
+    all_replied_ids = user_replied_ids | user_reply_parent_ids
+    removed_count = 0
+    for comment_id in list(comments_map.keys()):
+        if comment_id == "_order":
+            continue
+        if comment_id in all_replied_ids:
+            delete_comment(username, comment_id)
+            removed_count += 1
+            # Refresh comments_map after deletion
+            comments_map = read_comments_cache(username)
+
+    if removed_count > 0:
+        notify(f"🧹 Removed {removed_count} already-replied comments from cache for @{username}")
+
     new_comment_ids = []
 
     for reply in scraped_replies:
@@ -451,6 +514,10 @@ def process_scraped_replies(
 
         # Skip user's own tweets
         if reply_handle.lower() == user_handle.lower():
+            continue
+
+        # Skip if user has already replied to this comment
+        if reply_id in all_replied_ids:
             continue
 
         # Skip if already in comments (just update metrics)

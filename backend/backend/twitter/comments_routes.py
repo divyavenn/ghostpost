@@ -26,6 +26,110 @@ class PostCommentReplyRequest(BaseModel):
     reply_index: int | None = None
 
 
+@router.get("/{username}/grouped")
+async def get_comments_grouped_by_post(
+    username: str,
+    status: str | None = Query(default="pending", description="Filter by status: pending, replied, skipped")
+) -> dict:
+    """
+    Get comments grouped by the parent post they're replying to.
+
+    Returns a list of posts with their associated comments.
+    Each post includes all comments on that post with generated replies.
+    """
+    from backend.data.twitter.comments_cache import get_comments_list, get_thread_context
+    from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+
+    # Get all comments with the specified status
+    comments = get_comments_list(username, limit=1000, offset=0, status_filter=status)
+
+    # Get posted tweets for lookup
+    posted_tweets = read_posted_tweets_cache(username)
+
+    # Group comments by the user's tweet/comment that was replied to
+    # This could be a posted tweet OR a comment by the user that got a reply
+    grouped: dict[str, dict] = {}
+
+    for comment in comments:
+        # Find the user's tweet/comment that this is a reply to
+        # Walk up the parent_chain to find the most recent user-owned item
+        parent_chain = comment.get("parent_chain", [])
+        in_reply_to = comment.get("in_reply_to_status_id")
+
+        # The immediate parent is what they replied to
+        user_post_id = in_reply_to
+
+        # Check if immediate parent is user's posted tweet
+        if user_post_id and user_post_id in posted_tweets:
+            # Direct reply to user's posted tweet - use it
+            pass
+        elif parent_chain:
+            # Find the last user-owned item in the chain (closest to this comment)
+            # Walk backwards through parent_chain to find user's tweet/comment
+            for pid in reversed(parent_chain):
+                if pid in posted_tweets:
+                    user_post_id = pid
+                    break
+            else:
+                # No user tweet in chain - skip this comment
+                continue
+        else:
+            continue
+
+        if not user_post_id:
+            continue
+
+        # Initialize group if not exists
+        if user_post_id not in grouped:
+            # Get the post data
+            post_data = posted_tweets.get(user_post_id)
+            if not post_data or not isinstance(post_data, dict):
+                # Post not found in cache, skip these comments
+                continue
+
+            grouped[user_post_id] = {
+                "post": {
+                    "id": user_post_id,
+                    "text": post_data.get("text", ""),
+                    "url": post_data.get("url", ""),
+                    "created_at": post_data.get("created_at", ""),
+                    "likes": post_data.get("likes", 0),
+                    "retweets": post_data.get("retweets", 0),
+                    "quotes": post_data.get("quotes", 0),
+                    "replies": post_data.get("replies", 0),
+                    "impressions": post_data.get("impressions", 0),
+                    "response_to_thread": post_data.get("response_to_thread", []),
+                    "responding_to": post_data.get("responding_to", ""),
+                    "original_tweet_url": post_data.get("original_tweet_url", ""),
+                    "media": post_data.get("media", []),
+                },
+                "comments": [],
+                "total_pending": 0,
+            }
+
+        # Add comment to group with its thread context
+        thread_context = get_thread_context(comment["id"], username)
+        grouped[user_post_id]["comments"].append({
+            **comment,
+            "thread_context": thread_context
+        })
+
+        if comment.get("status") == "pending":
+            grouped[user_post_id]["total_pending"] += 1
+
+    # Convert to list and sort by most recent comment activity
+    result = list(grouped.values())
+
+    # Sort posts by number of pending comments (most first), then by recency
+    result.sort(key=lambda x: (-x["total_pending"], -len(x["comments"])))
+
+    return {
+        "posts_with_comments": result,
+        "total_posts": len(result),
+        "total_comments": sum(len(p["comments"]) for p in result),
+    }
+
+
 @router.get("/{username}")
 async def get_comments(
     username: str,
@@ -128,11 +232,11 @@ async def post_comment_reply(
     This will:
     1. Post the reply to Twitter
     2. Add the reply to posted_tweets cache
-    3. Update the comment status to "replied"
+    3. Delete the comment from cache (cache is only for un-responded comments)
     """
     from backend.data.twitter.comments_cache import (
+        delete_comment,
         get_comment as get_comment_from_cache,
-        update_comment_status,
     )
     from backend.twitter.posting import post
 
@@ -158,8 +262,8 @@ async def post_comment_reply(
             reply_index=payload.reply_index
         )
 
-        # Update comment status to replied
-        update_comment_status(username, comment_id, "replied")
+        # Delete comment from cache (cache is only for un-responded comments)
+        delete_comment(username, comment_id)
 
         return {
             "message": "Reply posted successfully",
@@ -177,11 +281,11 @@ async def post_comment_reply(
 @router.delete("/{username}/{comment_id}")
 async def skip_comment(username: str, comment_id: str) -> dict:
     """
-    Skip a comment (mark as skipped, don't delete).
+    Skip a comment (delete from cache - cache is only for pending comments).
     """
-    from backend.data.twitter.comments_cache import update_comment_status
+    from backend.data.twitter.comments_cache import delete_comment
 
-    success = update_comment_status(username, comment_id, "skipped")
+    success = delete_comment(username, comment_id)
     if not success:
         raise HTTPException(status_code=404, detail="Comment not found")
 
@@ -195,28 +299,24 @@ async def skip_comment(username: str, comment_id: str) -> dict:
 async def get_comments_stats(username: str) -> dict:
     """
     Get summary statistics for comments.
+
+    Note: Cache only contains pending (un-responded) comments.
+    Replied and skipped comments are deleted from cache.
     """
     from backend.data.twitter.comments_cache import read_comments_cache
 
     comments_map = read_comments_cache(username)
 
-    stats = {
-        "total": 0,
-        "pending": 0,
-        "replied": 0,
-        "skipped": 0
+    # Count all comments in cache (all are pending since replied/skipped are deleted)
+    pending_count = sum(
+        1 for cid in comments_map.keys()
+        if cid != "_order" and isinstance(comments_map.get(cid), dict)
+    )
+
+    return {
+        "total": pending_count,
+        "pending": pending_count
     }
-
-    for cid, comment in comments_map.items():
-        if cid == "_order" or not isinstance(comment, dict):
-            continue
-
-        stats["total"] += 1
-        status = comment.get("status", "pending")
-        if status in stats:
-            stats[status] += 1
-
-    return stats
 
 
 # Engagement monitoring endpoints

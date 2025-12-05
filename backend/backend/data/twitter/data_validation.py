@@ -118,6 +118,9 @@ class PostedTweet(BaseModel):
     url: str
     last_metrics_update: str | None = None  # ISO 8601 datetime string
 
+    # Media attachments (photos only - videos/GIFs filtered)
+    media: list[dict] = Field(default_factory=list)  # [{type: "photo", url: "...", alt_text: "..."}]
+
     # Parent chain tracking - array of ancestor IDs from root to immediate parent
     parent_chain: list[str] = Field(default_factory=list)
 

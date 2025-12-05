@@ -34,30 +34,48 @@ class TestDiscoverEngagementIntegration:
     """Integration tests for discover_engagement job."""
 
     @pytest.mark.asyncio
-    async def test_job_runs_successfully(self, test_username, test_handle):
-        """Test that the job runs without errors and returns expected structure."""
+    @pytest.mark.slow
+    async def test_discover_engagement_full_integration(self, test_username, test_handle):
+        """
+        Combined integration test that runs discover_engagement ONCE and verifies:
+        1. Job returns correct structure
+        2. Active tweets are deep scraped
+        3. Warm tweets are shallow scraped
+        4. Metrics are updated after scrape
+        """
+        from backend.data.twitter.posted_tweets_cache import (
+            get_tweets_by_monitoring_state,
+            read_posted_tweets_cache,
+        )
         from backend.twitter.monitoring import discover_engagement
 
+        # Get state counts before running
+        active_tweets = get_tweets_by_monitoring_state(test_username, ["active"])
+        warm_tweets = get_tweets_by_monitoring_state(test_username, ["warm"])
+
+        print(f"📊 Before job: {len(active_tweets)} active, {len(warm_tweets)} warm tweets")
+
+        # Get a tweet to track metrics update
+        tweets_to_track = get_tweets_by_monitoring_state(test_username, ["active", "warm"])
+        test_tweet_id = tweets_to_track[0].get("id") if tweets_to_track else None
+
+        initial_scrape_time = None
+        if test_tweet_id:
+            initial_cache = read_posted_tweets_cache(test_username)
+            initial_tweet = initial_cache.get(test_tweet_id, {})
+            initial_scrape_time = initial_tweet.get("last_deep_scrape") or initial_tweet.get("last_shallow_scrape")
+
+        # Run the job ONCE
         result = await discover_engagement(test_username, test_handle)
 
-        # Verify result structure
+        # 1. Verify result structure
         assert result is not None
         assert isinstance(result, dict)
-        assert "active_scraped" in result
-        assert "warm_scraped" in result
-        assert "new_comments" in result
-        assert "promoted_to_active" in result
-        assert "demoted_to_warm" in result
-        assert "demoted_to_cold" in result
-        assert "errors" in result
-
-        # All counts should be non-negative integers
         for key in ["active_scraped", "warm_scraped", "new_comments",
                     "promoted_to_active", "demoted_to_warm", "demoted_to_cold"]:
-            assert isinstance(result[key], int)
-            assert result[key] >= 0
-
-        # Errors should be a list
+            assert key in result, f"Result should have '{key}'"
+            assert isinstance(result[key], int), f"{key} should be an integer"
+            assert result[key] >= 0, f"{key} should be non-negative"
         assert isinstance(result["errors"], list)
 
         print(f"✅ discover_engagement completed:")
@@ -69,85 +87,28 @@ class TestDiscoverEngagementIntegration:
         print(f"   Demoted to cold: {result['demoted_to_cold']}")
         print(f"   Errors: {len(result['errors'])}")
 
-    @pytest.mark.asyncio
-    async def test_active_tweets_deep_scraped(self, test_username, test_handle):
-        """Test that active tweets are deep scraped."""
-        from backend.twitter.monitoring import discover_engagement
-        from backend.data.twitter.posted_tweets_cache import get_tweets_by_monitoring_state
-
-        # Check if there are any active tweets
-        active_tweets = get_tweets_by_monitoring_state(test_username, ["active"])
-
-        print(f"📊 Found {len(active_tweets)} active tweets before running job")
-
-        result = await discover_engagement(test_username, test_handle)
-
-        # If there were active tweets, they should have been scraped
+        # 2. Verify active tweets were deep scraped
         if len(active_tweets) > 0:
-            # At least some should have been scraped (unless all errored)
             assert result["active_scraped"] >= 0
-            print(f"✅ Deep scraped {result['active_scraped']} active tweets")
+            print(f"✅ Deep scraped {result['active_scraped']} of {len(active_tweets)} active tweets")
         else:
             assert result["active_scraped"] == 0
-            print(f"✅ No active tweets to scrape")
+            print("✅ No active tweets to deep scrape")
 
-    @pytest.mark.asyncio
-    async def test_warm_tweets_shallow_scraped(self, test_username, test_handle):
-        """Test that warm tweets are shallow scraped."""
-        from backend.twitter.monitoring import discover_engagement
-        from backend.data.twitter.posted_tweets_cache import get_tweets_by_monitoring_state
-
-        # Check if there are any warm tweets
-        warm_tweets = get_tweets_by_monitoring_state(test_username, ["warm"])
-
-        print(f"📊 Found {len(warm_tweets)} warm tweets before running job")
-
-        result = await discover_engagement(test_username, test_handle)
-
-        # If there were warm tweets, they should have been scraped
+        # 3. Verify warm tweets were shallow scraped
         if len(warm_tweets) > 0:
             assert result["warm_scraped"] >= 0
-            print(f"✅ Shallow scraped {result['warm_scraped']} warm tweets")
+            print(f"✅ Shallow scraped {result['warm_scraped']} of {len(warm_tweets)} warm tweets")
         else:
             assert result["warm_scraped"] == 0
-            print(f"✅ No warm tweets to scrape")
+            print("✅ No warm tweets to shallow scrape")
 
-    @pytest.mark.asyncio
-    async def test_metrics_updated_after_scrape(self, test_username, test_handle):
-        """Test that tweet metrics are updated after scraping."""
-        from backend.twitter.monitoring import discover_engagement
-        from backend.data.twitter.posted_tweets_cache import (
-            get_tweets_by_monitoring_state,
-            read_posted_tweets_cache,
-        )
-
-        # Get an active or warm tweet to track
-        tweets = get_tweets_by_monitoring_state(test_username, ["active", "warm"])
-
-        if not tweets:
-            print("⏭️ No active/warm tweets to test metrics update")
-            return
-
-        test_tweet_id = tweets[0].get("id")
-
-        # Get initial state
-        initial_cache = read_posted_tweets_cache(test_username)
-        initial_tweet = initial_cache.get(test_tweet_id, {})
-        initial_scrape_time = initial_tweet.get("last_deep_scrape") or initial_tweet.get("last_shallow_scrape")
-
-        # Run the job
-        result = await discover_engagement(test_username, test_handle)
-
-        # Get final state
-        final_cache = read_posted_tweets_cache(test_username)
-        final_tweet = final_cache.get(test_tweet_id, {})
-        final_scrape_time = final_tweet.get("last_deep_scrape") or final_tweet.get("last_shallow_scrape")
-
-        # Scrape time should be updated
-        if result["active_scraped"] > 0 or result["warm_scraped"] > 0:
-            print(f"✅ Scrape times updated: {initial_scrape_time} -> {final_scrape_time}")
-        else:
-            print(f"⏭️ No tweets were scraped (possibly all errored)")
+        # 4. Verify metrics were updated
+        if test_tweet_id and (result["active_scraped"] > 0 or result["warm_scraped"] > 0):
+            final_cache = read_posted_tweets_cache(test_username)
+            final_tweet = final_cache.get(test_tweet_id, {})
+            final_scrape_time = final_tweet.get("last_deep_scrape") or final_tweet.get("last_shallow_scrape")
+            print(f"✅ Scrape times: {initial_scrape_time} -> {final_scrape_time}")
 
 
 class TestDiscoverEngagementHelpers:

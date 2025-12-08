@@ -233,17 +233,45 @@ async def post_comment_reply(
     1. Post the reply to Twitter
     2. Add the reply to posted_tweets cache
     3. Delete the comment from cache (cache is only for un-responded comments)
+    4. Log the action
     """
     from backend.data.twitter.comments_cache import (
         delete_comment,
         get_comment as get_comment_from_cache,
     )
+    from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+    from backend.twitter.logging import TweetAction, log_tweet_action
     from backend.twitter.posting import post
 
     # Get the comment
     comment = get_comment_from_cache(username, comment_id)
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Find the original posted tweet this comment is on
+    posted_tweets = read_posted_tweets_cache(username)
+    posted_tweet_text = ""
+    posted_tweet_id = ""
+
+    # Check parent_chain to find the user's original post
+    parent_chain = comment.get("parent_chain", [])
+    in_reply_to = comment.get("in_reply_to_status_id")
+
+    # First check if immediate parent is user's post
+    if in_reply_to and in_reply_to in posted_tweets:
+        post_data = posted_tweets[in_reply_to]
+        if isinstance(post_data, dict):
+            posted_tweet_text = post_data.get("text", "")
+            posted_tweet_id = in_reply_to
+    else:
+        # Walk parent_chain to find user's post
+        for pid in reversed(parent_chain):
+            if pid in posted_tweets:
+                post_data = posted_tweets[pid]
+                if isinstance(post_data, dict):
+                    posted_tweet_text = post_data.get("text", "")
+                    posted_tweet_id = pid
+                    break
 
     # Build the payload for posting
     post_payload = {
@@ -259,10 +287,29 @@ async def post_comment_reply(
             username=username,
             payload=post_payload,
             cache_id=None,  # Comments don't have cache_id
-            reply_index=payload.reply_index
+            reply_index=payload.reply_index,
+            post_type="comment_reply"
+        )
+
+        # Log the comment reply action
+        log_tweet_action(
+            username=username,
+            action=TweetAction.COMMENT_REPLY_POSTED,
+            tweet_id=comment_id,
+            metadata={
+                "comment_id": comment_id,
+                "comment_text": comment.get("text", ""),
+                "comment_author": comment.get("handle", ""),
+                "reply_text": payload.text,
+                "reply_index": payload.reply_index,
+                "new_posted_tweet_id": result.get("posted_tweet_id"),
+                "original_posted_tweet_id": posted_tweet_id,
+                "original_posted_tweet_text": posted_tweet_text,
+            }
         )
 
         # Delete comment from cache (cache is only for un-responded comments)
+        # (Examples are now sourced from posted_tweets_cache with post_type="comment_reply", sorted by score)
         delete_comment(username, comment_id)
 
         return {
@@ -272,7 +319,32 @@ async def post_comment_reply(
             "twitter_response": result
         }
 
-    except HTTPException:
+    except HTTPException as e:
+        # Handle deleted tweet - remove from cache and return informative response
+        if e.status_code == 410 and e.detail == "TWEET_DELETED":
+            # Log the deletion
+            log_tweet_action(
+                username=username,
+                action=TweetAction.COMMENT_DELETED,
+                tweet_id=comment_id,
+                metadata={
+                    "comment_id": comment_id,
+                    "comment_text": comment.get("text", ""),
+                    "comment_author": comment.get("handle", ""),
+                    "reason": "tweet_deleted_on_twitter"
+                }
+            )
+            # Remove from cache since it no longer exists
+            delete_comment(username, comment_id)
+            # Return a proper response instead of raising
+            raise HTTPException(
+                status_code=410,
+                detail={
+                    "error": "TWEET_DELETED",
+                    "message": "This tweet has been deleted and was removed from your queue",
+                    "comment_id": comment_id
+                }
+            )
         raise
     except Exception as e:
         error(f"Error posting reply to comment {comment_id}: {e}", status_code=500, function_name="post_comment_reply", username=username, critical=True)
@@ -283,11 +355,52 @@ async def skip_comment(username: str, comment_id: str) -> dict:
     """
     Skip a comment (delete from cache - cache is only for pending comments).
     """
-    from backend.data.twitter.comments_cache import delete_comment
+    from backend.data.twitter.comments_cache import delete_comment, get_comment as get_comment_from_cache
+    from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+    from backend.twitter.logging import TweetAction, log_tweet_action
+
+    # Get comment data before deletion for logging
+    comment = get_comment_from_cache(username, comment_id)
+
+    # Find the original posted tweet this comment is on
+    posted_tweet_text = ""
+    posted_tweet_id = ""
+    if comment:
+        posted_tweets = read_posted_tweets_cache(username)
+        parent_chain = comment.get("parent_chain", [])
+        in_reply_to = comment.get("in_reply_to_status_id")
+
+        if in_reply_to and in_reply_to in posted_tweets:
+            post_data = posted_tweets[in_reply_to]
+            if isinstance(post_data, dict):
+                posted_tweet_text = post_data.get("text", "")
+                posted_tweet_id = in_reply_to
+        else:
+            for pid in reversed(parent_chain):
+                if pid in posted_tweets:
+                    post_data = posted_tweets[pid]
+                    if isinstance(post_data, dict):
+                        posted_tweet_text = post_data.get("text", "")
+                        posted_tweet_id = pid
+                        break
 
     success = delete_comment(username, comment_id)
     if not success:
         raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Log the skip action
+    log_tweet_action(
+        username=username,
+        action=TweetAction.COMMENT_SKIPPED,
+        tweet_id=comment_id,
+        metadata={
+            "comment_id": comment_id,
+            "comment_text": comment.get("text", "") if comment else "",
+            "comment_author": comment.get("handle", "") if comment else "",
+            "original_posted_tweet_id": posted_tweet_id,
+            "original_posted_tweet_text": posted_tweet_text,
+        }
+    )
 
     return {
         "message": "Comment skipped",
@@ -333,7 +446,7 @@ async def start_engagement_monitoring(
     2. discover_engagement
     3. discover_resurrected
     """
-    from backend.backend.twitter.monitoring import run_engagement_monitoring
+    from backend.twitter.monitoring import run_engagement_monitoring
 
     user_info = read_user_info(username)
     if not user_info:
@@ -362,7 +475,7 @@ async def run_discover_recently_posted(
     """
     Run discover_recently_posted job to find external tweets.
     """
-    from backend.backend.twitter.monitoring import discover_recently_posted
+    from backend.twitter.monitoring import discover_recently_posted
 
     user_info = read_user_info(username)
     if not user_info:
@@ -389,7 +502,7 @@ async def run_discover_engagement(
     """
     Run discover_engagement job to monitor active/warm tweets.
     """
-    from backend.backend.twitter.monitoring import discover_engagement
+    from backend.twitter.monitoring import discover_engagement
 
     user_info = read_user_info(username)
     if not user_info:
@@ -415,7 +528,7 @@ async def run_discover_resurrected(
     """
     Run discover_resurrected job to check notifications for cold tweets.
     """
-    from backend.backend.twitter.monitoring import discover_resurrected
+    from backend.twitter.monitoring import discover_resurrected
 
     user_info = read_user_info(username)
     if not user_info:

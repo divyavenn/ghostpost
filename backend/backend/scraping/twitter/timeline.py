@@ -124,150 +124,63 @@ async def fetch_search(ctx, query: str, username=None, write_callback=None, **kw
 # -------- Orchestration --------
 async def gather_trending(usernames, queries, username=None, write_callback=None, use_browserbase=False, query_summary_map=None):
     """
-    Gather trending tweets with progressive writing and Browserbase fallback.
+    Gather trending tweets using Twitter API v2, including full thread content.
 
     Args:
         usernames: List of Twitter handles to scrape
         queries: List of search queries
-        username: Username for cache writes
+        username: Username for cache writes and API authentication
         write_callback: Async function to call for incremental writes
-        use_browserbase: If True, skip local scraping and use Browserbase directly
+        use_browserbase: Ignored - kept for backwards compatibility
+        query_summary_map: Map of query -> summary for display
 
     Returns:
-        dict: Scraped tweets
+        dict: Scraped tweets with thread content
     """
-    from backend.exceptions import CaptchaError, RateLimitError
+    from backend.scraping.twitter.api import collect_from_page as api_collect_from_page
 
-    from backend.browser_management.browerbase import fetch_search_browserbase, fetch_user_tweets_browserbase
-
-    notify(f"🚀 [gather_trending] Starting for {username}: {len(usernames)} accounts, {len(queries)} queries, use_browserbase={use_browserbase}")
+    notify(f"🚀 [gather_trending] Starting API scraping for {username}: {len(usernames)} accounts, {len(queries)} queries")
     results = {}
 
-    # If explicitly requesting Browserbase, skip local scraping
-    if use_browserbase:
-        notify("🌐 Using Browserbase for scraping (direct mode)")
-
-        # Scrape user timelines
-        for u in usernames:
-            try:
-                if username:
-                    scraping_status[username] = {"type": "account", "value": u, "phase": "scraping_browserbase"}
-                    notify(f"📍 Status: Scraping from @{u} via Browserbase")
-
-                tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback)
-                for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {"type": "account", "value": u}
-                results.update(tweets)
-            except Exception as e:
-                notify(f"❌ [Browserbase] Error fetching @{u}: {e}")
-
-        # Scrape queries
-        for q in queries:
-            try:
-                # Get summary for this query
-                summary = query_summary_map.get(q, q) if query_summary_map else q
-                if username:
-                    scraping_status[username] = {"type": "query", "value": q, "summary": summary, "phase": "scraping_browserbase"}
-                    notify(f"📍 Status: Scraping query [{q}] via Browserbase")
-
-                tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
-                for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
-                results.update(tweets)
-            except Exception as e:
-                notify(f"❌ [Browserbase] Error searching [{q}]: {e}")
-
-        if username:
-            scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
-        notify(f"✅ [gather_trending] Completed for {username}: {len(results)} tweets scraped (Browserbase mode)")
-        return results
-
-    # Try local scraping first (cost-effective)
-    async with async_playwright() as p:
-        browser = None
-        ctx = None
+    # Scrape user timelines via API (collect_from_page includes thread fetching)
+    for u in usernames:
         try:
-            browser = await p.chromium.launch(headless=(not see_browser))
-            browser, ctx = await get_home(browser=browser, username=username)
-
-            # user timelines
-            for u in usernames:
-                try:
-                    # Update status
-                    if username:
-                        scraping_status[username] = {"type": "account", "value": u, "phase": "scraping"}
-                        notify(f"📍 Status updated: Scraping from @{u}")
-
-                    tweets = await fetch_user_tweets(ctx, u, username=username, write_callback=write_callback)
-                    # Add source metadata to each tweet
-                    for tweet_data in tweets.values():
-                        tweet_data["scraped_from"] = {"type": "account", "value": u}
-                    results.update(tweets)
-                except (RateLimitError, CaptchaError) as e:
-                    # Bot detection! Fall back to Browserbase
-                    notify(f"🤖 Bot detection for @{u}: {e}")
-                    notify(f"🔄 Falling back to Browserbase for @{u}...")
-
-                    try:
-                        tweets = await fetch_user_tweets_browserbase(username or "proudlurker", u, write_callback=write_callback)
-                        for tweet_data in tweets.values():
-                            tweet_data["scraped_from"] = {"type": "account", "value": u}
-                        results.update(tweets)
-                        notify(f"✅ Successfully scraped @{u} via Browserbase fallback")
-                    except Exception as fallback_error:
-                        notify(f"❌ Browserbase fallback also failed for @{u}: {fallback_error}")
-                except Exception as e:
-                    notify(f"⚠️ error fetching @{u}: {e}")
-
-            # topic searches
-            for q in queries:
-                try:
-                    # Get summary for this query
-                    summary = query_summary_map.get(q, q) if query_summary_map else q
-                    # Update status
-                    if username:
-                        scraping_status[username] = {"type": "query", "value": q, "summary": summary, "phase": "scraping"}
-                        notify(f"📍 Status updated: Scraping query [{q}]")
-
-                    tweets = await fetch_search(ctx, q, username=username, write_callback=write_callback)
-                    # Add source metadata to each tweet
-                    for tweet_data in tweets.values():
-                        tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
-                    results.update(tweets)
-                except (RateLimitError, CaptchaError) as e:
-                    # Bot detection! Fall back to Browserbase
-                    notify(f"🤖 Bot detection for query [{q}]: {e}")
-                    notify(f"🔄 Falling back to Browserbase for query [{q}]...")
-
-                    try:
-                        tweets = await fetch_search_browserbase(username or "proudlurker", q, write_callback=write_callback)
-                        for tweet_data in tweets.values():
-                            tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
-                        results.update(tweets)
-                        notify(f"✅ Successfully scraped query [{q}] via Browserbase fallback")
-                    except Exception as fallback_error:
-                        notify(f"❌ Browserbase fallback also failed for query [{q}]: {fallback_error}")
-                except Exception as e:
-                    notify(f"⚠️ error searching [{q}]: {e}")
-
-            # Mark as complete
             if username:
-                scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
+                scraping_status[username] = {"type": "account", "value": u, "phase": "scraping_api"}
+                notify(f"📍 Status: Scraping from @{u} via API")
 
-            notify(f"✅ [gather_trending] Completed for {username}: {len(results)} tweets scraped (local mode)")
-            return results
-        finally:
-            # Always cleanup browser resources, even if exceptions occur
-            if ctx:
-                try:
-                    await ctx.close()
-                except Exception as e:
-                    notify(f"⚠️ Error closing browser context: {e}")
-            if browser:
-                try:
-                    await browser.close()
-                except Exception as e:
-                    notify(f"⚠️ Error closing browser: {e}")
+            url = f"https://x.com/{u}"
+            tweets = await api_collect_from_page(None, url, handle=u, username=username, write_callback=write_callback)
+            for tweet_data in tweets.values():
+                tweet_data["scraped_from"] = {"type": "account", "value": u}
+            results.update(tweets)
+            notify(f"✅ [API] Fetched {len(tweets)} tweets with threads from @{u}")
+        except Exception as e:
+            notify(f"❌ [API] Error fetching @{u}: {e}")
+
+    # Scrape queries via API (collect_from_page includes thread fetching)
+    for q in queries:
+        try:
+            summary = query_summary_map.get(q, q) if query_summary_map else q
+            if username:
+                scraping_status[username] = {"type": "query", "value": q, "summary": summary, "phase": "scraping_api"}
+                notify(f"📍 Status: Scraping query [{q}] via API")
+
+            from urllib.parse import quote_plus
+            url = f"https://x.com/search?q={quote_plus(q)}"
+            tweets = await api_collect_from_page(None, url, handle=None, username=username, write_callback=write_callback)
+            for tweet_data in tweets.values():
+                tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
+            results.update(tweets)
+            notify(f"✅ [API] Fetched {len(tweets)} tweets with threads for query [{q}]")
+        except Exception as e:
+            notify(f"❌ [API] Error searching [{q}]: {e}")
+
+    if username:
+        scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
+
+    notify(f"✅ [gather_trending] Completed for {username}: {len(results)} tweets scraped via API")
+    return results
 
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
@@ -316,12 +229,9 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     if max_tweets is None:
         max_tweets = user_settings.get("max_tweets_retrieve", MAX_TWEETS_RETRIEVE)
 
-    # Purge unedited tweets before retrieving new ones
-    purged_count = await purge_unedited_tweets(username)
-    if purged_count > 0:
-        notify(f"🗑️ Purged {purged_count} unedited tweets before scraping")
-
-    # Clean up old tweets before retrieving new ones
+    # NOTE: We no longer auto-purge unedited tweets before scraping.
+    # Instead, the user is prompted via modal after scraping completes.
+    # Only clean up OLD tweets (beyond age threshold) - these are stale regardless
     await cleanup_old_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
     # Clean up old seen_tweets entries

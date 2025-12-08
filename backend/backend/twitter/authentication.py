@@ -270,16 +270,19 @@ async def ensure_access_token(username: str, state_file: str = "storage_state.js
 def main() -> None:
     import asyncio
 
-    username = "proudlurker"
+    async def _main():
+        username = "proudlurker"
 
-    access_token = asyncio.run(ensure_access_token(username))
-    try:
-        user_info = get_user_info(access_token)
-        handle = user_info.get("data", {}).get("username")
-        if handle:
-            notify(f"Authenticated as @{handle}")
-    except Exception as exc:  # pragma: no cover - network required
-        error("Warning: could not fetch user info", exception_text=str(exc), status_code=500, function_name="oauth_dance", username=username)
+        access_token = await ensure_access_token(username)
+        try:
+            user_info = await get_user_info(access_token)
+            handle = user_info.get("data", {}).get("username")
+            if handle:
+                notify(f"Authenticated as @{handle}")
+        except Exception as exc:  # pragma: no cover - network required
+            error("Warning: could not fetch user info", exception_text=str(exc), status_code=500, function_name="oauth_dance", username=username)
+
+    asyncio.run(_main())
 
 
 if __name__ == "__main__":

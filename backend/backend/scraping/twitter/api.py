@@ -32,6 +32,9 @@ except ImportError:
 # Twitter API v2 base URL
 API_BASE = "https://api.twitter.com/2"
 
+# Import centralized rate limiter
+from backend.twitter.rate_limiter import EndpointType, twitter_rate_limiter as _rate_limiter
+
 # Default tweet fields to request
 TWEET_FIELDS = "id,text,created_at,public_metrics,conversation_id,in_reply_to_user_id,referenced_tweets,author_id"
 USER_FIELDS = "id,name,username,profile_image_url,public_metrics"
@@ -169,7 +172,8 @@ async def _search_tweets(
     access_token: str,
     query: str,
     max_results: int = 100,
-    next_token: str | None = None
+    next_token: str | None = None,
+    _retry_count: int = 0
 ) -> dict:
     """
     Search for tweets using Twitter API v2.
@@ -179,10 +183,16 @@ async def _search_tweets(
         query: Search query (can include operators like from:, to:, etc.)
         max_results: Max results per request (10-100)
         next_token: Pagination token
+        _retry_count: Internal retry counter (do not pass)
 
     Returns:
         API response dict with data, includes, and meta
     """
+    import time
+
+    # Wait for rate limiter before making request (SEARCH endpoint: 60 req/15min)
+    await _rate_limiter.wait_if_needed(EndpointType.SEARCH)
+
     url = f"{API_BASE}/tweets/search/recent"
 
     params = {
@@ -201,14 +211,21 @@ async def _search_tweets(
 
     try:
         response = requests.get(url, headers=headers, params=params, timeout=30)
+        _rate_limiter.update_last_request(EndpointType.SEARCH)
 
         if response.status_code == 401:
             error("Twitter API authentication failed", status_code=401, function_name="_search_tweets", critical=False)
             return {"data": [], "includes": {}, "meta": {}}
 
         if response.status_code == 429:
-            error("Twitter API rate limit exceeded", status_code=429, function_name="_search_tweets", critical=False)
-            return {"data": [], "includes": {}, "meta": {}}
+            # Rate limited - wait and retry
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.SEARCH)
+                return await _search_tweets(access_token, query, max_results, next_token, _retry_count + 1)
+            else:
+                error("Twitter API rate limit exceeded after retries", status_code=429, function_name="_search_tweets", critical=False)
+                return {"data": [], "includes": {}, "meta": {}}
 
         if response.status_code >= 400:
             error(f"Twitter API error: {response.text}", status_code=response.status_code, function_name="_search_tweets", critical=False)
@@ -221,17 +238,23 @@ async def _search_tweets(
         return {"data": [], "includes": {}, "meta": {}}
 
 
-async def _get_tweet_by_id(access_token: str, tweet_id: str) -> dict:
+async def _get_tweet_by_id(access_token: str, tweet_id: str, _retry_count: int = 0) -> dict:
     """
     Get a single tweet by ID with expansions.
 
     Args:
         access_token: User's access token
         tweet_id: Tweet ID to fetch
+        _retry_count: Internal retry counter (do not pass)
 
     Returns:
         API response dict with data and includes
     """
+    import time
+
+    # Wait for rate limiter before making request (TWEET_LOOKUP endpoint: 300 req/15min)
+    await _rate_limiter.wait_if_needed(EndpointType.TWEET_LOOKUP)
+
     url = f"{API_BASE}/tweets/{tweet_id}"
 
     params = {
@@ -245,22 +268,37 @@ async def _get_tweet_by_id(access_token: str, tweet_id: str) -> dict:
 
     try:
         response = requests.get(url, headers=headers, params=params, timeout=30)
+        _rate_limiter.update_last_request(EndpointType.TWEET_LOOKUP)
 
         if response.status_code == 401:
-            return {"data": None, "includes": {}}
+            notify(f"⚠️ _get_tweet_by_id: Auth failed (401) for tweet {tweet_id}")
+            return {"data": None, "includes": {}, "errors": [{"detail": "Authentication failed"}]}
 
         if response.status_code == 429:
-            error("Twitter API rate limit exceeded", status_code=429, function_name="_get_tweet_by_id", critical=False)
-            return {"data": None, "includes": {}}
+            # Rate limited - wait and retry
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.TWEET_LOOKUP)
+                return await _get_tweet_by_id(access_token, tweet_id, _retry_count + 1)
+            else:
+                error("Twitter API rate limit exceeded after retries", status_code=429, function_name="_get_tweet_by_id", critical=False)
+                return {"data": None, "includes": {}, "errors": [{"detail": "Rate limit exceeded"}]}
 
         if response.status_code >= 400:
-            return {"data": None, "includes": {}}
+            # Try to get error details from response
+            try:
+                error_data = response.json()
+                errors = error_data.get("errors", [{"detail": f"HTTP {response.status_code}"}])
+            except Exception:
+                errors = [{"detail": f"HTTP {response.status_code}: {response.text[:200]}"}]
+            notify(f"⚠️ _get_tweet_by_id: API error ({response.status_code}) for tweet {tweet_id}")
+            return {"data": None, "includes": {}, "errors": errors}
 
         return response.json()
 
     except requests.RequestException as e:
         error(f"Twitter API request failed: {e}", status_code=503, function_name="_get_tweet_by_id", critical=False)
-        return {"data": None, "includes": {}}
+        return {"data": None, "includes": {}, "errors": [{"detail": str(e)}]}
 
 
 # ============================================================================
@@ -276,15 +314,16 @@ async def fetch_user_tweets(ctx, handle: str, username: str | None = None, write
     Args:
         ctx: Browser context (ignored - kept for interface compatibility)
         handle: Twitter handle to fetch tweets from
-        username: Username for cache operations
+        username: Username for cache operations and authentication
         write_callback: Async callback for progressive writes
         **kwargs: Additional arguments (ignored)
 
     Returns:
         Dict of tweet_id -> tweet_data
     """
-    # Get access token for the authenticated user
-    access_token = await ensure_access_token(DEFAULT_AUTH_USER)
+    # Get access token for the user making the request (or fall back to default)
+    auth_user = username or DEFAULT_AUTH_USER
+    access_token = await ensure_access_token(auth_user)
 
     if not access_token:
         error("No access token available", status_code=401, function_name="fetch_user_tweets", critical=False)
@@ -308,11 +347,6 @@ async def fetch_user_tweets(ctx, handle: str, username: str | None = None, write
         if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
             continue
 
-        # Filter by minimum likes
-        metrics = tweet.get("public_metrics", {})
-        if metrics.get("like_count", 0) < 5:
-            continue
-
         tweet_dict = _tweet_to_dict(tweet, user_map, includes)
         tweets[tweet_dict["id"]] = tweet_dict
 
@@ -333,15 +367,16 @@ async def fetch_search(ctx, query: str, username: str | None = None, write_callb
     Args:
         ctx: Browser context (ignored - kept for interface compatibility)
         query: Search query
-        username: Username for cache operations
+        username: Username for cache operations and authentication
         write_callback: Async callback for progressive writes
         **kwargs: Additional arguments (ignored)
 
     Returns:
         Dict of tweet_id -> tweet_data
     """
-    # Get access token for the authenticated user
-    access_token = await ensure_access_token(DEFAULT_AUTH_USER)
+    # Get access token for the user making the request (or fall back to default)
+    auth_user = username or DEFAULT_AUTH_USER
+    access_token = await ensure_access_token(auth_user)
 
     if not access_token:
         error("No access token available", status_code=401, function_name="fetch_search", critical=False)
@@ -368,11 +403,6 @@ async def fetch_search(ctx, query: str, username: str | None = None, write_callb
         if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
             continue
 
-        # Filter by minimum likes
-        metrics = tweet.get("public_metrics", {})
-        if metrics.get("like_count", 0) < 5:
-            continue
-
         tweet_dict = _tweet_to_dict(tweet, user_map, includes)
         tweets[tweet_dict["id"]] = tweet_dict
 
@@ -389,6 +419,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
     Get thread context for a tweet using Twitter API.
 
     Same interface as thread.get_thread but uses API instead of scraping.
+    Fetches multi-tweet threads (author's continuation tweets).
 
     Args:
         ctx: Browser context (ignored - kept for interface compatibility)
@@ -398,6 +429,14 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
     Returns:
         Dict with thread, other_replies, author_handle, author_profile_pic_url, media
     """
+    empty_result = {
+        "thread": [],
+        "other_replies": [],
+        "author_handle": "",
+        "author_profile_pic_url": "",
+        "media": []
+    }
+
     # Extract tweet ID from URL if not provided
     if not root_id:
         # URL format: https://x.com/username/status/1234567890
@@ -407,52 +446,87 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
             root_id = match.group(1)
 
     if not root_id:
-        return {
-            "thread": [],
-            "other_replies": [],
-            "author_handle": "",
-            "author_profile_pic_url": "",
-            "media": []
-        }
+        notify(f"⚠️ get_thread: Could not extract tweet ID from URL: {tweet_url}")
+        return empty_result
 
     # Get access token - use a default user for thread fetching
     access_token = await ensure_access_token(DEFAULT_AUTH_USER)
 
     if not access_token:
-        return {
-            "thread": [],
-            "other_replies": [],
-            "author_handle": "",
-            "author_profile_pic_url": "",
-            "media": []
-        }
+        notify(f"⚠️ get_thread: No access token available for {DEFAULT_AUTH_USER}")
+        return empty_result
 
     # Fetch the root tweet
     response = await _get_tweet_by_id(access_token, root_id)
 
     data = response.get("data")
     if not data:
-        return {
-            "thread": [],
-            "other_replies": [],
-            "author_handle": "",
-            "author_profile_pic_url": "",
-            "media": []
-        }
+        # Check if there's error info in the response
+        errors = response.get("errors", [])
+        if errors:
+            error_msg = errors[0].get("detail", errors[0].get("message", "Unknown error"))
+            notify(f"⚠️ get_thread: API error for tweet {root_id}: {error_msg}")
+        else:
+            notify(f"⚠️ get_thread: No data returned for tweet {root_id} (may be deleted/private)")
+        return empty_result
 
     includes = response.get("includes", {})
     user_map = _build_user_map(includes)
 
     author_id = data.get("author_id", "")
     author_info = user_map.get(author_id, {})
+    author_handle = author_info.get("handle", "")
 
-    # Get the main tweet text
-    thread_texts = [data.get("text", "")]
-
-    # Get top replies using search
+    # Get the conversation ID
     conversation_id = data.get("conversation_id", root_id)
-    reply_query = f"conversation_id:{conversation_id} -from:{author_info.get('handle', '')} is:reply"
 
+    # Build the thread: fetch all tweets by the author in this conversation
+    thread_texts = []
+    thread_tweet_ids = {root_id}  # Track IDs that are part of the thread chain
+
+    # Add root tweet first
+    thread_texts.append(data.get("text", ""))
+
+    # Search for author's other tweets in this conversation (thread continuations)
+    if author_handle:
+        thread_query = f"from:{author_handle} conversation_id:{conversation_id}"
+        thread_response = await _search_tweets(access_token, thread_query, max_results=100)
+
+        thread_data = thread_response.get("data", [])
+
+        # Build a map of tweet_id -> tweet for chain building
+        tweet_map = {root_id: data}
+        for tweet in thread_data:
+            tweet_map[tweet.get("id")] = tweet
+
+        # Find tweets that are part of the thread chain (replies to root or to other thread tweets)
+        # We iterate multiple times to catch nested replies within the thread
+        changed = True
+        while changed:
+            changed = False
+            for tweet in thread_data:
+                tweet_id = tweet.get("id")
+                if tweet_id in thread_tweet_ids:
+                    continue  # Already in thread
+
+                # Check if this tweet replies to a tweet in the thread chain
+                in_reply_to = _get_in_reply_to(tweet)
+                if in_reply_to and in_reply_to in thread_tweet_ids:
+                    thread_tweet_ids.add(tweet_id)
+                    changed = True
+
+        # Sort thread tweets by ID (chronological order) and extract texts
+        # Skip root since we already added it
+        sorted_thread_tweets = sorted(
+            [tweet_map[tid] for tid in thread_tweet_ids if tid != root_id and tid in tweet_map],
+            key=lambda t: int(t.get("id", 0))
+        )
+
+        for tweet in sorted_thread_tweets:
+            thread_texts.append(tweet.get("text", ""))
+
+    # Get top replies from OTHER users (not the author)
+    reply_query = f"conversation_id:{conversation_id} -from:{author_handle} is:reply"
     reply_response = await _search_tweets(access_token, reply_query, max_results=10)
 
     other_replies = []
@@ -474,7 +548,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
     return {
         "thread": thread_texts,
         "other_replies": other_replies,
-        "author_handle": author_info.get("handle", ""),
+        "author_handle": author_handle,
         "author_profile_pic_url": author_info.get("author_profile_pic_url", ""),
         "media": _extract_media_from_includes(root_id, includes, data)
     }
@@ -689,7 +763,69 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
     return tweets
 
 
-async def collect_from_page(ctx, url: str, handle: str | None, *, username=None, write_callback=None):
+async def _generate_reply_for_tweet_background(tweet: dict, username: str):
+    """
+    Background task to generate replies for a single tweet.
+
+    This runs in parallel with scraping, so each tweet gets its replies
+    generated immediately after being written to cache.
+
+    Args:
+        tweet: Tweet data with thread content
+        username: Username for user settings and cache operations
+    """
+    from backend.data.twitter.edit_cache import write_to_cache
+    from backend.twitter.generate_replies import generate_replies_for_tweet
+    from backend.utlils.utils import read_user_info
+
+    try:
+        # Check if user is premium (only generate for premium users)
+        user_info = read_user_info(username)
+        if not user_info:
+            return
+
+        account_type = user_info.get("account_type", "trial")
+        if account_type != "premium":
+            return
+
+        # Get user settings for models
+        models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
+        number_of_generations = user_info.get("number_of_generations", 1)
+
+        # Check if tweet already has enough replies
+        existing_replies = len(tweet.get("generated_replies", []))
+        needed_generations = number_of_generations - existing_replies
+
+        if needed_generations <= 0:
+            return
+
+        tweet_id = tweet.get("id") or tweet.get("tweet_id")
+        notify(f"🚀 [Parallel] Starting reply generation for tweet {tweet_id}...")
+
+        # Generate replies
+        replies = await generate_replies_for_tweet(
+            tweet=tweet,
+            models=models,
+            needed_generations=needed_generations,
+            delay_seconds=0.5,  # Shorter delay for parallel generation
+            batch=True,  # Don't raise critical errors
+            username=username
+        )
+
+        if replies:
+            # Update tweet with generated replies
+            tweet["generated_replies"] = tweet.get("generated_replies", []) + replies
+
+            # Write updated tweet to cache
+            await write_to_cache([tweet], f"[Parallel] Generated {len(replies)} replies for tweet {tweet_id}", username=username)
+            notify(f"✅ [Parallel] Generated {len(replies)} replies for tweet {tweet_id}")
+
+    except Exception as e:
+        tweet_id = tweet.get("id") or tweet.get("tweet_id", "unknown")
+        notify(f"⚠️ [Parallel] Error generating replies for tweet {tweet_id}: {e}")
+
+
+async def collect_from_page(ctx, url: str, handle: str | None, *, username=None, write_callback=None, generate_replies_inline=True):
     """
     Collect tweets from a URL using Twitter API.
 
@@ -702,13 +838,15 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
         handle: Twitter handle (if scraping user timeline)
         username: Username for cache operations
         write_callback: Async callback for progressive writes
+        generate_replies_inline: If True, start generating replies for each tweet
+                                  immediately after it's written to cache (parallel with scraping)
 
     Returns:
         Dict of tweet_id -> tweet_data
     """
     if handle:
-        # User timeline
-        tweets = await fetch_user_tweets(ctx, handle, username=username, write_callback=write_callback)
+        # User timeline - DON'T pass write_callback here, we write after thread data is fetched
+        tweets = await fetch_user_tweets(ctx, handle, username=username, write_callback=None)
     else:
         # Search - extract query from URL
         from urllib.parse import parse_qs, urlparse
@@ -717,22 +855,55 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
         query = query_params.get("q", [""])[0]
 
         if query:
-            tweets = await fetch_search(ctx, query, username=username, write_callback=write_callback)
+            # DON'T pass write_callback here, we write after thread data is fetched
+            tweets = await fetch_search(ctx, query, username=username, write_callback=None)
         else:
             tweets = {}
 
-    # Collect thread data for each tweet
+    # Collect thread data for each tweet, THEN write to cache with complete data
+    # Only keep tweets that have valid thread content
+    tweets_with_threads = {}
+    skipped_count = 0
+    generation_tasks = []  # Track background reply generation tasks
+
     for tid, t in tweets.items():
         thread_data = await get_thread(ctx, t["url"], root_id=t["id"])
         t["thread"] = thread_data.get("thread", [])
         t["other_replies"] = thread_data.get("other_replies", [])
 
-        # Replace truncated text with full text from thread
-        if t["thread"] and len(t["thread"]) > 0:
-            t["text"] = t["thread"][0]
+        # Update author info from thread data if available
+        if thread_data.get("author_profile_pic_url"):
+            t["author_profile_pic_url"] = thread_data["author_profile_pic_url"]
+        if thread_data.get("media"):
+            t["media"] = thread_data["media"]
 
-        # Progressive write
+        # Skip tweets without thread content - don't write to cache or seen_tweets
+        if not t["thread"] or len(t["thread"]) == 0:
+            notify(f"⚠️ Skipping tweet {tid}: no thread content (won't be added to seen)")
+            skipped_count += 1
+            continue
+
+        # Replace truncated text with full text from thread
+        t["text"] = t["thread"][0]
+
+        # Only write tweets with valid thread data to cache
         if write_callback and username:
             await write_callback([t], username)
 
-    return tweets
+            # Start generating replies in the background (parallel with scraping)
+            if generate_replies_inline:
+                task = asyncio.create_task(_generate_reply_for_tweet_background(t, username))
+                generation_tasks.append(task)
+
+        tweets_with_threads[tid] = t
+
+    if skipped_count > 0:
+        notify(f"⚠️ Skipped {skipped_count} tweets due to empty thread content")
+
+    # Note: generation_tasks run in the background - we don't wait for them
+    # This allows scraping to continue while replies are generated in parallel
+    # The final generate_replies() call will catch any tweets that need regeneration
+    if generation_tasks:
+        notify(f"🚀 Started {len(generation_tasks)} parallel reply generation task(s) in background")
+
+    return tweets_with_threads

@@ -17,6 +17,7 @@ import { TabNavigation } from './components/TabNavigation';
 import FirstTimeUserModal from './components/FirstTimeUserModal';
 import { PremiumFeatureModal } from './components/PremiumFeatureModal';
 import { PaidFeatureModal } from './components/PaidFeatureModal';
+import { NewPostsModal } from './components/NewPostsModal';
 import {
   usernameState,
   userInfoState,
@@ -25,6 +26,9 @@ import {
   activeTabState,
   loadingPhaseState,
   loadingStatusDataState,
+  loadingOverlayDismissedState,
+  showNewPostsModalState,
+  newPostsCountState,
 } from './atoms';
 
 function App() {
@@ -37,7 +41,10 @@ function App() {
   const [showFirstTimeModal, setShowFirstTimeModal] = useRecoilState(showFirstTimeModalState);
   const [activeTab, setActiveTab] = useRecoilState(activeTabState);
   const [loadingPhase, setLoadingPhase] = useRecoilState(loadingPhaseState);
-  const [, setLoadingStatusData] = useRecoilState(loadingStatusDataState);
+  const [loadingStatusData, setLoadingStatusData] = useRecoilState(loadingStatusDataState);
+  const [overlayDismissed, setOverlayDismissed] = useRecoilState(loadingOverlayDismissedState);
+  const [showNewPostsModal, setShowNewPostsModal] = useRecoilState(showNewPostsModalState);
+  const [newPostsCount, setNewPostsCount] = useRecoilState(newPostsCountState);
 
   // Local state (component-specific)
   const [tweets, setTweets] = useState<TweetData[]>([]);
@@ -66,6 +73,10 @@ function App() {
     onAction: () => void;
   } | null>(null);
   const postedTweetsOffsetRef = useRef(0);
+  // Track tweet IDs that have been marked as seen in this session (to debounce API calls)
+  const seenTweetIdsRef = useRef<Set<string>>(new Set());
+  // Track tweet count before scrape to calculate new posts count
+  const tweetCountBeforeScrapeRef = useRef<number>(0);
 
   // Derived state: isLoading can be determined from loadingPhase
   const isLoading = loadingPhase !== null;
@@ -158,9 +169,12 @@ function App() {
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
     } else if (username) {
+      console.log('[App] Loading user info for:', username);
       loadUserInfo(username);
       loadTweets(username);
       // Don't load posted tweets here - will load when user switches to Posted tab
+    } else {
+      console.log('[App] No username found in initial load');
     }
     // This should only run once on mount, not when username changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -199,9 +213,8 @@ function App() {
       const data = await api.getCommentsGroupedByPost(user, 'pending');
       setPostsWithComments(data.posts_with_comments);
 
-      // Also get pending count for tab badge
-      const stats = await api.getCommentsStats(user);
-      setPendingCommentsCount(stats.pending);
+      // Use total_comments from grouped data so tab count matches what's displayed
+      setPendingCommentsCount(data.total_comments);
     } catch (error) {
       console.error('Failed to load grouped comments:', error);
     } finally {
@@ -217,43 +230,44 @@ function App() {
   }, [activeTab, username, loadCommentsGrouped]);
 
   // Comment handlers (work with grouped state)
-  const handlePublishCommentReply = async (commentId: string, text: string, replyIndex: number = 0) => {
+  const handlePublishCommentReply = async (commentId: string, text: string, replyIndex: number = 0): Promise<void> => {
     if (!username) return;
 
     setPostingCommentIds(prev => new Set(prev).add(commentId));
 
-    setTimeout(async () => {
-      try {
-        await api.postCommentReply(username, commentId, text, replyIndex);
+    // Wait for animation delay then execute
+    await new Promise(resolve => setTimeout(resolve, 400));
 
-        // Remove comment from grouped state
-        setPostsWithComments(prev => prev.map(post => ({
-          ...post,
-          comments: post.comments.filter(c => c.id !== commentId),
-          total_pending: post.total_pending - 1
-        })).filter(post => post.comments.length > 0)); // Remove empty posts
+    try {
+      await api.postCommentReply(username, commentId, text, replyIndex);
 
-        setPostingCommentIds(prev => {
-          const next = new Set(prev);
-          next.delete(commentId);
-          return next;
-        });
+      // Remove comment from grouped state
+      setPostsWithComments(prev => prev.map(post => ({
+        ...post,
+        comments: post.comments.filter(c => c.id !== commentId),
+        total_pending: post.total_pending - 1
+      })).filter(post => post.comments.length > 0)); // Remove empty posts
 
-        // Update pending count
-        setPendingCommentsCount(prev => Math.max(0, prev - 1));
+      setPostingCommentIds(prev => {
+        const next = new Set(prev);
+        next.delete(commentId);
+        return next;
+      });
 
-        // Reload user info to update post count
-        await loadUserInfo(username);
-      } catch (error) {
-        console.error('Failed to post comment reply:', error);
-        alert('Failed to post reply. Please try again.');
-        setPostingCommentIds(prev => {
-          const next = new Set(prev);
-          next.delete(commentId);
-          return next;
-        });
-      }
-    }, 400);
+      // Update pending count
+      setPendingCommentsCount(prev => Math.max(0, prev - 1));
+
+      // Reload user info to update post count
+      await loadUserInfo(username);
+    } catch (error) {
+      console.error('Failed to post comment reply:', error);
+      setPostingCommentIds(prev => {
+        const next = new Set(prev);
+        next.delete(commentId);
+        return next;
+      });
+      throw error; // Re-throw so caller knows it failed
+    }
   };
 
   const handleSkipComment = async (commentId: string) => {
@@ -318,8 +332,10 @@ function App() {
     }
   };
 
-  const handleEditCommentReply = (commentId: string, newReply: string, replyIndex: number) => {
-    // Update local state only (no backend call needed for editing)
+  const handleEditCommentReply = async (commentId: string, newReply: string, replyIndex: number) => {
+    if (!username) return;
+
+    // Update local state immediately for responsive UI
     setPostsWithComments(prev => prev.map(post => ({
       ...post,
       comments: post.comments.map(c => {
@@ -332,11 +348,21 @@ function App() {
         return c;
       })
     })));
+
+    // Persist to backend (logs the edit action)
+    try {
+      await api.editCommentReply(username, commentId, newReply, replyIndex);
+    } catch (error) {
+      console.error('Failed to save comment reply edit:', error);
+      // Don't revert - the local edit is still valid
+    }
   };
 
   const loadUserInfo = async (user: string) => {
+    console.log('[loadUserInfo] Starting for user:', user);
     try {
       const info = await api.getUserInfo(user);
+      console.log('[loadUserInfo] Got info:', info);
       setUserInfo(info);
 
       // Check if user needs to provide email (first-time users)
@@ -396,6 +422,11 @@ function App() {
   const handleScrapeInternal = async () => {
     if (!username) return;
 
+    // Reset overlay dismissed state when starting a new scrape
+    setOverlayDismissed(false);
+    // Track current tweet count before scrape
+    tweetCountBeforeScrapeRef.current = tweets.length;
+
     // Start polling for scraping status and tweets in the background
     const pollInterval = setInterval(async () => {
       if (!username) return;
@@ -426,7 +457,22 @@ function App() {
           setLoadingPhase(null);
           setLoadingStatusData(null);
           await loadUserInfo(username);
-          await loadTweets(username);
+
+          // Load tweets and calculate new posts count
+          const data = await api.getTweetsCache(username);
+          const tweetsWithThreads = data.filter(tweet => {
+            const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
+            return hasThread;
+          });
+          const sorted = tweetsWithThreads.sort((a, b) => {
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          });
+          setTweets(sorted);
+
+          // Calculate new posts and show modal
+          const newCount = sorted.length - tweetCountBeforeScrapeRef.current;
+          setNewPostsCount(Math.max(0, newCount));
+          setShowNewPostsModal(true);
         } else if (status.type === 'idle') {
           // If we're in a loading state and status is idle, scraping finished
           // This handles the case where we missed the 'complete' status
@@ -435,11 +481,26 @@ function App() {
           setLoadingPhase(null);
           setLoadingStatusData(null);
           await loadUserInfo(username);
-          await loadTweets(username);
+
+          // Load tweets and calculate new posts count
+          const data = await api.getTweetsCache(username);
+          const tweetsWithThreads = data.filter(tweet => {
+            const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
+            return hasThread;
+          });
+          const sorted = tweetsWithThreads.sort((a, b) => {
+            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+          });
+          setTweets(sorted);
+
+          // Calculate new posts and show modal
+          const newCount = sorted.length - tweetCountBeforeScrapeRef.current;
+          setNewPostsCount(Math.max(0, newCount));
+          setShowNewPostsModal(true);
         } else {
           // Log unexpected status types
           console.warn('[Polling] Unexpected status type:', status.type);
-        } 
+        }
 
         // Poll tweets to show them appearing in real-time
         const data = await api.getTweetsCache(username);
@@ -502,68 +563,6 @@ function App() {
     // Non-trial users can scrape directly
     await handleScrapeInternal();
   };
-
-  // Handle generation only (no scraping)
-  const handleGenerate = async () => {
-    if (!username) return;
-
-    // Check if user has premium account (regenerate all is premium-only)
-    const accountType = userInfo?.account_type;
-    if (accountType === 'trial' || accountType === 'poster') {
-      setShowPremiumModal(true);
-      return;
-    }
-
-    // Start polling for generation status
-    const pollInterval = setInterval(async () => {
-      if (!username) return;
-      try {
-        // Poll scraping status (reuses same endpoint)
-        const status = await api.getScrapingStatus(username);
-
-        // Update status based on current phase
-        if (status.type === 'generating') {
-          setLoadingStatusData({ type: 'generating', value: status.value });
-        } else if (status.type === 'complete') {
-          setLoadingStatusData({ type: 'complete', value: '' });
-        }
-
-        // Poll tweets to show updated replies
-        const data = await api.getTweetsCache(username);
-        const tweetsWithThreads = data.filter(tweet => {
-          const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
-          return hasThread;
-        });
-        const sorted = tweetsWithThreads.sort((a, b) => {
-          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-        });
-        setTweets(sorted);
-      } catch (error) {
-        console.error('Polling error:', error);
-      }
-    }, 2000); // Poll every 2 seconds
-
-    try {
-      // Only generate AI replies for existing cached tweets (with overwrite)
-      setLoadingPhase('generating');
-      setLoadingStatusData(null);
-      const generateResult = await api.generateReplies(username, { overwrite: true });
-      console.log(`Generated ${generateResult.replies_generated} replies`);
-
-      // Stop polling and do final reload
-      clearInterval(pollInterval);
-      setLoadingPhase(null);
-      setLoadingStatusData(null);
-      await loadTweets(username);
-    } catch (error) {
-      clearInterval(pollInterval);
-      console.error('Failed to generate replies:', error);
-      alert('Failed to generate replies. Please try again.');
-      setLoadingPhase(null);
-      setLoadingStatusData(null);
-    }
-  };
-
 
   const handleLogout = () => {
     setUsername(null);
@@ -819,6 +818,53 @@ function App() {
     }
   };
 
+  // Handler for dismissing loading overlay
+  const handleDismissOverlay = () => {
+    setOverlayDismissed(true);
+  };
+
+  // Handler for purging seen tweets (modal confirm)
+  const handlePurgeSeenTweets = async () => {
+    if (!username) return;
+
+    try {
+      const result = await api.purgeSeenTweets(username);
+      console.log(`Purged ${result.removed_count} seen tweets`);
+
+      // Reload tweets to reflect purged state
+      await loadTweets(username);
+    } catch (error) {
+      console.error('Failed to purge seen tweets:', error);
+    } finally {
+      setShowNewPostsModal(false);
+    }
+  };
+
+  // Handler for canceling purge (modal cancel)
+  const handleCancelPurge = () => {
+    setShowNewPostsModal(false);
+  };
+
+  // Handler for marking tweets as seen when they scroll into view
+  const handleMarkTweetsSeen = useCallback(async (tweetIds: string[]) => {
+    if (!username || tweetIds.length === 0) return;
+
+    // Filter out already-marked tweets
+    const newTweetIds = tweetIds.filter(id => !seenTweetIdsRef.current.has(id));
+    if (newTweetIds.length === 0) return;
+
+    // Add to local tracking immediately
+    newTweetIds.forEach(id => seenTweetIdsRef.current.add(id));
+
+    try {
+      await api.markTweetsSeen(username, newTweetIds);
+      console.log(`Marked ${newTweetIds.length} tweets as seen`);
+    } catch (error) {
+      console.error('Failed to mark tweets as seen:', error);
+      // Remove from local tracking on error so we can retry
+      newTweetIds.forEach(id => seenTweetIdsRef.current.delete(id));
+    }
+  }, [username]);
 
   if (!username) {
     return null;
@@ -858,8 +904,8 @@ function App() {
       <Header
         onSettingsClick={() => setIsSettingsOpen(true)}
         onScrapeClick={handleScrape}
-        onGenerateClick={handleGenerate}
         hasInvalidAccounts={hasInvalidAccounts}
+        isScraping={loadingPhase === 'scraping' || loadingPhase === 'generating'}
       />
 
       {userInfo && (
@@ -971,10 +1017,10 @@ function App() {
           }}
         >
           <div className="flex gap-6 py-10 px-6">
-            {activeTab === 'generated' && (
+            {activeTab === 'generated' && userInfo && (
               <GeneratedTab
                 tweets={tweets}
-                userProfilePicUrl={userInfo!.profile_pic_url}
+                userProfilePicUrl={userInfo.profile_pic_url}
                 numberOfGenerations={numberOfGenerations}
                 deletingTweetIds={deletingTweetIds}
                 postingTweetIds={postingTweetIds}
@@ -983,15 +1029,16 @@ function App() {
                 onDelete={handleDelete}
                 onEditReply={handleEditReply}
                 onRegenerate={handleRegenerate}
+                onTweetsSeen={handleMarkTweetsSeen}
               />
             )}
 
-            {activeTab === 'posted' && (
+            {activeTab === 'posted' && userInfo && (
               <PostedTab
                 postedTweets={postedTweets}
-                userProfilePicUrl={userInfo!.profile_pic_url}
-                userHandle={userInfo!.handle}
-                userUsername={userInfo!.username}
+                userProfilePicUrl={userInfo.profile_pic_url}
+                userHandle={userInfo.handle}
+                userUsername={userInfo.username}
                 deletingTweetIds={deletingTweetIds}
                 isLoadingMore={isLoadingMorePosted}
                 onDelete={handleDeletePosted}
@@ -999,12 +1046,12 @@ function App() {
               />
             )}
 
-            {activeTab === 'comments' && (
+            {activeTab === 'comments' && userInfo && (
               <CommentsTab
                 postsWithComments={postsWithComments}
                 numberOfGenerations={numberOfGenerations}
                 isLoading={isLoadingComments}
-                userProfilePicUrl={userInfo!.profile_pic_url}
+                userProfilePicUrl={userInfo.profile_pic_url}
                 postingCommentIds={postingCommentIds}
                 skippingCommentIds={skippingCommentIds}
                 regeneratingCommentIds={regeneratingCommentIds}
@@ -1018,8 +1065,14 @@ function App() {
         </div>
       )}
 
-      {/* Loading overlay */}
-      <LoadingOverlay />
+      {/* Loading overlay - only show if not dismissed */}
+      {!overlayDismissed && (
+        <LoadingOverlay
+          phase={loadingPhase}
+          statusData={loadingStatusData}
+          onDismiss={handleDismissOverlay}
+        />
+      )}
 
       {/* First-time user email modal */}
       {showFirstTimeModal && username && (
@@ -1042,6 +1095,14 @@ function App() {
         actionType={paidModalConfig?.actionType}
         remaining={paidModalConfig?.remaining}
         onAction={paidModalConfig?.onAction}
+      />
+
+      {/* New posts modal - shown after scrape completes */}
+      <NewPostsModal
+        isOpen={showNewPostsModal}
+        onConfirm={handlePurgeSeenTweets}
+        onCancel={handleCancelPurge}
+        newPostsCount={newPostsCount}
       />
 
       <style>{`

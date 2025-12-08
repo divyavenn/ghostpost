@@ -4,7 +4,7 @@ interface EmptyStateProps {
 
 export function EmptyState({ onRefresh }: EmptyStateProps) {
   return (
-    <div className="flex flex-1 items-center justify-center">
+    <div className="flex flex-1 h-full w-full items-center justify-center mt-[20%]">
       <div className="text-center text-white">
         <p className="text-xl mb-4">No tweets found in cache</p>
         <button

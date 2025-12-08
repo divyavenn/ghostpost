@@ -13,14 +13,52 @@ from backend.config import OBELISK_KEY
 from backend.utlils.utils import error, notify, read_user_info
 
 
+def build_comment_reply_examples_context(username: str, limit: int = 10) -> str:
+    """
+    Build a formatted string of example comment replies for the LLM prompt.
+    Uses top-performing comment replies from posted_tweets_cache sorted by engagement score.
+
+    Args:
+        username: User's handle
+        limit: Maximum number of examples to include
+
+    Returns:
+        Formatted string with examples or empty string if none
+    """
+    from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_top_posts_by_type
+
+    # Get top-performing comment replies sorted by engagement score
+    top_replies = get_top_posts_by_type(username, "comment_reply", limit)
+    examples = build_examples_from_posts(top_replies, "comment_reply")
+
+    if not examples:
+        return ""
+
+    context = "\n\n[YOUR TOP-PERFORMING COMMENT REPLY EXAMPLES - Match this style]\n"
+
+    for i, example in enumerate(examples, 1):
+        context += f"\n--- Example {i} ---\n{example}\n"
+
+    context += "\n[END EXAMPLES]\n"
+
+    return context
+
+
 COMMENT_REPLY_PROMPT = """You are an expert at online conversation.
 Your job is to craft a reply to someone who commented on your tweet (or thread).
-Your reply should be concise, warm, and natural — like texting a friend.
+Your reply should be short, warm, and natural — like acknowledging a friend.
+
 
 The conversation context shows:
 - Your original post(s) that started this thread
 - The comment you're replying to
 - Any intermediate replies in the chain
+
+If they are agreeing or complimenting you, a simple "thank you" ":)" or emoji is sufficient. 
+
+If a user is sharing their own story,
+new information, or asking a question, 
+that merits a longer response (1-3 sentences)
 
 Key principles:
 1. Acknowledge their point genuinely — don't be dismissive
@@ -30,12 +68,13 @@ Key principles:
 5. Keep it brief: just an emoji for casual replies. if they compliment you, say thank you. for 
  substantive replies that introduce a new idea, put in a high effort reply that matches the length of the original comment
 6. Don't be defensive — even if they disagree, engage constructively
+7. Someone disparaging you for being normal, mid, or a midwit is not a critcism. most of us are average, it's not an insult.
+8. If they make a statement about your race, ethnicity, or gender, respond with "well spotted."
 
 If the comment is:
-- A compliment → Accept gracefully, maybe add a related thought
-- A question → Answer helpfully with specifics
-- A disagreement → Engage the strongest version of their point
-- A joke → Play along or build on it
+- A question → Answer helpfully with specifics, if needed look up relevant information from the web
+- A disagreement → State the strongest version of their point ("If you mean...") and then engage with that.
+- A joke → laughing face emoji
 - Criticism → Address it directly but not defensively
 
 Your reply should feel natural and make the commenter feel heard.
@@ -62,7 +101,6 @@ def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str
     for i, ctx in enumerate(thread_context[:-1]):  # Exclude the comment itself
         is_user = ctx.get("is_user", False)
         handle = ctx.get("handle", "Unknown")
-        username = ctx.get("username", handle)
         text = ctx.get("text", "<deleted>")
 
         if ctx.get("deleted"):
@@ -108,9 +146,23 @@ def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str
     return text_prompt, image_urls
 
 
+def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count: int = 0, prompt_type: str = "REPLY"):
+    """Print the full prompt to console for debugging."""
+    print(f"\n{'='*80}")
+    print(f"🤖 {prompt_type} GENERATION PROMPT | Model: {model}")
+    print(f"{'='*80}")
+    print(f"\n📋 SYSTEM PROMPT:\n{'-'*40}")
+    print(system_prompt)
+    print(f"\n📝 USER PROMPT:\n{'-'*40}")
+    print(user_prompt)
+    if image_count > 0:
+        print(f"\n🖼️  IMAGES: {image_count} attached")
+    print(f"\n{'='*80}\n")
+
+
 async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", username: str = "unknown") -> dict:
     """Call the Obelisk API to generate a comment reply."""
-    import requests
+    from backend.twitter.rate_limiter import LLM_OBELISK, call_api
 
     url = "https://obelisk.dread.technology/api/chat/completions"
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
@@ -123,6 +175,9 @@ async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model
     else:
         user_content = prompt
 
+    # Print the full prompt to console
+    _print_prompt(COMMENT_REPLY_PROMPT, prompt, model, len(image_urls) if image_urls else 0, "COMMENT REPLY")
+
     payload = {
         "model": model,
         "messages": [
@@ -131,20 +186,21 @@ async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model
         ]
     }
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        error_detail = str(e)
-        try:
-            if hasattr(e, 'response') and e.response is not None:
-                error_detail = f"{str(e)} | Response: {e.response.text}"
-        except Exception:
-            pass
-        error(f"Error communicating with Obelisk API: {error_detail}", status_code=500, function_name='ask_model_for_comment', username=username, critical=False)
-        return {"error": error_detail}
+    # Use rate limiter with retry
+    response = await call_api(
+        method="POST",
+        url=url,
+        bucket=LLM_OBELISK,
+        headers=headers,
+        json_data=payload,
+        username=username
+    )
 
-    data = response.json()
+    if not response.success:
+        error(f"Error communicating with Obelisk API: {response.error_message}", status_code=response.status_code or 500, function_name='ask_model_for_comment', username=username, critical=False)
+        return {"error": response.error_message}
+
+    data = response.data
 
     try:
         message = data["choices"][0]["message"]["content"]
@@ -182,6 +238,11 @@ async def generate_replies_for_comment(
     comment_id = comment.get("id", "unknown")
 
     text_prompt, image_urls = build_comment_prompt(comment, thread_context)
+
+    # Add examples context to the prompt
+    examples_context = build_comment_reply_examples_context(username)
+    if examples_context:
+        text_prompt = examples_context + "\n" + text_prompt
 
     for gen_idx in range(num_generations):
         # Model selection
@@ -349,6 +410,91 @@ async def generate_comment_replies_endpoint(
         }
     except Exception as e:
         error(f"Error generating comment replies: {e}", status_code=500, function_name="generate_comment_replies_endpoint", username=username, critical=True)
+
+
+class EditCommentReplyRequest(BaseModel):
+    new_reply: str
+    reply_index: int = 0
+
+
+@router.patch("/{username}/{comment_id}/edit")
+async def edit_comment_reply_endpoint(
+    username: str,
+    comment_id: str,
+    payload: EditCommentReplyRequest
+) -> dict:
+    """Edit a generated reply for a comment."""
+    from backend.data.twitter.comments_cache import (
+        get_comment,
+        update_comment_generated_replies,
+    )
+    from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+    from backend.twitter.logging import TweetAction, log_tweet_action
+
+    comment = get_comment(username, comment_id)
+    if not comment:
+        error(f"Comment {comment_id} not found", status_code=404, function_name="edit_comment_reply_endpoint", username=username, critical=True)
+
+    # Find the original posted tweet this comment is on
+    posted_tweets = read_posted_tweets_cache(username)
+    posted_tweet_text = ""
+    posted_tweet_id = ""
+
+    parent_chain = comment.get("parent_chain", [])
+    in_reply_to = comment.get("in_reply_to_status_id")
+
+    if in_reply_to and in_reply_to in posted_tweets:
+        post_data = posted_tweets[in_reply_to]
+        if isinstance(post_data, dict):
+            posted_tweet_text = post_data.get("text", "")
+            posted_tweet_id = in_reply_to
+    else:
+        for pid in reversed(parent_chain):
+            if pid in posted_tweets:
+                post_data = posted_tweets[pid]
+                if isinstance(post_data, dict):
+                    posted_tweet_text = post_data.get("text", "")
+                    posted_tweet_id = pid
+                    break
+
+    # Update the specific reply in the generated_replies array
+    generated_replies = list(comment.get("generated_replies", []))
+
+    if payload.reply_index >= len(generated_replies):
+        error(f"Reply index {payload.reply_index} out of range", status_code=400, function_name="edit_comment_reply_endpoint", username=username, critical=True)
+
+    # Preserve the model name, update the text
+    old_reply = generated_replies[payload.reply_index]
+    old_text = old_reply[0] if isinstance(old_reply, (list, tuple)) else old_reply
+    model_name = old_reply[1] if isinstance(old_reply, (list, tuple)) and len(old_reply) > 1 else "edited"
+
+    generated_replies[payload.reply_index] = (payload.new_reply, model_name)
+
+    update_comment_generated_replies(username, comment_id, generated_replies)
+
+    # Log the edit action
+    log_tweet_action(
+        username=username,
+        action=TweetAction.COMMENT_REPLY_EDITED,
+        tweet_id=comment_id,
+        metadata={
+            "comment_id": comment_id,
+            "comment_text": comment.get("text", ""),
+            "comment_author": comment.get("handle", ""),
+            "reply_index": payload.reply_index,
+            "old_reply": old_text,
+            "new_reply": payload.new_reply,
+            "original_posted_tweet_id": posted_tweet_id,
+            "original_posted_tweet_text": posted_tweet_text,
+        }
+    )
+
+    return {
+        "message": "Reply edited successfully",
+        "comment_id": comment_id,
+        "reply_index": payload.reply_index,
+        "new_reply": payload.new_reply
+    }
 
 
 @router.post("/{username}/generate/{comment_id}")

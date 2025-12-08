@@ -1,14 +1,13 @@
-import magnifyingGlassIcon from '../assets/magnifying-glass.svg';
-import penNibIcon from '../assets/pen-nib.svg';
+import { AnimatedText } from './WordStyles';
 
 interface HeaderProps {
   onSettingsClick: () => void;
   onScrapeClick: () => void;
-  onGenerateClick: () => void;
   hasInvalidAccounts: boolean;
+  isScraping?: boolean;
 }
 
-export function Header({ onSettingsClick, onScrapeClick, onGenerateClick, hasInvalidAccounts }: HeaderProps) {
+export function Header({ onSettingsClick, onScrapeClick, hasInvalidAccounts, isScraping = false }: HeaderProps) {
   return (
     <>
       {/* Logo - Top Left */}
@@ -20,7 +19,7 @@ export function Header({ onSettingsClick, onScrapeClick, onGenerateClick, hasInv
         />
       </div>
 
-      {/* Settings, Scrape & Generate - Top Right */}
+      {/* Settings & Scrape - Top Right */}
       <div className="absolute top-6 right-6 z-10 flex gap-3">
         <button
           onClick={onSettingsClick}
@@ -40,19 +39,20 @@ export function Header({ onSettingsClick, onScrapeClick, onGenerateClick, hasInv
         </button>
         <button
           onClick={onScrapeClick}
-          className="rounded-full bg-green-600 p-3 text-white transition hover:bg-green-700"
-          aria-label="Scrape"
-          title="Scrape tweets and generate replies"
+          disabled={isScraping}
+          className={`rounded-full px-5 py-2.5 text-base font-bold transition ${
+            isScraping
+              ? 'bg-slate-900 border-2 border-blue-500 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
+          aria-label={isScraping ? "Finding new posts" : "Find new posts"}
+          title={isScraping ? "Finding new posts..." : "Find new posts and generate replies"}
         >
-          <img src={magnifyingGlassIcon} alt="Scrape" className="w-5 h-5" />
-        </button>
-        <button
-          onClick={onGenerateClick}
-          className="rounded-full bg-blue-600 p-3 text-white transition hover:bg-blue-700"
-          aria-label="Generate"
-          title="Generate replies for existing tweets"
-        >
-          <img src={penNibIcon} alt="Generate" className="w-5 h-5" />
+          {isScraping ? (
+            <AnimatedText text="finding new posts" />
+          ) : (
+            'find new posts'
+          )}
         </button>
       </div>
     </>

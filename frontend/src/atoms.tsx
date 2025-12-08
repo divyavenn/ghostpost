@@ -144,3 +144,28 @@ export const typingIdsState = atom<Set<string>>({
   key: 'typingIdsState',
   default: new Set(['root']),
 });
+
+/**
+ * Whether the loading overlay has been dismissed by the user
+ * Reset when a new scrape starts
+ */
+export const loadingOverlayDismissedState = atom<boolean>({
+  key: 'loadingOverlayDismissedState',
+  default: false,
+});
+
+/**
+ * Whether to show the "Found new posts" modal
+ */
+export const showNewPostsModalState = atom<boolean>({
+  key: 'showNewPostsModalState',
+  default: false,
+});
+
+/**
+ * Count of new posts found in the last scrape (for modal message)
+ */
+export const newPostsCountState = atom<number>({
+  key: 'newPostsCountState',
+  default: 0,
+});

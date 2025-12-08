@@ -6,33 +6,136 @@ This module provides a two-stage filtering system:
 2. Final filter: Comprehensive check after full thread is collected (strict filter)
 """
 
-import requests
 from dotenv import load_dotenv
 
 from backend.config import OBELISK_KEY
+from backend.twitter.logging import TweetAction, read_user_log
 from backend.utlils.utils import error, notify, read_user_info
 
 # Load environment variables
 load_dotenv()
 
 
-def ask_llm(system_prompt, prompt):
+def get_recent_reply_examples(username: str, limit: int = 5) -> tuple[list[dict], list[dict]]:
+    """
+    Get examples of recent posts the user replied to and posts they skipped.
+
+    Args:
+        username: User's cache key
+        limit: Max number of examples for each category
+
+    Returns:
+        Tuple of (replied_to_examples, skipped_examples)
+    """
+    log_entries = read_user_log(username)
+
+    replied_to = []
+    skipped = []
+
+    for entry in reversed(log_entries):  # Most recent first
+        action = entry.get("action")
+        metadata = entry.get("metadata", {})
+
+        if action == TweetAction.POSTED.value and len(replied_to) < limit:
+            # This is a post the user replied to
+            original_tweet = metadata.get("original_tweet_text", "")
+            original_handle = metadata.get("original_handle", "")
+            if original_tweet:
+                replied_to.append({
+                    "author": original_handle,
+                    "text": original_tweet[:500],  # Truncate long tweets
+                })
+
+        elif action == TweetAction.DELETED.value and len(skipped) < limit:
+            # This is a post the user skipped (deleted from cache)
+            original_tweet = metadata.get("original_tweet_text", "")
+            original_handle = metadata.get("original_handle", "")
+            if original_tweet:
+                skipped.append({
+                    "author": original_handle,
+                    "text": original_tweet[:500],
+                })
+
+        # Stop once we have enough examples
+        if len(replied_to) >= limit and len(skipped) >= limit:
+            break
+
+    return replied_to, skipped
+
+
+def build_examples_context(replied_to: list[dict], skipped: list[dict]) -> str:
+    """
+    Build a formatted string of examples for the LLM prompt.
+    """
+    if not replied_to and not skipped:
+        return ""
+
+    context = "\n\n[RECENT HISTORY - Examples of what the user has replied to vs skipped]\n"
+
+    if replied_to:
+        context += "\n--- TWEETS THE USER REPLIED TO ---\n"
+        for i, example in enumerate(replied_to, 1):
+            author = example.get("author", "unknown")
+            text = example.get("text", "")
+            context += f"\n{i}. @{author}: {text}\n"
+
+    if skipped:
+        context += "\n--- TWEETS THE USER SKIPPED ---\n"
+        for i, example in enumerate(skipped, 1):
+            author = example.get("author", "unknown")
+            text = example.get("text", "")
+            context += f"\n{i}. @{author}: {text}\n"
+
+    context += "\n[END HISTORY]\n"
+
+    return context
+
+
+def _print_prompt(system_prompt: str, user_prompt: str, model: str, tweet_id: str = "unknown"):
+    """Print the full prompt to console for debugging."""
+    print(f"\n{'='*80}")
+    print(f"🔍 INTENT FILTER PROMPT | Model: {model} | Tweet: {tweet_id}")
+    print(f"{'='*80}")
+    print(f"\n📋 SYSTEM PROMPT:\n{'-'*40}")
+    print(system_prompt)
+    print(f"\n📝 USER PROMPT:\n{'-'*40}")
+    print(user_prompt)
+    print(f"\n{'='*80}\n")
+
+
+async def ask_llm(system_prompt, prompt, tweet_id: str = "unknown", username: str = "unknown"):
+    from backend.twitter.rate_limiter import LLM_OBELISK, call_api
+
     url = "https://obelisk.dread.technology/api/chat/completions"
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
 
-    payload = {"model": "chatgpt-4o", "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]}
+    model = "chatgpt-4o"
+    payload = {"model": model, "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]}
+
+    # Print the full prompt to console
+    _print_prompt(system_prompt, prompt, model, tweet_id)
+
+    # Use rate limiter with retry
+    response = await call_api(
+        method="POST",
+        url=url,
+        bucket=LLM_OBELISK,
+        headers=headers,
+        json_data=payload,
+        username=username
+    )
+
+    if not response.success:
+        error(f"❌ Error in LLM call for intent filter: {response.error_message}", status_code=response.status_code or 500, function_name="ask_llm", critical=False)
+        return ""
+
+    data = response.data
 
     try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        data = response.json()
-
         message = data["choices"][0]["message"]["content"]
         return message
-
-    except Exception as e:
-        error(f"❌ Error extracting keywords from intent: {e}", status_code=500, function_name="extract_keywords_from_intent", critical=False)
-        return []
+    except (KeyError, IndexError):
+        return ""
 
 
 async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) -> bool:
@@ -55,6 +158,10 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
         # No text to evaluate, reject
         return False
 
+    # NOTE: Examples disabled for now
+    # replied_to, skipped = get_recent_reply_examples(username, limit=5)
+    # examples_context = build_examples_context(replied_to, skipped)
+
     # Build a quick prompt for initial filtering
     system_prompt = "You are a content relevance evaluator. Answer only YES or NO."
     prompt = f"""User intent: "{intent}"
@@ -72,7 +179,7 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
     Answer with only "YES" or "NO"."""
 
     try:
-        message = ask_llm(system_prompt, prompt)
+        message = await ask_llm(system_prompt, prompt, tweet_id=str(tweet_id), username=username)
         message = message.strip().upper()
 
         matches = "YES" in message

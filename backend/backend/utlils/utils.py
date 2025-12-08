@@ -409,6 +409,13 @@ def read_user_info(handle: str) -> dict[str, Any] | None:
     return user_info
 
 
+# NOTE: Example caching for LLM prompts is now handled by posted_tweets_cache.py
+# Examples are stored with post_type ("reply", "comment_reply", "original")
+# and sorted by engagement score. See:
+# - get_top_posts_by_type(username, post_type, limit)
+# - build_examples_from_posts(posts, post_type)
+
+
 def read_tokens() -> dict[str, Any]:
     """Return the existing token map from disk (empty dict if missing/invalid)."""
     from pydantic import ValidationError
@@ -568,6 +575,40 @@ def add_to_seen_tweets(username: str, tweet_ids: list[str]) -> None:
     user_info["seen_tweets"] = seen_tweets
     write_user_info(user_info)
     notify(f"👁️ Added {len(tweet_ids)} tweet(s) to seen_tweets for {username}")
+
+
+def remove_from_seen_tweets(username: str, tweet_ids: list[str]) -> int:
+    """
+    Remove tweet IDs from the seen_tweets map.
+
+    Args:
+        username: Twitter handle of the user
+        tweet_ids: List of tweet IDs to remove
+
+    Returns:
+        Number of tweet IDs actually removed
+    """
+    user_info = read_user_info(username)
+    if not user_info:
+        return 0
+
+    seen_tweets = user_info.get("seen_tweets", {})
+    if not isinstance(seen_tweets, dict):
+        return 0
+
+    removed_count = 0
+    for tweet_id in tweet_ids:
+        str_id = str(tweet_id)
+        if str_id in seen_tweets:
+            del seen_tweets[str_id]
+            removed_count += 1
+
+    if removed_count > 0:
+        user_info["seen_tweets"] = seen_tweets
+        write_user_info(user_info)
+        notify(f"🗑️ Removed {removed_count} tweet(s) from seen_tweets for {username}")
+
+    return removed_count
 
 
 def cleanup_seen_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) -> int:

@@ -2,6 +2,9 @@ import { useMemo, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import xLottie from '../assets/x.lottie';
 
+export type PostType = 'original' | 'reply' | 'comment_reply';
+export type TweetSource = 'app_posted' | 'external';
+
 export interface PostedTweetData {
   id: string;  // Posted tweet ID
   text: string;  // Your response text
@@ -22,6 +25,11 @@ export interface PostedTweetData {
     url: string;
     alt_text?: string;
   }>;
+  // Thread tracking
+  parent_chain?: string[];  // Array of ancestor tweet IDs from root to immediate parent
+  // Source and type classification
+  source?: TweetSource;  // 'app_posted' (ghostpost) or 'external' (discovered)
+  post_type?: PostType;  // 'original', 'reply', or 'comment_reply'
 }
 
 interface PostedTweetDisplayProps {
@@ -36,6 +44,10 @@ interface PostedTweetDisplayProps {
 
 export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsername, onDelete, onViewTweet, isDeleting = false }: PostedTweetDisplayProps) {
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
+
+  // Source label - ghostpost (app_posted) vs discovered externally
+  const sourceLabel = tweet.source === 'external' ? 'discovered' : 'ghostpost';
+  const isGhostpost = tweet.source !== 'external';
 
   // Original tweet author info - only used if this is a reply
   const isReply = tweet.responding_to && tweet.responding_to.length > 0;
@@ -92,27 +104,37 @@ export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsernam
       }`}
     >
       <div className="flex items-center justify-between p-5 ml-[-20px] mb-2">
-        <button
-          type="button"
-          onClick={() => onDelete(tweet.id)}
-          onMouseEnter={() => setIsDeleteHovered(true)}
-          onMouseLeave={() => setIsDeleteHovered(false)}
-          className="relative flex items-center gap-2 rounded-full transition-colors h-10 w-10 justify-center hover:bg-neutral-800"
-          aria-label="Delete tweet from Twitter"
-          title="Delete tweet from Twitter"
-        >
-          {isDeleteHovered ? (
-            <div className="w-8 h-8 flex items-center justify-center">
-              <DotLottieReact
-                src={xLottie}
-                loop
-                autoplay
-              />
-            </div>
-          ) : (
-            <span className="text-xl text-white">×</span>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onDelete(tweet.id)}
+            onMouseEnter={() => setIsDeleteHovered(true)}
+            onMouseLeave={() => setIsDeleteHovered(false)}
+            className="relative flex items-center gap-2 rounded-full transition-colors h-10 w-10 justify-center hover:bg-neutral-800"
+            aria-label="Delete tweet from Twitter"
+            title="Delete tweet from Twitter"
+          >
+            {isDeleteHovered ? (
+              <div className="w-8 h-8 flex items-center justify-center">
+                <DotLottieReact
+                  src={xLottie}
+                  loop
+                  autoplay
+                />
+              </div>
+            ) : (
+              <span className="text-xl text-white">×</span>
+            )}
+          </button>
+          {/* Source label */}
+          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+            isGhostpost
+              ? 'bg-sky-500/20 text-sky-400'
+              : 'bg-amber-500/20 text-amber-400'
+          }`}>
+            {sourceLabel}
+          </span>
+        </div>
         <button
           type="button"
           onClick={handleViewTweet}

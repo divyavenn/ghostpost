@@ -407,9 +407,8 @@ const TextareaWrapper = styled.div`
 const ReplyTextarea = styled.textarea`
   width: 100%;
   min-height: 6rem;
-  max-height: 12rem;
   resize: none;
-  overflow-y: auto;
+  overflow-y: hidden;
   background: transparent;
   font-size: 1.125rem;
   color: white;
@@ -418,6 +417,7 @@ const ReplyTextarea = styled.textarea`
   padding-right: 0.5rem;
   padding-bottom: 2rem;
   font-family: inherit;
+  field-sizing: content;
 
   &::placeholder {
     color: #525252;

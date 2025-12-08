@@ -2,7 +2,6 @@ import asyncio
 import os
 from typing import Any
 
-import requests
 from dotenv import load_dotenv
 from fastapi import APIRouter
 from pydantic import BaseModel, ValidationError
@@ -139,7 +138,54 @@ Your reply should feel like something people would screenshot because it’s tha
 """
 
 
+def build_reply_examples_context(username: str, limit: int = 10) -> str:
+    """
+    Build a formatted string of example replies for the LLM prompt.
+    Uses top-performing replies from posted_tweets_cache sorted by engagement score.
+
+    Args:
+        username: User's handle
+        limit: Maximum number of examples to include
+
+    Returns:
+        Formatted string with examples or empty string if none
+    """
+    from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_top_posts_by_type
+
+    # Get top-performing replies sorted by engagement score
+    top_replies = get_top_posts_by_type(username, "reply", limit)
+    examples = build_examples_from_posts(top_replies, "reply")
+
+    if not examples:
+        return ""
+
+    context = "\n\n[YOUR TOP-PERFORMING REPLY EXAMPLES - Match this style and quality]\n"
+
+    for i, example in enumerate(examples, 1):
+        context += f"\n--- Example {i} ---\n{example}\n"
+
+    context += "\n[END EXAMPLES]\n"
+
+    return context
+
+
+def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count: int = 0, prompt_type: str = "REPLY"):
+    """Print the full prompt to console for debugging."""
+    print(f"\n{'='*80}")
+    print(f"🤖 {prompt_type} GENERATION PROMPT | Model: {model}")
+    print(f"{'='*80}")
+    print(f"\n📋 SYSTEM PROMPT:\n{'-'*40}")
+    print(system_prompt)
+    print(f"\n📝 USER PROMPT:\n{'-'*40}")
+    print(user_prompt)
+    if image_count > 0:
+        print(f"\n🖼️  IMAGES: {image_count} attached")
+    print(f"\n{'='*80}\n")
+
+
 async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False, username: str = "unknown") -> dict:
+    from backend.twitter.rate_limiter import LLM_OBELISK, call_api
+
     url = "https://obelisk.dread.technology/api/chat/completions"
 
     headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
@@ -159,23 +205,26 @@ async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nak
     # Choose system prompt based on whether tweet has a quoted tweet
     system_prompt = REPLY_GAME
 
+    # Print the full prompt to console
+    _print_prompt(system_prompt, prompt, model, len(image_urls) if image_urls else 0, "TWEET REPLY")
+
     payload = {"model": model, "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]}
 
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-    except requests.exceptions.RequestException as e:
-        # Try to get the error response body
-        error_detail = str(e)
-        try:
-            if hasattr(e, 'response') and e.response is not None:
-                error_detail = f"{str(e)} | Response: {e.response.text}"
-        except Exception:
-            pass
-        error(f"❌ Error communicating with Obelisk API: {error_detail}", status_code=500, function_name='ask_model', username=username, critical=False)
-        return {"error": error_detail}
+    # Use rate limiter with retry
+    response = await call_api(
+        method="POST",
+        url=url,
+        bucket=LLM_OBELISK,
+        headers=headers,
+        json_data=payload,
+        username=username
+    )
 
-    data = response.json()
+    if not response.success:
+        error(f"❌ Error communicating with Obelisk API: {response.error_message}", status_code=response.status_code or 500, function_name='ask_model', username=username, critical=False)
+        return {"error": response.error_message}
+
+    data = response.data
 
     # Extract message content
     try:
@@ -302,6 +351,11 @@ async def generate_replies_for_tweet(
 
     text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt_result
 
+    # Add examples context to the prompt
+    examples_context = build_reply_examples_context(username)
+    if examples_context:
+        text_prompt = examples_context + "\n" + text_prompt
+
     for gen_idx in range(needed_generations):
         # Model selection logic:
         # - If fewer models than replies: cycle through models
@@ -347,13 +401,19 @@ async def generate_replies_for_tweet(
 
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
-    from backend.data.twitter.edit_cache import read_from_cache, write_to_cache
+    from backend.data.twitter.edit_cache import purge_empty_thread_tweets, read_from_cache, write_to_cache
 
     # Check if API key is configured
     if not OBELISK_KEY:
         error("❌ OBELISK_KEY environment variable is not set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
 
     scraping_status[username] = {"type": "generating", "value": "Starting...", "phase": "generating"}
+
+    # Purge tweets with empty thread content from cache and seen_tweets
+    # so they can be re-scraped with proper thread data
+    purged_count = await purge_empty_thread_tweets(username)
+    if purged_count > 0:
+        notify(f"🧹 Purged {purged_count} tweet(s) with empty thread before generating replies")
 
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)

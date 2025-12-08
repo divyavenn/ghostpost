@@ -9,7 +9,7 @@ interface CommentsTabProps {
   postingCommentIds: Set<string>;
   skippingCommentIds: Set<string>;
   regeneratingCommentIds: Set<string>;
-  onPublishReply: (commentId: string, text: string, replyIndex: number) => void;
+  onPublishReply: (commentId: string, text: string, replyIndex: number) => Promise<void>;
   onSkipComment: (commentId: string) => void;
   onEditReply: (commentId: string, newReply: string, replyIndex: number) => void;
   onRegenerateReply: (commentId: string) => void;

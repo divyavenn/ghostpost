@@ -21,6 +21,11 @@ class TweetAction(str, Enum):
     DELETED = "deleted"
     POSTED = "posted"
     SCRAPED = "scraped"
+    # Comment-related actions
+    COMMENT_REPLY_POSTED = "comment_reply_posted"
+    COMMENT_SKIPPED = "comment_skipped"
+    COMMENT_REPLY_EDITED = "comment_reply_edited"
+    COMMENT_DELETED = "comment_deleted"  # Comment/tweet was deleted on Twitter
 
 
 def get_user_log_path(username: str) -> Path:
@@ -64,6 +69,9 @@ def get_log_stats(username: str) -> dict[str, int]:
         TweetAction.DELETED.value: 0,
         TweetAction.POSTED.value: 0,
         TweetAction.SCRAPED.value: 0,
+        TweetAction.COMMENT_REPLY_POSTED.value: 0,
+        TweetAction.COMMENT_SKIPPED.value: 0,
+        TweetAction.COMMENT_REPLY_EDITED.value: 0,
     }
 
     for entry in entries:

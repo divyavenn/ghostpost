@@ -94,12 +94,14 @@ class ScrapedTweet(BaseModel):
     # replies - list of tuples: (reply_text, model_name)
     generated_replies: list[tuple[str, str]] = []
     edited: bool = False  # True if user has edited any generated reply
+    seen: bool = False  # True if user has scrolled past this tweet in the UI
 
 
 MonitoringState = Literal["active", "warm", "cold"]
 TweetSource = Literal["app_posted", "external"]
 ResurrectionSource = Literal["none", "notification", "search"]
 CommentStatus = Literal["pending", "replied", "skipped"]
+PostType = Literal["original", "reply", "comment_reply"]
 
 
 class PostedTweet(BaseModel):
@@ -152,6 +154,10 @@ class PostedTweet(BaseModel):
 
     # Reply tracking for activity detection
     last_scraped_reply_ids: list[str] = Field(default_factory=list)
+
+    # Post classification and engagement
+    post_type: PostType = "reply"  # original, reply, or comment_reply
+    score: int = 0  # engagement score: likes + 2*retweets + 3*quotes + replies
 
 
 class CommentRecord(BaseModel):

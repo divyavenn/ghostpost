@@ -1,4 +1,3 @@
-import requests
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 
@@ -35,27 +34,51 @@ class ReplyTweet(BaseModel):
     reply_index: int | None = None
 
 
-async def post(username, payload: dict, cache_id: str | None = None, reply_index: int | None = None) -> dict:
+async def post(username, payload: dict, cache_id: str | None = None, reply_index: int | None = None, post_type: str = "reply") -> dict:
+    """
+    Post a tweet via Twitter API.
+
+    Args:
+        username: User's handle
+        payload: Tweet payload for Twitter API
+        cache_id: Optional cache ID for fetching original tweet data
+        reply_index: Index of the selected reply
+        post_type: Type of post - "original", "reply", or "comment_reply"
+    """
     import json
 
     from backend.data.twitter.edit_cache import get_user_tweet_cache
     from backend.data.twitter.posted_tweets_cache import add_posted_tweet
     from backend.twitter.logging import TweetAction, log_tweet_action
+    from backend.twitter.rate_limiter import TWITTER_POST, call_api
     from backend.utlils.utils import notify, read_user_info, write_user_info
 
     access_token = await _get_access_token_for_user(username)
 
     url = "https://api.x.com/2/tweets"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
-    data = payload
 
-    response = requests.post(url, headers=headers, json=data, timeout=30)
-    if response.status_code == 403:
-        error("Tweet has been deleted, cannot reply", status_code=response.status_code, exception_text=response.text, function_name="post", username=username, critical=True)
-    elif response.status_code not in (200, 201):
-        error("Twitter API error when posting tweet", status_code=response.status_code, exception_text=response.text, function_name="post", username=username, critical=True)
+    # Use rate limiter with retry
+    response = await call_api(
+        method="POST",
+        url=url,
+        bucket=TWITTER_POST,
+        headers=headers,
+        json_data=payload,
+        username=username
+    )
 
-    result = response.json()
+    if not response.success:
+        if response.status_code == 403:
+            # Tweet was deleted - raise HTTPException so caller can handle gracefully
+            error("Tweet has been deleted, cannot reply", status_code=response.status_code, exception_text=response.error_message, function_name="post", username=username, critical=False)
+            raise HTTPException(status_code=status.HTTP_410_GONE, detail="TWEET_DELETED")
+        elif response.status_code == 401:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="AUTHENTICATION_REQUIRED")
+        else:
+            error("Twitter API error when posting tweet", status_code=response.status_code or 500, exception_text=response.error_message, function_name="post", username=username, critical=True)
+
+    result = response.data
 
     # Log the post with posted tweet ID from Twitter
     posted_tweet_id = result.get("data", {}).get("id")  # ID from Twitter API
@@ -120,11 +143,19 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
         # Add model name to metadata
         metadata["model"] = model_name
 
+        # Add original tweet info for intent filtering examples
+        if response_to_thread:
+            # Join thread texts for context
+            metadata["original_tweet_text"] = " | ".join(response_to_thread)
+        if responding_to_handle:
+            metadata["original_handle"] = responding_to_handle
+
         # Log using the original tweet ID as the key if available, otherwise use posted_tweet_id
         log_key = original_tweet_id or posted_tweet_id
         log_tweet_action(username, TweetAction.POSTED, str(log_key), metadata=metadata)
 
         # Add to posted_tweets.json cache with parent_chain support
+        # (Examples are now sourced from posted_tweets_cache, sorted by score)
         try:
             # Get the in_reply_to_id for building parent_chain
             in_reply_to_id = payload.get("reply", {}).get("in_reply_to_tweet_id") or payload.get("quote_tweet_id")
@@ -137,7 +168,8 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                              replying_to_pfp=replying_to_pfp,
                              response_to_thread=response_to_thread,
                              in_reply_to_id=in_reply_to_id,
-                             media=media)
+                             media=media,
+                             post_type=post_type)
         except Exception as e:
             error("Failed to add to posted_tweets cache", status_code=500, exception_text=str(e), function_name="post", username=username)
             notify(f"⚠️ Failed to add to posted_tweets cache: {e}")
@@ -166,14 +198,51 @@ async def post_tweet(username: str, payload: Tweet) -> dict:
 
 @router.post("/reply")
 async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
+    from backend.data.twitter.edit_cache import delete_tweet_from_cache
+
     data = {"text": payload.text, "reply": {"in_reply_to_tweet_id": payload.tweet_id}}
-    return await post(username, data, cache_id=payload.cache_id, reply_index=payload.reply_index)
+    try:
+        return await post(username, data, cache_id=payload.cache_id, reply_index=payload.reply_index)
+    except HTTPException as e:
+        # Handle deleted tweet - remove from cache and return informative response
+        if e.status_code == status.HTTP_410_GONE and e.detail == "TWEET_DELETED":
+            # Remove from tweet cache if we have a cache_id
+            if payload.cache_id:
+                delete_tweet_from_cache(username, payload.cache_id)
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail={
+                    "error": "TWEET_DELETED",
+                    "message": "This tweet has been deleted and was removed from your queue",
+                    "cache_id": payload.cache_id,
+                    "tweet_id": payload.tweet_id
+                }
+            )
+        raise
 
 
 @router.post("/quote")
 async def post_quote_tweet(username: str, payload: ReplyTweet) -> dict:
+    from backend.data.twitter.edit_cache import delete_tweet_from_cache
+
     data = {"text": payload.text, "quote_tweet_id": payload.tweet_id}
-    return await post(username, data, cache_id=payload.cache_id)
+    try:
+        return await post(username, data, cache_id=payload.cache_id)
+    except HTTPException as e:
+        # Handle deleted tweet - remove from cache and return informative response
+        if e.status_code == status.HTTP_410_GONE and e.detail == "TWEET_DELETED":
+            if payload.cache_id:
+                delete_tweet_from_cache(username, payload.cache_id)
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail={
+                    "error": "TWEET_DELETED",
+                    "message": "This tweet has been deleted and was removed from your queue",
+                    "cache_id": payload.cache_id,
+                    "tweet_id": payload.tweet_id
+                }
+            )
+        raise
 
 
 @router.delete("/tweet/{tweet_id}")
@@ -188,6 +257,7 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
         Success message and metadata
     """
     from backend.twitter.logging import TweetAction, log_tweet_action
+    from backend.twitter.rate_limiter import TWITTER_POST, call_api
     from backend.utlils.utils import read_user_info, write_user_info
 
     access_token = await _get_access_token_for_user(username)
@@ -195,9 +265,16 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
     url = f"https://api.x.com/2/tweets/{tweet_id}"
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    response = requests.delete(url, headers=headers, timeout=30)
+    # Use rate limiter with retry
+    response = await call_api(
+        method="DELETE",
+        url=url,
+        bucket=TWITTER_POST,
+        headers=headers,
+        username=username
+    )
 
-    if response.status_code == 200:
+    if response.success:
         # Successfully deleted - log the action
         log_tweet_action(username, TweetAction.DELETED, tweet_id, metadata={"deleted_from_twitter": True, "posted_tweet_id": tweet_id})
 
@@ -229,8 +306,8 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
         return {"message": "Tweet not found (may already be deleted)", "tweet_id": tweet_id, "deleted": False}
     else:
         # Other error
-        error("Twitter API error when deleting tweet", status_code=response.status_code, exception_text=response.text, function_name="delete_posted_tweet", username=username, critical=True)
-        raise HTTPException(status_code=response.status_code, detail=f"Twitter API error: {response.text}")
+        error("Twitter API error when deleting tweet", status_code=response.status_code or 500, exception_text=response.error_message, function_name="delete_posted_tweet", username=username, critical=True)
+        raise HTTPException(status_code=response.status_code or 500, detail=f"Twitter API error: {response.error_message}")
 
 
 # --- example usage ---

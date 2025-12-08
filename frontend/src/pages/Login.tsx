@@ -76,8 +76,8 @@ const ContactText = styled.div`
 const TextContainer = styled.div`
   max-width: 1000px;
   margin: 0 auto;
-  margin-top: 10%;
-  padding: 100px 20px;
+  margin-top: 2%;
+  padding: 40px 20px;
   font-size: 1.8rem;
   line-height: 2.2;
   letter-spacing: -0.01em;

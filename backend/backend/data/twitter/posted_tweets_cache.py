@@ -13,7 +13,7 @@ Storage format: Map with _order array for pagination
 import json
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 try:  # Python 3.11+
     from datetime import UTC
@@ -23,6 +23,17 @@ except ImportError:
 
 from backend.config import HARDCUTOFF_COLD_DAYS
 from backend.utlils.utils import CACHE_DIR, _cache_key, notify
+
+# Post types for classification
+PostType = Literal["original", "reply", "comment_reply"]
+
+
+def calculate_engagement_score(likes: int, retweets: int, quotes: int, replies: int) -> int:
+    """
+    Calculate engagement score from metrics.
+    Formula: likes + 2*retweets + 3*quotes + replies
+    """
+    return likes + 2 * retweets + 3 * quotes + replies
 
 
 def get_posted_tweets_path(username: str) -> Path:
@@ -217,7 +228,8 @@ def add_posted_tweet(
     response_to_thread: list[str] | None = None,
     in_reply_to_id: str | None = None,
     created_at: str | None = None,
-    media: list[dict] | None = None
+    media: list[dict] | None = None,
+    post_type: PostType = "reply"
 ) -> dict[str, Any]:
     """
     Add a new posted tweet to the cache.
@@ -233,6 +245,7 @@ def add_posted_tweet(
         in_reply_to_id: The tweet ID this is replying to (for parent_chain)
         created_at: ISO timestamp of when tweet was created (defaults to now)
         media: List of media attachments [{type: "photo", url: "...", alt_text: "..."}]
+        post_type: Type of post - "original", "reply", or "comment_reply"
 
     Returns:
         The created tweet object
@@ -290,7 +303,9 @@ def add_posted_tweet(
         "last_quote_count": 0,
         "last_retweet_count": 0,
         "resurrected_via": "none",
-        "last_scraped_reply_ids": []
+        "last_scraped_reply_ids": [],
+        "post_type": post_type,
+        "score": 0,  # Will be updated when metrics are fetched
     }
 
     # Add to map
@@ -337,9 +352,12 @@ def update_tweet_metrics(
     tweet["impressions"] = impressions
     tweet["last_metrics_update"] = datetime.now(UTC).isoformat()
 
+    # Update engagement score
+    tweet["score"] = calculate_engagement_score(likes, retweets, quotes, replies)
+
     write_posted_tweets_cache(username, tweets_map)
 
-    notify(f"✅ Updated metrics for tweet {posted_tweet_id}: {likes}L {retweets}RT {quotes}Q {replies}R")
+    notify(f"✅ Updated metrics for tweet {posted_tweet_id}: {likes}L {retweets}RT {quotes}Q {replies}R (score: {tweet['score']})")
     return tweet
 
 
@@ -438,3 +456,98 @@ def update_monitoring_state(username: str, tweet_id: str, new_state: str, resurr
 
     write_posted_tweets_cache(username, tweets_map)
     return True
+
+
+def get_top_posts_by_type(
+    username: str,
+    post_type: PostType | None = None,
+    limit: int = 10
+) -> list[dict[str, Any]]:
+    """
+    Get top-performing posts sorted by engagement score.
+
+    Args:
+        username: User's handle
+        post_type: Filter by type ("original", "reply", "comment_reply"), or None for all
+        limit: Maximum number of posts to return
+
+    Returns:
+        List of posted tweets sorted by score descending
+    """
+    tweets_map = read_posted_tweets_cache(username)
+
+    # Filter by post_type if specified
+    tweets = []
+    for tid, tweet in tweets_map.items():
+        if tid == "_order" or not isinstance(tweet, dict):
+            continue
+        if post_type is None or tweet.get("post_type") == post_type:
+            tweets.append(tweet)
+
+    # Sort by score descending
+    tweets.sort(key=lambda t: t.get("score", 0), reverse=True)
+
+    return tweets[:limit]
+
+
+def get_top_posts_for_llm_context(username: str, limit_per_type: int = 10) -> dict[str, list[dict[str, Any]]]:
+    """
+    Get top-performing posts of each type for LLM context.
+
+    Args:
+        username: User's handle
+        limit_per_type: Maximum number of posts per type
+
+    Returns:
+        Dict with keys "original", "reply", "comment_reply", each containing a list of posts
+    """
+    return {
+        "original": get_top_posts_by_type(username, "original", limit_per_type),
+        "reply": get_top_posts_by_type(username, "reply", limit_per_type),
+        "comment_reply": get_top_posts_by_type(username, "comment_reply", limit_per_type),
+    }
+
+
+def build_examples_from_posts(posts: list[dict[str, Any]], post_type: PostType) -> list[str]:
+    """
+    Build example strings from posts for LLM prompts.
+
+    Args:
+        posts: List of posted tweets
+        post_type: Type of posts for formatting
+
+    Returns:
+        List of formatted example strings
+    """
+    examples = []
+
+    for post in posts:
+        text = post.get("text", "")
+        score = post.get("score", 0)
+        likes = post.get("likes", 0)
+        retweets = post.get("retweets", 0)
+
+        if post_type == "reply":
+            # Format: original thread -> your reply
+            original = post.get("response_to_thread", [])
+            responding_to = post.get("responding_to", "")
+            if original and text:
+                original_text = " | ".join(original)[:500]
+                example = f"[ORIGINAL @{responding_to}]: {original_text}\n[YOUR REPLY ({likes}L, {retweets}RT)]: {text}"
+                examples.append(example)
+
+        elif post_type == "comment_reply":
+            # For comment replies, we need to reconstruct the context
+            # The parent_chain should help, but we store the text directly
+            if text:
+                responding_to = post.get("responding_to", "someone")
+                example = f"[YOUR COMMENT REPLY ({likes}L, {retweets}RT)]: {text}"
+                examples.append(example)
+
+        elif post_type == "original":
+            # Original posts - just the text
+            if text:
+                example = f"[YOUR POST ({likes}L, {retweets}RT)]: {text}"
+                examples.append(example)
+
+    return examples

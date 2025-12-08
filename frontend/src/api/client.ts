@@ -635,6 +635,23 @@ export const api = {
     return response.json();
   },
 
+  editCommentReply: async (username: string, commentId: string, newReply: string, replyIndex: number = 0): Promise<{
+    message: string;
+    comment_id: string;
+    reply_index: number;
+    new_reply: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/${encodeURIComponent(commentId)}/edit`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ new_reply: newReply, reply_index: replyIndex }),
+    });
+    if (!response.ok) throw new Error('Failed to edit comment reply');
+    return response.json();
+  },
+
   startEngagementMonitoring: async (username: string): Promise<{
     message: string;
     username: string;
@@ -644,6 +661,34 @@ export const api = {
       method: 'POST',
     });
     if (!response.ok) throw new Error('Failed to start engagement monitoring');
+    return response.json();
+  },
+
+  // Mark tweets as seen (user scrolled past them)
+  markTweetsSeen: async (username: string, tweetIds: string[]): Promise<{
+    message: string;
+    marked_count: number;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/tweets/${encodeURIComponent(username)}/mark-seen`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tweet_ids: tweetIds }),
+    });
+    if (!response.ok) throw new Error('Failed to mark tweets as seen');
+    return response.json();
+  },
+
+  // Purge seen (but unedited) tweets from cache
+  purgeSeenTweets: async (username: string): Promise<{
+    message: string;
+    removed_count: number;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/tweets/${encodeURIComponent(username)}/purge-seen`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error('Failed to purge seen tweets');
     return response.json();
   },
 };

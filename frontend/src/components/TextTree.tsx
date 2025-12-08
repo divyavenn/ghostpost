@@ -70,7 +70,7 @@ const HighlightWrapper = styled.span<{ $isHighlighted: boolean }>`
 `;
 
 const TreeContainer = styled(motion.div)`
-  height: 60vh;
+  height: 80vh;
   overflow-y: auto;
   overflow-x: hidden;
   /* Hide scrollbar */

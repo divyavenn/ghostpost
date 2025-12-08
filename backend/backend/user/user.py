@@ -16,10 +16,11 @@ def get_validation_delay() -> int:
     return 310  # Free tier: 3 requests per 15 minutes
 
 
-def get_user_info(access_token: str) -> dict[str, Any]:
+async def get_user_info(access_token: str) -> dict[str, Any]:
     """Fetch the authenticated user's metadata and persist it locally."""
     import requests
 
+    from backend.twitter.rate_limiter import EndpointType, twitter_rate_limiter
     from backend.utlils.utils import read_user_info
 
     url = "https://api.twitter.com/2/users/me"
@@ -32,7 +33,19 @@ def get_user_info(access_token: str) -> dict[str, Any]:
     params = {"user.fields": ",".join(fields)}
     headers = {"Authorization": f"Bearer {access_token}"}
 
+    # Wait for rate limiter (USER_LOOKUP endpoint: 100 req/15min)
+    await twitter_rate_limiter.wait_if_needed(EndpointType.USER_LOOKUP)
+
     response = requests.get(url, headers=headers, params=params)
+    twitter_rate_limiter.update_last_request(EndpointType.USER_LOOKUP)
+
+    # Handle rate limiting with retry
+    if response.status_code == 429:
+        reset_time = response.headers.get("x-rate-limit-reset")
+        if reset_time:
+            await twitter_rate_limiter.wait_for_reset(int(reset_time), EndpointType.USER_LOOKUP)
+            return await get_user_info(access_token)
+
     response.raise_for_status()
 
     payload = response.json()
@@ -537,6 +550,7 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
     import requests
 
     from backend.twitter.authentication import ensure_access_token
+    from backend.twitter.rate_limiter import EndpointType, twitter_rate_limiter
     from backend.utlils.utils import error
 
     try:
@@ -550,11 +564,15 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
             error("User not authenticated", status_code=401, function_name="validate_twitter_handle", username=username, critical=False)
             raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
 
+        # Wait for rate limiter (USER_LOOKUP endpoint: 100 req/15min)
+        await twitter_rate_limiter.wait_if_needed(EndpointType.USER_LOOKUP)
+
         # Check if user exists with retry logic for rate limiting
         url = f"https://api.twitter.com/2/users/by/username/{handle}"
         headers = {"Authorization": f"Bearer {access_token}"}
 
         response = requests.get(url, headers=headers, timeout=10)
+        twitter_rate_limiter.update_last_request(EndpointType.USER_LOOKUP)
 
         if response.status_code == 200:
             data = response.json()
@@ -565,7 +583,10 @@ async def validate_twitter_handle(username: str, twitter_handle: str) -> dict:
             else:
                 return {"valid": False, "handle": handle, "error": "User not found"}
         elif response.status_code == 429:
-            sleep(get_validation_delay())
+            # Rate limited - wait and retry
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time:
+                await twitter_rate_limiter.wait_for_reset(int(reset_time), EndpointType.USER_LOOKUP)
             return await validate_twitter_handle(username, twitter_handle)
 
         return {"valid": False, "handle": handle, "error": f"{response.text} (status {response.status_code})"}

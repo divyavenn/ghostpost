@@ -195,7 +195,7 @@ async def engagement_monitoring_for_user(username: str):
         username: Twitter handle of the user
     """
     from backend.twitter.comment_replies import generate_comment_replies
-    from backend.backend.twitter.monitoring import run_engagement_monitoring
+    from backend.twitter.monitoring import run_engagement_monitoring
     from backend.utlils.utils import read_user_info
 
     try:
@@ -218,8 +218,9 @@ async def engagement_monitoring_for_user(username: str):
         if new_comments > 0:
             notify("💬 [Engagement] Generating replies for new comments...")
             gen_result = await generate_comment_replies(username)
-            generated_count = gen_result.get("generated_count", 0)
-            notify(f"✅ [Engagement] Generated replies for {generated_count} comment(s)")
+            processed = gen_result.get("processed", 0)
+            total_replies = gen_result.get("total_replies_generated", 0)
+            notify(f"✅ [Engagement] Processed {processed} comment(s), generated {total_replies} replies")
 
         # Log to background tasks
         log_background_task(
@@ -407,3 +408,197 @@ async def trigger_manual_engagement_endpoint():
         return {"message": "Manual engagement monitoring triggered successfully"}
     else:
         return {"message": "Failed to trigger engagement monitoring", "error": "Scheduler not running"}
+
+
+async def run_full_pipeline_for_user(username: str) -> dict:
+    """
+    Run the complete background job pipeline for a single user.
+    Executes all jobs in the same order they would run in production.
+
+    Pipeline Order:
+    1. Cleanup expired browser sessions
+    2. Purge unedited tweets
+    3. Scrape new tweets from configured accounts/queries
+    4. Generate AI replies for scraped tweets
+    5. Run engagement monitoring (discover comments on posted tweets)
+    6. Generate AI replies for discovered comments
+
+    Args:
+        username: Twitter handle of the user
+
+    Returns:
+        dict with results from each step
+    """
+    import time
+
+    from backend.data.twitter.edit_cache import purge_unedited_tweets
+    from backend.twitter.comment_replies import generate_comment_replies
+    from backend.twitter.monitoring import run_engagement_monitoring
+    from backend.utlils.utils import read_user_info
+
+    results = {
+        "username": username,
+        "steps": {},
+        "errors": [],
+        "total_time_seconds": 0
+    }
+
+    start_time = time.time()
+
+    try:
+        user_info = read_user_info(username)
+        if not user_info:
+            results["errors"].append(f"No user info found for {username}")
+            return results
+
+        user_handle = user_info.get("handle", username)
+
+        # Step 1: Cleanup expired browser sessions
+        notify(f"🧹 [Pipeline] Step 1: Cleaning up browser sessions...")
+        try:
+            await cleanup_expired_browser_sessions()
+            results["steps"]["cleanup_sessions"] = {"status": "success"}
+        except Exception as e:
+            results["steps"]["cleanup_sessions"] = {"status": "error", "error": str(e)}
+            results["errors"].append(f"cleanup_sessions: {e}")
+
+        # Step 2: Purge unedited tweets
+        notify(f"🗑️ [Pipeline] Step 2: Purging unedited tweets...")
+        try:
+            purged_count = await purge_unedited_tweets(username)
+            results["steps"]["purge_unedited"] = {"status": "success", "purged": purged_count}
+            notify(f"✅ Purged {purged_count} unedited tweet(s)")
+        except Exception as e:
+            results["steps"]["purge_unedited"] = {"status": "error", "error": str(e)}
+            results["errors"].append(f"purge_unedited: {e}")
+
+        # Step 3: Scrape new tweets
+        notify(f"🔍 [Pipeline] Step 3: Scraping tweets...")
+        try:
+            tweets = await read_tweets(username=username)
+            results["steps"]["scrape_tweets"] = {"status": "success", "tweets_scraped": len(tweets)}
+            notify(f"✅ Scraped {len(tweets)} tweets")
+        except Exception as e:
+            results["steps"]["scrape_tweets"] = {"status": "error", "error": str(e)}
+            results["errors"].append(f"scrape_tweets: {e}")
+            tweets = []
+
+        # Step 4: Generate replies for scraped tweets
+        notify(f"💬 [Pipeline] Step 4: Generating replies for tweets...")
+        try:
+            gen_result = await generate_replies(username=username, overwrite=False)
+            reply_count = sum(1 for t in gen_result if t.get('reply'))
+            results["steps"]["generate_tweet_replies"] = {"status": "success", "replies_generated": reply_count}
+            notify(f"✅ Generated {reply_count} tweet replies")
+        except Exception as e:
+            results["steps"]["generate_tweet_replies"] = {"status": "error", "error": str(e)}
+            results["errors"].append(f"generate_tweet_replies: {e}")
+
+        # Step 5: Run engagement monitoring (discover comments)
+        notify(f"📊 [Pipeline] Step 5: Running engagement monitoring...")
+        try:
+            monitoring_result = await run_engagement_monitoring(username, user_handle)
+            new_comments = monitoring_result.get("total_new_comments", 0)
+            results["steps"]["engagement_monitoring"] = {
+                "status": "success",
+                "new_comments": new_comments,
+                "details": monitoring_result
+            }
+            notify(f"✅ Found {new_comments} new comments")
+        except Exception as e:
+            results["steps"]["engagement_monitoring"] = {"status": "error", "error": str(e)}
+            results["errors"].append(f"engagement_monitoring: {e}")
+            new_comments = 0
+
+        # Step 6: Generate replies for comments (AFTER engagement monitoring)
+        notify(f"💬 [Pipeline] Step 6: Generating comment replies...")
+        try:
+            comment_gen_result = await generate_comment_replies(username)
+            processed = comment_gen_result.get("processed", 0)
+            total_comment_replies = comment_gen_result.get("total_replies_generated", 0)
+            results["steps"]["generate_comment_replies"] = {
+                "status": "success",
+                "comments_processed": processed,
+                "replies_generated": total_comment_replies
+            }
+            notify(f"✅ Processed {processed} comments, generated {total_comment_replies} replies")
+        except Exception as e:
+            results["steps"]["generate_comment_replies"] = {"status": "error", "error": str(e)}
+            results["errors"].append(f"generate_comment_replies: {e}")
+
+        notify(f"🎉 [Pipeline] Completed for {username}")
+
+    except Exception as e:
+        from backend.utlils.utils import error
+        error(f"Pipeline failed for {username}", status_code=500, exception_text=str(e), function_name="run_full_pipeline_for_user", username=username)
+        results["errors"].append(f"fatal: {e}")
+
+    results["total_time_seconds"] = round(time.time() - start_time, 2)
+    return results
+
+
+async def run_full_pipeline_all_users() -> dict:
+    """
+    Run the complete background job pipeline for all users with valid sessions.
+
+    Returns:
+        dict with results for each user
+    """
+    notify("🚀 [Pipeline] Starting full pipeline for all users...")
+
+    results = {
+        "users": {},
+        "total_users": 0,
+        "successful": 0,
+        "failed": 0
+    }
+
+    try:
+        users = get_users_with_valid_sessions()
+
+        if not users:
+            notify("⚠️ [Pipeline] No users with valid browser sessions found")
+            return results
+
+        results["total_users"] = len(users)
+        notify(f"👥 [Pipeline] Found {len(users)} user(s) with valid sessions")
+
+        for username in users:
+            try:
+                user_result = await run_full_pipeline_for_user(username)
+                results["users"][username] = user_result
+                if user_result["errors"]:
+                    results["failed"] += 1
+                else:
+                    results["successful"] += 1
+            except Exception as e:
+                results["users"][username] = {"error": str(e)}
+                results["failed"] += 1
+
+        notify(f"✅ [Pipeline] Completed: {results['successful']} succeeded, {results['failed']} failed")
+
+    except Exception as e:
+        from backend.utlils.utils import error
+        error("Fatal error in full pipeline", status_code=500, exception_text=str(e), function_name="run_full_pipeline_all_users")
+        notify(f"❌ [Pipeline] Fatal error: {e}")
+
+    return results
+
+
+@router.post("/run-pipeline/{username}")
+async def run_pipeline_for_user_endpoint(username: str):
+    """
+    Run the complete background job pipeline for a single user.
+    This runs all jobs in order: scrape → generate replies → monitor engagement → generate comment replies
+    """
+    result = await run_full_pipeline_for_user(username)
+    return result
+
+
+@router.post("/run-pipeline")
+async def run_pipeline_all_users_endpoint():
+    """
+    Run the complete background job pipeline for all users with valid sessions.
+    """
+    result = await run_full_pipeline_all_users()
+    return result

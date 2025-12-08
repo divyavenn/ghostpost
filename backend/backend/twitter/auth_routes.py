@@ -311,7 +311,7 @@ async def twitter_callback(
 
     # Get user info
     try:
-        user_info = get_user_info(access_token)
+        user_info = await get_user_info(access_token)
         twitter_handle = user_info.get("handle") or user_info.get("username")
     except Exception as e:
         _update_session_error(session_id, "user_info_fetch_failed", str(e))

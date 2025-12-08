@@ -19,9 +19,9 @@ const Container = styled.div<{ $expanded: boolean }>`
 `;
 
 const PostSection = styled.div<{ $expanded: boolean }>`
-  padding: 1rem 1.25rem;
+  padding: 1rem 1.25rem 1.5rem 1.25rem;
   flex: ${({ $expanded }) => $expanded ? '0 0 auto' : '0 0 auto'};
-  max-height: ${({ $expanded }) => $expanded ? 'none' : '12rem'};
+  max-height: ${({ $expanded }) => $expanded ? 'none' : '14rem'};
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -298,10 +298,30 @@ const ReplyTextPreview = styled.p`
   color: #a3a3a3;
   margin: 0;
   flex: 1;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
+  cursor: text;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background: #171717;
+  }
+`;
+
+const InlineEditTextarea = styled.textarea`
+  flex: 1;
+  min-height: 4rem;
+  resize: none;
+  background: #171717;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: white;
+  outline: none;
+  border: 1px solid #0ea5e9;
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  font-family: inherit;
 `;
 
 const ActionButtons = styled.div`
@@ -385,70 +405,6 @@ const PostAllButton = styled.button`
   }
 `;
 
-const EditOverlay = styled.div`
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 50;
-`;
-
-const EditModal = styled.div`
-  background: #171717;
-  border-radius: 1rem;
-  padding: 1.5rem;
-  width: 90%;
-  max-width: 500px;
-`;
-
-const EditTextarea = styled.textarea`
-  width: 100%;
-  min-height: 8rem;
-  resize: none;
-  background: #0a0a0a;
-  font-size: 1rem;
-  color: white;
-  outline: none;
-  border: 1px solid #404040;
-  border-radius: 0.5rem;
-  padding: 0.75rem;
-  font-family: inherit;
-  line-height: 1.5;
-
-  &:focus {
-    border-color: #0ea5e9;
-  }
-`;
-
-const EditButtonGroup = styled.div`
-  display: flex;
-  gap: 0.5rem;
-  margin-top: 1rem;
-  justify-content: flex-end;
-`;
-
-const EditButton = styled.button<{ $primary?: boolean }>`
-  border-radius: 9999px;
-  padding: 0.5rem 1.25rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  transition: background-color 0.2s;
-
-  ${({ $primary }) => $primary ? css`
-    background: #0ea5e9;
-    color: white;
-    &:hover { background: #0284c7; }
-  ` : css`
-    background: #404040;
-    color: white;
-    &:hover { background: #525252; }
-  `}
-`;
-
 const ReplyAvatar = styled.img`
   height: 1.5rem;
   width: 1.5rem;
@@ -501,15 +457,16 @@ function CommentItem({
     return String(value);
   };
 
-  const handleEdit = () => {
+  const handleStartEdit = () => {
     if (selectedReply) {
       setEditText(selectedReply[0]);
       setIsEditing(true);
     }
   };
 
-  const handleSaveEdit = () => {
-    if (onEditReply && editText.trim()) {
+  const handleBlurSave = () => {
+    // Auto-save on blur if text changed
+    if (onEditReply && editText.trim() && selectedReply && editText !== selectedReply[0]) {
       onEditReply(editText, 0);
     }
     setIsEditing(false);
@@ -522,94 +479,73 @@ function CommentItem({
   };
 
   return (
-    <>
-      <CommentCard $isDeleting={isDeleting} $isPosting={isPosting}>
-        <CommentHeader>
-          <SmallAvatar
-            src={comment.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
-            alt={comment.username}
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
-            }}
-          />
-          <AuthorInfo>
-            <Username>{comment.username}</Username>
-            <Handle>@{comment.handle}</Handle>
-          </AuthorInfo>
-        </CommentHeader>
+    <CommentCard $isDeleting={isDeleting} $isPosting={isPosting}>
+      <CommentHeader>
+        <SmallAvatar
+          src={comment.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
+          alt={comment.username}
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
+          }}
+        />
+        <AuthorInfo>
+          <Username>{comment.username}</Username>
+          <Handle>@{comment.handle}</Handle>
+        </AuthorInfo>
+      </CommentHeader>
 
-        <CommentText>{comment.text}</CommentText>
+      <CommentText>{comment.text}</CommentText>
 
-        <CommentStats>
-          <StatItem>
-            <i className="fa-regular fa-heart" aria-hidden="true" />
-            <span>{formatMetric(comment.likes)}</span>
-          </StatItem>
-          <StatItem>
-            <i className="fa-regular fa-comment" aria-hidden="true" />
-            <span>{formatMetric(comment.replies)}</span>
-          </StatItem>
-        </CommentStats>
+      <CommentStats>
+        <StatItem>
+          <i className="fa-regular fa-heart" aria-hidden="true" />
+          <span>{formatMetric(comment.likes)}</span>
+        </StatItem>
+        <StatItem>
+          <i className="fa-regular fa-comment" aria-hidden="true" />
+          <span>{formatMetric(comment.replies)}</span>
+        </StatItem>
+      </CommentStats>
 
-        <ReplySection>
-          {isRegenerating ? (
-            <RegeneratingState>
+      <ReplySection>
+        {isRegenerating ? (
+          <RegeneratingState>
+            {myProfilePicUrl && <ReplyAvatar src={myProfilePicUrl} alt="You" />}
+            <AnimatedText text="Generating reply" className="text-sm" />
+          </RegeneratingState>
+        ) : selectedReply ? (
+          <>
+            <ReplyPreview>
               {myProfilePicUrl && <ReplyAvatar src={myProfilePicUrl} alt="You" />}
-              <AnimatedText text="Generating reply" className="text-sm" />
-            </RegeneratingState>
-          ) : selectedReply ? (
-            <>
-              <ReplyPreview>
-                {myProfilePicUrl && <ReplyAvatar src={myProfilePicUrl} alt="You" />}
-                <ReplyTextPreview>{selectedReply[0]}</ReplyTextPreview>
-              </ReplyPreview>
-              <ActionButtons>
-                <IconButton
-                  $variant="secondary"
-                  onClick={handleEdit}
-                  title="Edit reply"
-                >
-                  <i className="fa-solid fa-pen" />
-                </IconButton>
-                {onRegenerate && (
-                  <IconButton
-                    $variant="secondary"
-                    onClick={onRegenerate}
-                    disabled={isRegenerating}
-                    title="Regenerate reply"
-                  >
-                    <i className="fa-solid fa-rotate-right" />
-                  </IconButton>
-                )}
-                <IconButton
-                  $variant="danger"
-                  onClick={onSkip}
-                  disabled={isDeleting}
-                  title="Skip comment"
-                >
-                  <i className="fa-solid fa-xmark" />
-                </IconButton>
-                <IconButton
-                  $variant="primary"
-                  onClick={handlePublish}
-                  disabled={isPosting}
-                  title="Post reply"
-                >
-                  <i className="fa-solid fa-paper-plane" />
-                </IconButton>
-              </ActionButtons>
-            </>
-          ) : (
-            <ActionButtons style={{ justifyContent: 'center' }}>
+              {isEditing ? (
+                <InlineEditTextarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  onBlur={handleBlurSave}
+                  autoFocus
+                  placeholder="Edit your reply..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setIsEditing(false);
+                      setEditText('');
+                    }
+                  }}
+                />
+              ) : (
+                <ReplyTextPreview onClick={handleStartEdit}>
+                  {selectedReply[0]}
+                </ReplyTextPreview>
+              )}
+            </ReplyPreview>
+            <ActionButtons>
               {onRegenerate && (
                 <IconButton
                   $variant="secondary"
                   onClick={onRegenerate}
                   disabled={isRegenerating}
-                  title="Generate reply"
-                  style={{ width: 'auto', padding: '0.5rem 1rem', gap: '0.5rem' }}
+                  title="Regenerate reply"
                 >
-                  <i className="fa-solid fa-wand-magic-sparkles" />
+                  <i className="fa-solid fa-rotate-right" />
                 </IconButton>
               )}
               <IconButton
@@ -620,28 +556,41 @@ function CommentItem({
               >
                 <i className="fa-solid fa-xmark" />
               </IconButton>
+              <IconButton
+                $variant="primary"
+                onClick={handlePublish}
+                disabled={isPosting}
+                title="Post reply"
+              >
+                <i className="fa-solid fa-paper-plane" />
+              </IconButton>
             </ActionButtons>
-          )}
-        </ReplySection>
-      </CommentCard>
-
-      {isEditing && (
-        <EditOverlay onClick={() => setIsEditing(false)}>
-          <EditModal onClick={(e) => e.stopPropagation()}>
-            <EditTextarea
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              autoFocus
-              placeholder="Edit your reply..."
-            />
-            <EditButtonGroup>
-              <EditButton onClick={() => setIsEditing(false)}>Cancel</EditButton>
-              <EditButton $primary onClick={handleSaveEdit}>Save</EditButton>
-            </EditButtonGroup>
-          </EditModal>
-        </EditOverlay>
-      )}
-    </>
+          </>
+        ) : (
+          <ActionButtons style={{ justifyContent: 'center' }}>
+            {onRegenerate && (
+              <IconButton
+                $variant="secondary"
+                onClick={onRegenerate}
+                disabled={isRegenerating}
+                title="Generate reply"
+                style={{ width: 'auto', padding: '0.5rem 1rem', gap: '0.5rem' }}
+              >
+                <i className="fa-solid fa-wand-magic-sparkles" />
+              </IconButton>
+            )}
+            <IconButton
+              $variant="danger"
+              onClick={onSkip}
+              disabled={isDeleting}
+              title="Skip comment"
+            >
+              <i className="fa-solid fa-xmark" />
+            </IconButton>
+          </ActionButtons>
+        )}
+      </ReplySection>
+    </CommentCard>
   );
 }
 
@@ -649,7 +598,7 @@ interface PostWithCommentsProps {
   data: PostWithCommentsType;
   maxReplies?: number;
   myProfilePicUrl?: string;
-  onPublishReply: (commentId: string, text: string, replyIndex: number) => void;
+  onPublishReply: (commentId: string, text: string, replyIndex: number) => Promise<void>;
   onSkipComment: (commentId: string) => void;
   onEditReply?: (commentId: string, newReply: string, replyIndex: number) => void;
   onRegenerateReply?: (commentId: string) => void;
@@ -690,13 +639,18 @@ export function PostWithCommentsDisplay({
 
     setIsPostingAll(true);
 
-    // Post each comment sequentially
+    // Post each comment sequentially and wait for each to complete
     for (const comment of commentsWithReplies) {
       const reply = comment.generated_replies?.[0];
       if (reply) {
-        onPublishReply(comment.id, reply[0], 0);
-        // Small delay between posts
-        await new Promise(resolve => setTimeout(resolve, 500));
+        try {
+          await onPublishReply(comment.id, reply[0], 0);
+        } catch (error) {
+          console.error('Failed to post reply:', error);
+          // Continue with remaining posts even if one fails
+        }
+        // Small delay between posts for rate limiting
+        await new Promise(resolve => setTimeout(resolve, 300));
       }
     }
 

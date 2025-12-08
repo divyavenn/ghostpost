@@ -145,7 +145,17 @@ async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
         return []
 
 
-async def purge_unedited_tweets(username: str) -> int:
+async def purge_unedited_tweets(username: str, only_seen: bool = False) -> int:
+    """Purge unedited tweets from cache.
+
+    Args:
+        username: The username whose cache to clean
+        only_seen: If True, only purge tweets that are BOTH unedited AND seen.
+                   If False, purge ALL unedited tweets (original behavior).
+
+    Returns:
+        Number of tweets removed
+    """
     from backend.twitter.logging import TweetAction, log_tweet_action
 
     tweets = await read_from_cache(username)
@@ -153,14 +163,20 @@ async def purge_unedited_tweets(username: str) -> int:
     if not tweets:
         return 0
 
-    # Separate tweets into kept (edited=True) and removed (edited=False or missing)
+    # Separate tweets into kept and removed
     kept_tweets = []
     removed_tweets = []
 
     for tweet in tweets:
+        is_edited = tweet.get("edited", False)
+        is_seen = tweet.get("seen", False)
+
         # Keep tweets that have been edited
-        if tweet.get("edited", False):
+        if is_edited:
             kept_tweets.append(tweet)
+        # If only_seen mode, only remove if BOTH unedited AND seen
+        elif only_seen and not is_seen:
+            kept_tweets.append(tweet)  # Keep unseen tweets
         else:
             removed_tweets.append(tweet)
 
@@ -180,6 +196,78 @@ async def purge_unedited_tweets(username: str) -> int:
                 metadata = {"reason": "unedited"}
                 if cache_id:
                     metadata["cache_id"] = cache_id
+                # Add original tweet info for intent filtering examples
+                original_thread = tweet.get("thread", [])
+                if original_thread:
+                    metadata["original_tweet_text"] = " | ".join(original_thread)
+                original_handle = tweet.get("handle", "")
+                if original_handle:
+                    metadata["original_handle"] = original_handle
+                log_tweet_action(username, TweetAction.DELETED, str(tweet_id), metadata=metadata)
+
+    return removed_count
+
+
+async def purge_empty_thread_tweets(username: str) -> int:
+    """Purge tweets that have no thread content from cache and seen_tweets.
+
+    These tweets cannot have replies generated for them, so they should be
+    removed to allow re-scraping with proper thread content.
+
+    Args:
+        username: The username whose cache to clean
+
+    Returns:
+        Number of tweets removed
+    """
+    from backend.twitter.logging import TweetAction, log_tweet_action
+    from backend.utlils.utils import remove_from_seen_tweets
+
+    tweets = await read_from_cache(username)
+
+    if not tweets:
+        return 0
+
+    # Separate tweets into kept and removed
+    kept_tweets = []
+    removed_tweets = []
+    removed_ids = []
+
+    for tweet in tweets:
+        thread = tweet.get("thread", [])
+        has_thread_content = thread and len(thread) > 0
+
+        if has_thread_content:
+            kept_tweets.append(tweet)
+        else:
+            removed_tweets.append(tweet)
+            tweet_id = tweet.get("id") or tweet.get("tweet_id")
+            if tweet_id:
+                removed_ids.append(str(tweet_id))
+
+    removed_count = len(removed_tweets)
+
+    # Write back if any were removed
+    if removed_count > 0:
+        path = get_user_tweet_cache(username)
+        atomic_file_update(path, kept_tweets, ".tmp", ensure_ascii=False)
+        notify(f"🧹 Purged {removed_count} tweet(s) with empty thread from cache")
+
+        # Also remove from seen_tweets so they can be re-scraped
+        if removed_ids:
+            remove_from_seen_tweets(username, removed_ids)
+
+        # Log deletion for each removed tweet
+        for tweet in removed_tweets:
+            tweet_id = tweet.get("id") or tweet.get("tweet_id")
+            cache_id = tweet.get("cache_id")
+            if tweet_id:
+                metadata = {"reason": "empty_thread"}
+                if cache_id:
+                    metadata["cache_id"] = cache_id
+                original_handle = tweet.get("handle", "")
+                if original_handle:
+                    metadata["original_handle"] = original_handle
                 log_tweet_action(username, TweetAction.DELETED, str(tweet_id), metadata=metadata)
 
     return removed_count
@@ -253,6 +341,13 @@ async def cleanup_old_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) ->
                 metadata = {"reason": "aged_out", "age_threshold_hours": hours}
                 if cache_id:
                     metadata["cache_id"] = cache_id
+                # Add original tweet info for intent filtering examples
+                original_thread = tweet.get("thread", [])
+                if original_thread:
+                    metadata["original_tweet_text"] = " | ".join(original_thread)
+                original_handle = tweet.get("handle", "")
+                if original_handle:
+                    metadata["original_handle"] = original_handle
                 log_tweet_action(username, TweetAction.DELETED, str(tweet_id), metadata=metadata)
 
     return removed_count
@@ -306,6 +401,14 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
             metadata["cache_id"] = cache_id
         if deleted_reply:
             metadata["deleted_reply"] = deleted_reply
+
+        # Add original tweet info for intent filtering examples
+        original_thread = tweet_to_delete.get("thread", [])
+        if original_thread:
+            metadata["original_tweet_text"] = " | ".join(original_thread)
+        original_handle = tweet_to_delete.get("handle", "")
+        if original_handle:
+            metadata["original_handle"] = original_handle
 
         log_tweet_action(username, TweetAction.DELETED, tweet_id, metadata=metadata if metadata else None)
     return True
@@ -481,4 +584,50 @@ async def cleanup_tweets_endpoint(username: str, hours: int = MAX_TWEET_AGE_HOUR
         "message": f"Cleanup completed for user {username}",
         "removed_count": removed_count,
         "age_threshold_hours": hours,
+    }
+
+
+class MarkSeenRequest(BaseModel):
+    tweet_ids: list[str]
+
+
+@router.post("/{username}/mark-seen")
+async def mark_tweets_seen_endpoint(username: str, payload: MarkSeenRequest) -> dict[str, Any]:
+    """Mark multiple tweets as seen (user scrolled past them in the UI)."""
+    tweets = await read_from_cache(username)
+
+    if not tweets:
+        return {"message": "No tweets in cache", "marked_count": 0}
+
+    # Build a map for quick lookup
+    tweet_map = {}
+    for t in tweets:
+        tid = t.get("id") or t.get("tweet_id")
+        if tid:
+            tweet_map[str(tid)] = t
+
+    marked_count = 0
+    for tweet_id in payload.tweet_ids:
+        if tweet_id in tweet_map and not tweet_map[tweet_id].get("seen", False):
+            tweet_map[tweet_id]["seen"] = True
+            marked_count += 1
+
+    if marked_count > 0:
+        path = get_user_tweet_cache(username)
+        atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+
+    return {"message": f"Marked {marked_count} tweets as seen", "marked_count": marked_count}
+
+
+@router.post("/{username}/purge-seen")
+async def purge_seen_tweets_endpoint(username: str) -> dict[str, Any]:
+    """Purge tweets that are both seen AND unedited.
+
+    This is the user-triggered cleanup - only removes tweets the user has
+    scrolled past and not interacted with.
+    """
+    removed_count = await purge_unedited_tweets(username, only_seen=True)
+    return {
+        "message": f"Purged {removed_count} seen and unedited tweets",
+        "removed_count": removed_count,
     }

@@ -36,6 +36,8 @@ class CheckPerformanceRequest(BaseModel):
 
 
 async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[str]) -> dict[str, TweetMetrics]:
+    from backend.twitter.rate_limiter import EndpointType, twitter_rate_limiter
+
     if not tweet_ids:
         return {}
 
@@ -51,40 +53,53 @@ async def fetch_tweet_metrics_from_twitter(access_token: str, tweet_ids: list[st
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    try:
-        response = requests.get(url, headers=headers, params=params, timeout=30)
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            # Wait for rate limiter (TWEET_LOOKUP endpoint: 300 req/15min)
+            await twitter_rate_limiter.wait_if_needed(EndpointType.TWEET_LOOKUP)
 
-        if response.status_code == 401:
-            raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            twitter_rate_limiter.update_last_request(EndpointType.TWEET_LOOKUP)
 
-        if response.status_code == 429:
-            raise HTTPException(status_code=429, detail="Twitter API rate limit exceeded. Please try again later.")
+            if response.status_code == 401:
+                raise HTTPException(status_code=401, detail="AUTHENTICATION_REQUIRED")
 
-        if response.status_code >= 400:
-            raise HTTPException(status_code=response.status_code, detail=f"Twitter API error: {response.text}")
+            if response.status_code == 429:
+                # Rate limited - wait and retry
+                reset_time = response.headers.get("x-rate-limit-reset")
+                if reset_time and attempt < max_retries:
+                    await twitter_rate_limiter.wait_for_reset(int(reset_time), EndpointType.TWEET_LOOKUP)
+                    continue
+                raise HTTPException(status_code=429, detail="Twitter API rate limit exceeded after retries.")
 
-        data = response.json()
+            if response.status_code >= 400:
+                raise HTTPException(status_code=response.status_code, detail=f"Twitter API error: {response.text}")
 
-        # Parse response
-        metrics_map = {}
+            data = response.json()
 
-        if "data" in data and isinstance(data["data"], list):
-            for tweet in data["data"]:
-                tweet_id = tweet.get("id")
-                public_metrics = tweet.get("public_metrics", {})
+            # Parse response
+            metrics_map = {}
 
-                if tweet_id:
-                    metrics_map[tweet_id] = TweetMetrics(id=tweet_id,
-                                                         likes=public_metrics.get("like_count", 0),
-                                                         retweets=public_metrics.get("retweet_count", 0),
-                                                         quotes=public_metrics.get("quote_count", 0),
-                                                         replies=public_metrics.get("reply_count", 0),
-                                                         impressions=public_metrics.get("impression_count", 0))
+            if "data" in data and isinstance(data["data"], list):
+                for tweet in data["data"]:
+                    tweet_id = tweet.get("id")
+                    public_metrics = tweet.get("public_metrics", {})
 
-        return metrics_map
+                    if tweet_id:
+                        metrics_map[tweet_id] = TweetMetrics(id=tweet_id,
+                                                             likes=public_metrics.get("like_count", 0),
+                                                             retweets=public_metrics.get("retweet_count", 0),
+                                                             quotes=public_metrics.get("quote_count", 0),
+                                                             replies=public_metrics.get("reply_count", 0),
+                                                             impressions=public_metrics.get("impression_count", 0))
 
-    except requests.RequestException as e:
-        raise HTTPException(status_code=503, detail=f"Failed to reach Twitter API: {str(e)}") from e
+            return metrics_map
+
+        except requests.RequestException as e:
+            raise HTTPException(status_code=503, detail=f"Failed to reach Twitter API: {str(e)}") from e
+
+    return {}
 
 
 @router.post("/{username}/check-performance")
@@ -121,7 +136,7 @@ async def check_tweet_performance(username: str, payload: CheckPerformanceReques
 
         if updated_tweet:
             updated_count += 1
-            updated_metrics.append({"id": tweet_id, "likes": metrics.likes, "retweets": metrics.retweets, "quotes": metrics.quotes, "replies": metrics.replies})
+            updated_metrics.append({"id": tweet_id, "likes": metrics.likes, "retweets": metrics.retweets, "quotes": metrics.quotes, "replies": metrics.replies, "impressions": metrics.impressions})
 
     notify(f"✅ Updated metrics for {updated_count}/{len(payload.tweet_ids)} tweets")
 

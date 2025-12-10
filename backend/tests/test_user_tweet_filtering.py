@@ -33,7 +33,7 @@ class TestUserTweetFiltering:
         1. All captured tweets have the user's handle
         2. Tweets from users the target replied to are NOT captured
         """
-        from backend.scraping.twitter.api import scrape_user_recent_tweets
+        from backend.browser_automation.twitter.api import scrape_user_recent_tweets
 
         # Scrape recent tweets
         tweets = await scrape_user_recent_tweets(browser_context, test_handle, max_tweets=20)
@@ -61,7 +61,7 @@ class TestUserTweetFiltering:
         When a tweet is a reply, it should have in_reply_to_status_id pointing
         to the parent tweet (which is NOT captured, just referenced).
         """
-        from backend.scraping.twitter.api import scrape_user_recent_tweets
+        from backend.browser_automation.twitter.api import scrape_user_recent_tweets
 
         tweets = await scrape_user_recent_tweets(browser_context, test_handle, max_tweets=20)
 
@@ -90,7 +90,7 @@ class TestUserTweetFiltering:
 
         We should ONLY capture the user's tweets, not the parent tweets.
         """
-        from backend.scraping.twitter.api import scrape_user_recent_tweets
+        from backend.browser_automation.twitter.api import scrape_user_recent_tweets
 
         tweets = await scrape_user_recent_tweets(browser_context, test_handle, max_tweets=30)
 
@@ -141,7 +141,7 @@ class TestSpecificReplyContext:
         Verify that divya_venn's reply is captured with correct in_reply_to_status_id
         pointing to the @animalologist tweet.
         """
-        from backend.scraping.twitter.api import scrape_user_recent_tweets
+        from backend.browser_automation.twitter.api import scrape_user_recent_tweets
 
         tweets = await scrape_user_recent_tweets(browser_context, test_handle, max_tweets=50)
 
@@ -165,7 +165,7 @@ class TestSpecificReplyContext:
         """
         Verify that the original @animalologist tweet is NOT captured as divya_venn's tweet.
         """
-        from backend.scraping.twitter.api import scrape_user_recent_tweets
+        from backend.browser_automation.twitter.api import scrape_user_recent_tweets
 
         tweets = await scrape_user_recent_tweets(browser_context, test_handle, max_tweets=50)
 
@@ -183,7 +183,7 @@ class TestSpecificReplyContext:
         Verify that when processing a reply, we can fetch the original tweet's context
         (text, author handle, profile pic) using get_thread.
         """
-        from backend.scraping.twitter.api import get_thread
+        from backend.browser_automation.twitter.api import get_thread
 
         original_url = f"https://x.com/i/status/{self.ORIGINAL_TWEET_ID}"
 

@@ -131,6 +131,21 @@ def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str
         image_urls.extend(comment_images)
         text_prompt += f"\n[Comment includes {len(comment_images)} image(s)]\n"
 
+    # Add quoted tweet from comment if present
+    quoted_tweet = comment.get("quoted_tweet")
+    if quoted_tweet:
+        qt_text = quoted_tweet.get("text", "")
+        qt_handle = quoted_tweet.get("author_handle", "unknown")
+        qt_name = quoted_tweet.get("author_name", qt_handle)
+        text_prompt += f"\n[Comment quotes @{qt_handle} ({qt_name})]:\n\"{qt_text}\"\n"
+
+        # Add quoted tweet images to context
+        qt_media = quoted_tweet.get("media", [])
+        qt_images = [item.get("url") for item in qt_media if item.get("type") == "photo"]
+        if qt_images:
+            image_urls.extend(qt_images)
+            text_prompt += f"[Quoted tweet includes {len(qt_images)} image(s)]\n"
+
     # Add other replies context if available
     other_replies = comment.get("other_replies", [])
     if other_replies:

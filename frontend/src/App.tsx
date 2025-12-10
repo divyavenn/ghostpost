@@ -1,8 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
-import { type TweetData } from './components/TweetDisplay';
-import { type PostedTweetData } from './components/posted_tweet';
+import { type ReplyData } from './components/ReplyDisplay';
+import { type PostedData } from './components/PostedDisplay';
 import { api, type PostWithComments } from './api/client';
 import { GeneratedTab } from './pages/GeneratedTab';
 import { PostedTab } from './pages/PostedTab';
@@ -47,12 +47,12 @@ function App() {
   const [newPostsCount, setNewPostsCount] = useRecoilState(newPostsCountState);
 
   // Local state (component-specific)
-  const [tweets, setTweets] = useState<TweetData[]>([]);
+  const [tweets, setTweets] = useState<ReplyData[]>([]);
   const [currentTweetIndex, setCurrentTweetIndex] = useState(0);
   const [deletingTweetIds, setDeletingTweetIds] = useState<Set<string>>(new Set());
   const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
   const [regeneratingTweetIds, setRegeneratingTweetIds] = useState<Set<string>>(new Set());
-  const [postedTweets, setPostedTweets] = useState<PostedTweetData[]>([]);
+  const [postedTweets, setPostedTweets] = useState<PostedData[]>([]);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
@@ -72,14 +72,50 @@ function App() {
     remaining: number;
     onAction: () => void;
   } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const postedTweetsOffsetRef = useRef(0);
   // Track tweet IDs that have been marked as seen in this session (to debounce API calls)
   const seenTweetIdsRef = useRef<Set<string>>(new Set());
   // Track tweet count before scrape to calculate new posts count
   const tweetCountBeforeScrapeRef = useRef<number>(0);
+  // Track if engagement monitoring is already in progress (debounce post-triggered refreshes)
+  const engagementMonitoringInProgressRef = useRef(false);
 
   // Derived state: isLoading can be determined from loadingPhase
   const isLoading = loadingPhase !== null;
+
+  // Helper to translate job status to loading overlay format
+  const translateJobStatusToLoadingStatus = (jobStatus: { status: string; phase: string; details?: string | null }) => {
+    if (jobStatus.status === 'idle' || jobStatus.status === 'complete') {
+      return { type: 'complete', value: '' };
+    }
+    if (jobStatus.status === 'error') {
+      return { type: 'error', value: '' };
+    }
+    // Running - translate phase using new simplified format
+    const phase = jobStatus.phase || '';
+    const details = jobStatus.details || '';
+
+    if (phase === 'scraping') {
+      // details contains @handle
+      return { type: 'account', value: details.replace('@', '') };
+    }
+    if (phase === 'searching') {
+      // details contains the query summary
+      return { type: 'query', value: details, summary: details };
+    }
+    if (phase === 'scanning') {
+      // Could be home timeline, warm tweets, or active tweets
+      return { type: 'home_timeline', value: details };
+    }
+    if (phase === 'generating') {
+      return { type: 'generating', value: details };
+    }
+    if (phase === 'discovering') {
+      return { type: 'discovering', value: details };
+    }
+    return { type: 'scraping', value: '' };
+  };
 
   // Load posted tweets from backend
   const loadPostedTweets = useCallback(async (user: string, reset: boolean = true) => {
@@ -94,7 +130,12 @@ function App() {
       if (reset) {
         setPostedTweets(data.tweets);
       } else {
-        setPostedTweets(prev => [...prev, ...data.tweets]);
+        // Deduplicate when appending to avoid race condition with new tweets shifting positions
+        setPostedTweets(prev => {
+          const existingIds = new Set(prev.map(t => t.id));
+          const newTweets = data.tweets.filter(t => !existingIds.has(t.id));
+          return [...prev, ...newTweets];
+        });
       }
 
       // Update offset for next load
@@ -259,6 +300,19 @@ function App() {
 
       // Reload user info to update post count
       await loadUserInfo(username);
+
+      // Trigger engagement monitoring in background (debounced - skip if already in progress)
+      if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
+        engagementMonitoringInProgressRef.current = true;
+        api.startEngagementMonitoring(username)
+          .catch(err => console.error('Background engagement monitoring failed:', err))
+          .finally(() => {
+            // Reset after a delay to allow the job to complete before allowing another trigger
+            setTimeout(() => {
+              engagementMonitoringInProgressRef.current = false;
+            }, 30000); // 30 second debounce
+          });
+      }
     } catch (error) {
       console.error('Failed to post comment reply:', error);
       setPostingCommentIds(prev => {
@@ -431,9 +485,11 @@ function App() {
     const pollInterval = setInterval(async () => {
       if (!username) return;
       try {
-        // Poll scraping status
-        const status = await api.getScrapingStatus(username);
-        console.log('[Polling] Status:', status, '| Current phase:', loadingPhase);
+        // Poll job status (unified status endpoint)
+        const jobsStatus = await api.getJobsStatus(username);
+        const job = jobsStatus.jobs.find_and_reply_to_new_posts;
+        const status = translateJobStatusToLoadingStatus(job);
+        console.log('[Polling] Job status:', job.status, job.phase, '| Translated:', status.type);
 
         // Update status based on current scraping phase
         if (status.type === 'account') {
@@ -564,6 +620,58 @@ function App() {
     await handleScrapeInternal();
   };
 
+  // Handle refresh (engagement monitoring - check for new comments on existing posts)
+  const handleRefresh = async () => {
+    if (!username || isRefreshing) return;
+
+    setIsRefreshing(true);
+
+    try {
+      // Start engagement monitoring in the background
+      await api.startEngagementMonitoring(username);
+
+      // Poll job status until jobs are complete
+      const pollInterval = setInterval(async () => {
+        try {
+          // Check job status
+          const jobsStatus = await api.getJobsStatus(username);
+          const activityJob = jobsStatus.jobs.find_user_activity;
+          const engagementJob = jobsStatus.jobs.find_and_reply_to_engagement;
+
+          console.log(`[Refresh] Activity: ${activityJob.status} (${activityJob.percentage}%), Engagement: ${engagementJob.status} (${engagementJob.percentage}%)`);
+
+          // Check if both relevant jobs are complete (or idle, meaning they finished)
+          const activityDone = activityJob.status === 'complete' || activityJob.status === 'idle';
+          const engagementDone = engagementJob.status === 'complete' || engagementJob.status === 'idle';
+
+          if (activityDone && engagementDone) {
+            clearInterval(pollInterval);
+
+            // Refresh data after jobs complete
+            const postedData = await api.getPostedTweets(username, 50, 0);
+            setPostedTweets(postedData.tweets || []);
+            postedTweetsOffsetRef.current = postedData.tweets?.length || 0;
+            setHasMorePostedTweets((postedData.tweets?.length || 0) >= 50);
+
+            const commentsData = await api.getCommentsGroupedByPost(username, 'pending');
+            setPostsWithComments(commentsData.posts_with_comments || []);
+            setPendingCommentsCount(commentsData.total_comments || 0);
+
+            setIsRefreshing(false);
+            console.log('[Refresh] Complete - jobs finished');
+          }
+        } catch (error) {
+          console.error('Polling error during refresh:', error);
+          // Continue polling on error
+        }
+      }, 2000); // Poll every 2 seconds
+
+    } catch (error) {
+      console.error('Failed to start engagement monitoring:', error);
+      setIsRefreshing(false);
+    }
+  };
+
   const handleLogout = () => {
     setUsername(null);
     setTweets([]);
@@ -646,6 +754,19 @@ function App() {
 
         // Reload user info to update lifetime_posts counter
         await loadUserInfo(username);
+
+        // Trigger engagement monitoring in background (debounced - skip if already in progress)
+        if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
+          engagementMonitoringInProgressRef.current = true;
+          api.startEngagementMonitoring(username)
+            .catch(err => console.error('Background engagement monitoring failed:', err))
+            .finally(() => {
+              // Reset after a delay to allow the job to complete before allowing another trigger
+              setTimeout(() => {
+                engagementMonitoringInProgressRef.current = false;
+              }, 30000); // 30 second debounce
+            });
+        }
 
         // Remove from local state
         const updatedTweets = tweets.filter(t => t.id !== tweetId);
@@ -902,10 +1023,11 @@ function App() {
   return (
     <Background className="flex flex-col p-20">
       <Header
+        username={username || ''}
         onSettingsClick={() => setIsSettingsOpen(true)}
         onScrapeClick={handleScrape}
+        onRefreshClick={handleRefresh}
         hasInvalidAccounts={hasInvalidAccounts}
-        isScraping={loadingPhase === 'scraping' || loadingPhase === 'generating'}
       />
 
       {userInfo && (
@@ -920,11 +1042,13 @@ function App() {
               setLoadingPhase('generating');
               setLoadingStatusData(null);
 
-              // Start polling for status immediately
+              // Start polling for status immediately (using unified job status)
               const pollInterval = setInterval(async () => {
                 if (!username) return;
                 try {
-                  const status = await api.getScrapingStatus(username);
+                  const jobsStatus = await api.getJobsStatus(username);
+                  const job = jobsStatus.jobs.find_and_reply_to_new_posts;
+                  const status = translateJobStatusToLoadingStatus(job);
 
                   if (status.type === 'generating') {
                     setLoadingStatusData({ type: 'generating', value: status.value });

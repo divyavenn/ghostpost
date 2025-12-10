@@ -16,7 +16,7 @@ async def test_fetch_user_tweets_returns_tweets(browser_context, test_user):
 
     Tests fetching tweets from divya_venn account.
     """
-    from backend.scraping.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_user_tweets
 
     result = await fetch_user_tweets(
         browser_context,
@@ -47,7 +47,7 @@ async def test_fetch_user_tweets_structure(browser_context, test_user):
     """
     Test that fetch_user_tweets returns tweets with complete structure.
     """
-    from backend.scraping.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_user_tweets
 
     result = await fetch_user_tweets(
         browser_context,
@@ -80,7 +80,7 @@ async def test_fetch_search_returns_tweets(browser_context, test_user):
     """
     Test that fetch_search returns tweets matching a query.
     """
-    from backend.scraping.twitter.api import fetch_search
+    from backend.browser_automation.twitter.api import fetch_search
 
     # Search for tweets about AI/ML (common topic with many results)
     result = await fetch_search(
@@ -105,7 +105,7 @@ async def test_fetch_search_excludes_retweets_and_replies(browser_context, test_
     """
     Test that fetch_search automatically excludes retweets and replies.
     """
-    from backend.scraping.twitter.api import fetch_search
+    from backend.browser_automation.twitter.api import fetch_search
 
     result = await fetch_search(
         browser_context,
@@ -128,7 +128,7 @@ async def test_shallow_scrape_thread_returns_metrics(browser_context):
 
     Tests URL: https://x.com/divya_venn/status/1996077319887487008
     """
-    from backend.scraping.twitter.api import shallow_scrape_thread
+    from backend.browser_automation.twitter.api import shallow_scrape_thread
 
     test_url = "https://x.com/divya_venn/status/1996077319887487008"
     test_id = "1996077319887487008"
@@ -161,7 +161,7 @@ async def test_scrape_user_recent_tweets_returns_list(browser_context):
     """
     Test that scrape_user_recent_tweets returns a list of user tweets.
     """
-    from backend.scraping.twitter.api import scrape_user_recent_tweets
+    from backend.browser_automation.twitter.api import scrape_user_recent_tweets
 
     result = await scrape_user_recent_tweets(
         browser_context,
@@ -189,7 +189,7 @@ async def test_scrape_user_recent_tweets_respects_max_limit(browser_context):
     """
     Test that scrape_user_recent_tweets respects the max_tweets limit.
     """
-    from backend.scraping.twitter.api import scrape_user_recent_tweets
+    from backend.browser_automation.twitter.api import scrape_user_recent_tweets
 
     max_limit = 5
     result = await scrape_user_recent_tweets(
@@ -208,7 +208,7 @@ async def test_collect_from_page_user_timeline(browser_context, test_user):
     """
     Test that collect_from_page works for user timeline URLs.
     """
-    from backend.scraping.twitter.api import collect_from_page
+    from backend.browser_automation.twitter.api import collect_from_page
 
     result = await collect_from_page(
         browser_context,
@@ -231,7 +231,7 @@ async def test_collect_from_page_search(browser_context, test_user):
     """
     Test that collect_from_page works for search URLs.
     """
-    from backend.scraping.twitter.api import collect_from_page
+    from backend.browser_automation.twitter.api import collect_from_page
 
     result = await collect_from_page(
         browser_context,
@@ -251,7 +251,7 @@ async def test_engagement_score_calculation(browser_context, test_user):
 
     Score formula: likes + 2*retweets + 3*quotes + replies
     """
-    from backend.scraping.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_user_tweets
 
     result = await fetch_user_tweets(
         browser_context,
@@ -277,7 +277,7 @@ async def test_api_returns_empty_on_invalid_handle(browser_context, test_user):
     """
     Test that fetch_user_tweets returns empty dict for invalid handle.
     """
-    from backend.scraping.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_user_tweets
 
     result = await fetch_user_tweets(
         browser_context,
@@ -296,7 +296,7 @@ async def test_media_extraction_in_user_tweets(browser_context, test_user):
     """
     Test that media (images) are correctly extracted from user tweets.
     """
-    from backend.scraping.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_user_tweets
 
     result = await fetch_user_tweets(
         browser_context,
@@ -320,7 +320,7 @@ async def test_tweet_url_format(browser_context, test_user):
     """
     Test that tweet URLs are correctly formatted.
     """
-    from backend.scraping.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_user_tweets
 
     result = await fetch_user_tweets(
         browser_context,

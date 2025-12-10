@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { TweetDisplay, type TweetData } from '../components/TweetDisplay';
+import { AnimatePresence } from 'framer-motion';
+import { ReplyDisplay, type ReplyData } from '../components/ReplyDisplay';
+import { AnimatedListItem } from '../components/AnimatedListItem';
 
 interface GeneratedTabProps {
-  tweets: TweetData[];
+  tweets: ReplyData[];
   userProfilePicUrl: string;
   numberOfGenerations: number;
   deletingTweetIds: Set<string>;
@@ -96,41 +98,57 @@ export function GeneratedTab({
     <>
       {/* Left Column */}
       <div className="flex-1 flex flex-col gap-6">
-        {tweets.filter((_, index) => index % 2 === 0).map((tweet) => (
-          <div key={tweet.id} data-tweet-id={tweet.id}>
-            <TweetDisplay
-              tweet={tweet}
-              myProfilePicUrl={userProfilePicUrl}
-              maxReplies={numberOfGenerations}
-              onPublish={(text, replyIndex) => onPublish(tweet.id, text, replyIndex)}
-              onSkip={() => onDelete(tweet.id)}
-              onEditReply={(newReply, replyIndex) => onEditReply(tweet.id, newReply, replyIndex)}
-              onRegenerate={() => onRegenerate(tweet.id)}
-              isDeleting={deletingTweetIds.has(tweet.id)}
-              isPosting={postingTweetIds.has(tweet.id)}
-              isRegenerating={regeneratingTweetIds.has(tweet.id)}
-            />
-          </div>
-        ))}
+        <AnimatePresence mode="popLayout">
+          {tweets.filter((_, index) => index % 2 === 0).map((tweet) => (
+            <AnimatedListItem
+              key={tweet.id}
+              itemKey={tweet.id}
+              variant={postingTweetIds.has(tweet.id) ? "slide-right" : "scale"}
+            >
+              <div data-tweet-id={tweet.id}>
+                <ReplyDisplay
+                  tweet={tweet}
+                  myProfilePicUrl={userProfilePicUrl}
+                  maxReplies={numberOfGenerations}
+                  onPublish={(text, replyIndex) => onPublish(tweet.id, text, replyIndex)}
+                  onSkip={() => onDelete(tweet.id)}
+                  onEditReply={(newReply, replyIndex) => onEditReply(tweet.id, newReply, replyIndex)}
+                  onRegenerate={() => onRegenerate(tweet.id)}
+                  isDeleting={deletingTweetIds.has(tweet.id)}
+                  isPosting={postingTweetIds.has(tweet.id)}
+                  isRegenerating={regeneratingTweetIds.has(tweet.id)}
+                />
+              </div>
+            </AnimatedListItem>
+          ))}
+        </AnimatePresence>
       </div>
       {/* Right Column */}
       <div className="flex-1 flex flex-col gap-6">
-        {tweets.filter((_, index) => index % 2 === 1).map((tweet) => (
-          <div key={tweet.id} data-tweet-id={tweet.id}>
-            <TweetDisplay
-              tweet={tweet}
-              myProfilePicUrl={userProfilePicUrl}
-              maxReplies={numberOfGenerations}
-              onPublish={(text, replyIndex) => onPublish(tweet.id, text, replyIndex)}
-              onSkip={() => onDelete(tweet.id)}
-              onEditReply={(newReply, replyIndex) => onEditReply(tweet.id, newReply, replyIndex)}
-              onRegenerate={() => onRegenerate(tweet.id)}
-              isDeleting={deletingTweetIds.has(tweet.id)}
-              isPosting={postingTweetIds.has(tweet.id)}
-              isRegenerating={regeneratingTweetIds.has(tweet.id)}
-            />
-          </div>
-        ))}
+        <AnimatePresence mode="popLayout">
+          {tweets.filter((_, index) => index % 2 === 1).map((tweet) => (
+            <AnimatedListItem
+              key={tweet.id}
+              itemKey={tweet.id}
+              variant={postingTweetIds.has(tweet.id) ? "slide-right" : "scale"}
+            >
+              <div data-tweet-id={tweet.id}>
+                <ReplyDisplay
+                  tweet={tweet}
+                  myProfilePicUrl={userProfilePicUrl}
+                  maxReplies={numberOfGenerations}
+                  onPublish={(text, replyIndex) => onPublish(tweet.id, text, replyIndex)}
+                  onSkip={() => onDelete(tweet.id)}
+                  onEditReply={(newReply, replyIndex) => onEditReply(tweet.id, newReply, replyIndex)}
+                  onRegenerate={() => onRegenerate(tweet.id)}
+                  isDeleting={deletingTweetIds.has(tweet.id)}
+                  isPosting={postingTweetIds.has(tweet.id)}
+                  isRegenerating={regeneratingTweetIds.has(tweet.id)}
+                />
+              </div>
+            </AnimatedListItem>
+          ))}
+        </AnimatePresence>
       </div>
     </>
   );

@@ -11,7 +11,7 @@ export interface OtherReply {
   likes: number;
 }
 
-export interface TweetData {
+export interface ReplyData {
   id: string;
   cache_id?: string;
   posted_tweet_id?: string;
@@ -53,8 +53,8 @@ export interface TweetData {
   };
 }
 
-interface TweetDisplayProps {
-  tweet: TweetData;
+interface ReplyDisplayProps {
+  tweet: ReplyData;
   myProfilePicUrl: string;
   maxReplies?: number;
   onPublish: (text: string, replyIndex: number) => void;
@@ -702,7 +702,7 @@ const RegeneratingContent = styled.div`
   padding-top: 0.5rem;
 `;
 
-export function TweetDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: TweetDisplayProps) {
+export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: ReplyDisplayProps) {
   const allReplies = tweet.generated_replies
     ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
     : (tweet.reply ? [tweet.reply] : []);

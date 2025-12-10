@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import xLottie from '../assets/x.lottie';
+import { QuotedTweetDisplay, TweetMediaGrid, type QuotedTweet } from './TweetMediaComponents';
 
 export type PostType = 'original' | 'reply' | 'comment_reply';
 export type TweetSource = 'app_posted' | 'external';
 
-export interface PostedTweetData {
+export interface PostedData {
   id: string;  // Posted tweet ID
   text: string;  // Your response text
   likes: number;
@@ -30,10 +31,12 @@ export interface PostedTweetData {
   // Source and type classification
   source?: TweetSource;  // 'app_posted' (ghostpost) or 'external' (discovered)
   post_type?: PostType;  // 'original', 'reply', or 'comment_reply'
+  // Quoted tweet (if this tweet quotes another)
+  quoted_tweet?: QuotedTweet | null;
 }
 
-interface PostedTweetDisplayProps {
-  tweet: PostedTweetData;
+interface PostedDisplayProps {
+  tweet: PostedData;
   myProfilePicUrl: string;
   myHandle: string;
   myUsername: string;
@@ -42,11 +45,11 @@ interface PostedTweetDisplayProps {
   isDeleting?: boolean;
 }
 
-export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsername, onDelete, onViewTweet, isDeleting = false }: PostedTweetDisplayProps) {
+export function PostedDisplay({ tweet, myProfilePicUrl, myHandle, myUsername, onDelete, onViewTweet, isDeleting = false }: PostedDisplayProps) {
   const [isDeleteHovered, setIsDeleteHovered] = useState(false);
 
   // Source label - ghostpost (app_posted) vs discovered externally
-  const sourceLabel = tweet.source === 'external' ? 'discovered' : 'ghostpost';
+  const sourceLabel = tweet.source === 'external' ? '' : 'from ghostpost';
   const isGhostpost = tweet.source !== 'external';
 
   // Original tweet author info - only used if this is a reply
@@ -206,29 +209,14 @@ export function PostedTweetDisplay({ tweet, myProfilePicUrl, myHandle, myUsernam
             </div>
             <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{tweet.text}</p>
 
+            {/* Quoted Tweet */}
+            {tweet.quoted_tweet && (
+              <QuotedTweetDisplay quotedTweet={tweet.quoted_tweet} />
+            )}
+
             {/* Media Grid */}
             {tweet.media && tweet.media.length > 0 && (
-              <div
-                className={`mt-3 rounded-2xl overflow-hidden border border-neutral-800 ${
-                  tweet.media.length >= 2 ? 'grid grid-cols-2 gap-0.5' : 'max-w-2xl'
-                }`}
-              >
-                {tweet.media.map((media, mediaIndex) => (
-                  <img
-                    key={mediaIndex}
-                    src={media.url}
-                    alt={media.alt_text || `Image ${mediaIndex + 1}`}
-                    className={`w-full ${
-                      tweet.media?.length === 1
-                        ? 'object-contain max-h-[600px]'
-                        : tweet.media?.length === 3 && mediaIndex === 0
-                          ? 'row-span-2 h-full object-cover'
-                          : 'h-48 object-cover'
-                    }`}
-                    loading="lazy"
-                  />
-                ))}
-              </div>
+              <TweetMediaGrid media={tweet.media.map(m => ({ type: m.type, url: m.url, alt_text: m.alt_text }))} />
             )}
           </div>
         </div>

@@ -249,6 +249,7 @@ class RateLimiter:
 # Twitter API buckets
 TWITTER_SEARCH = "twitter_search"
 TWITTER_TWEET_LOOKUP = "twitter_tweet_lookup"
+TWITTER_HOME_TIMELINE = "twitter_home_timeline"
 TWITTER_USER_LOOKUP = "twitter_user_lookup"
 TWITTER_POST = "twitter_post"
 
@@ -273,6 +274,7 @@ def create_rate_limiter() -> RateLimiter:
     # Twitter API - Throttled endpoints (per 15-minute window)
     limiter.add_bucket(TWITTER_SEARCH, RateLimitConfig(60, name="Twitter Search"))           # 60 req/15min = 15s interval
     limiter.add_bucket(TWITTER_TWEET_LOOKUP, RateLimitConfig(15, name="Twitter Tweet"))      # 15 req/15min = 60s interval
+    limiter.add_bucket(TWITTER_HOME_TIMELINE, RateLimitConfig(15, name="Twitter Home"))      # 15 req/15min = 60s interval
 
     # Twitter API - Daily quota endpoints (100 req / 24 hours)
     # Use reasonable intervals to avoid spam, not quota-based delays
@@ -316,6 +318,7 @@ class EndpointType:
     SEARCH = TWITTER_SEARCH
     TWEET_LOOKUP = TWITTER_TWEET_LOOKUP
     USER_LOOKUP = TWITTER_USER_LOOKUP
+    HOME_TIMELINE = TWITTER_HOME_TIMELINE
 
 
 # =============================================================================

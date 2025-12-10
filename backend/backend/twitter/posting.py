@@ -174,12 +174,26 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
             error("Failed to add to posted_tweets cache", status_code=500, exception_text=str(e), function_name="post", username=username)
             notify(f"⚠️ Failed to add to posted_tweets cache: {e}")
 
-        # Increment lifetime_posts
+        # Increment lifetime_posts and add to intent filter examples
         try:
             user_info = read_user_info(username)
             if user_info:
                 current_posts = user_info.get("lifetime_posts", 0)
                 user_info["lifetime_posts"] = current_posts + 1
+
+                # Add to intent_filter_examples if we have < 5 examples and this is a reply to a scraped post
+                if response_to_thread and responding_to_handle:
+                    examples = user_info.get("intent_filter_examples", [])
+                    if len(examples) < 5:
+                        # Add the original tweet as an example
+                        example = {
+                            "author": responding_to_handle,
+                            "text": " | ".join(response_to_thread)[:500]  # Truncate long threads
+                        }
+                        examples.append(example)
+                        user_info["intent_filter_examples"] = examples
+                        notify(f"📚 Added intent filter example ({len(examples)}/5) for @{username}")
+
                 write_user_info(user_info)
                 notify(f"📝 Post count incremented for @{username} (total: {user_info['lifetime_posts']})")
         except Exception as e:
@@ -198,7 +212,7 @@ async def post_tweet(username: str, payload: Tweet) -> dict:
 
 @router.post("/reply")
 async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
-    from backend.data.twitter.edit_cache import delete_tweet_from_cache
+    from backend.data.twitter.edit_cache import delete_tweet
 
     data = {"text": payload.text, "reply": {"in_reply_to_tweet_id": payload.tweet_id}}
     try:
@@ -208,7 +222,7 @@ async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
         if e.status_code == status.HTTP_410_GONE and e.detail == "TWEET_DELETED":
             # Remove from tweet cache if we have a cache_id
             if payload.cache_id:
-                delete_tweet_from_cache(username, payload.cache_id)
+                await delete_tweet(username, payload.cache_id)
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
                 detail={
@@ -223,7 +237,7 @@ async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
 
 @router.post("/quote")
 async def post_quote_tweet(username: str, payload: ReplyTweet) -> dict:
-    from backend.data.twitter.edit_cache import delete_tweet_from_cache
+    from backend.data.twitter.edit_cache import delete_tweet
 
     data = {"text": payload.text, "quote_tweet_id": payload.tweet_id}
     try:
@@ -232,7 +246,7 @@ async def post_quote_tweet(username: str, payload: ReplyTweet) -> dict:
         # Handle deleted tweet - remove from cache and return informative response
         if e.status_code == status.HTTP_410_GONE and e.detail == "TWEET_DELETED":
             if payload.cache_id:
-                delete_tweet_from_cache(username, payload.cache_id)
+                await delete_tweet(username, payload.cache_id)
             raise HTTPException(
                 status_code=status.HTTP_410_GONE,
                 detail={

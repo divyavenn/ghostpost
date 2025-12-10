@@ -1,4 +1,4 @@
-import { PostWithCommentsDisplay } from '../components/PostWithComments';
+import { CommentDisplay } from '../components/CommentDisplay';
 import type { PostWithComments } from '../api/client';
 
 interface CommentsTabProps {
@@ -47,7 +47,7 @@ export function CommentsTab({
   return (
     <div className="w-full flex flex-col gap-6">
       {postsWithComments.map((postData) => (
-        <PostWithCommentsDisplay
+        <CommentDisplay
           key={postData.post.id}
           data={postData}
           maxReplies={numberOfGenerations}

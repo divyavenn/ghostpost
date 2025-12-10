@@ -15,7 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter
 
-from backend.scraping.twitter.timeline import read_tweets
+from backend.browser_automation.twitter.timeline import read_tweets
 from backend.twitter.generate_replies import generate_replies
 from backend.twitter.logging import log_scrape_action
 from backend.utlils.utils import BROWSER_STATE_FILE, cookie_still_valid, log_background_task, notify

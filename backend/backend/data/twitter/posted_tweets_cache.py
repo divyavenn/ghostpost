@@ -167,9 +167,18 @@ def write_posted_tweets_cache(username: str, tweets_map: dict[str, Any]) -> None
     cache_path = get_posted_tweets_path(username)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Ensure _order exists
+    # Ensure _order exists and is deduplicated
     if "_order" not in tweets_map:
         tweets_map["_order"] = [k for k in tweets_map.keys() if k != "_order"]
+    else:
+        # Deduplicate _order while preserving order, and ensure all IDs exist in map
+        seen = set()
+        valid_order = []
+        for oid in tweets_map["_order"]:
+            if oid not in seen and oid in tweets_map:
+                seen.add(oid)
+                valid_order.append(oid)
+        tweets_map["_order"] = valid_order
 
     # Validate each tweet before writing (skip _order)
     for tweet_id, tweet in list(tweets_map.items()):

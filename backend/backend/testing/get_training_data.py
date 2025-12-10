@@ -10,11 +10,11 @@ except ModuleNotFoundError:
 ensure_standalone_imports(globals())
 
 try:
-    from ..scraping.twitter.timeline import gather_trending
+    from ..browser_automation.twitter.timeline import gather_trending
     from ..user.user import read_user_settings
     from ..utlils.utils import error, notify
 except ImportError:
-    from backend.scraping.twitter.timeline import gather_trending
+    from backend.browser_automation.twitter.timeline import gather_trending
     from backend.user.user import read_user_settings
     from backend.utlils.utils import error, notify
 

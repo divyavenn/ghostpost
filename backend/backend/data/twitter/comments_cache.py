@@ -172,7 +172,8 @@ def add_comment(
     thread: list[str] | None = None,
     other_replies: list[dict] | None = None,
     media: list[dict] | None = None,
-    quoted_tweet: dict | None = None
+    quoted_tweet: dict | None = None,
+    engagement_type: str = "reply"  # "reply" or "quote_tweet"
 ) -> dict[str, Any]:
     """
     Add a new comment to the cache.
@@ -225,7 +226,8 @@ def add_comment(
         "thread": thread or [],
         "other_replies": other_replies or [],
         "media": media or [],
-        "quoted_tweet": quoted_tweet
+        "quoted_tweet": quoted_tweet,
+        "engagement_type": engagement_type  # "reply" or "quote_tweet"
     }
 
     # Add to map
@@ -581,3 +583,106 @@ def process_scraped_replies(
         notify(f"💬 Found {len(new_comment_ids)} new comments for @{username}")
 
     return new_comment_ids
+
+
+def process_scraped_quote_tweets(
+    username: str,
+    scraped_quote_tweets: list[dict[str, Any]],
+    user_handle: str,
+    quoted_tweet_id: str
+) -> list[str]:
+    """
+    Process scraped quote tweets and add new ones to cache as engagement opportunities.
+
+    Quote tweets are stored similarly to comments but with engagement_type="quote_tweet".
+    The quoted_tweet_id links back to the user's original tweet.
+
+    Args:
+        username: User's Twitter handle (for cache)
+        scraped_quote_tweets: List of quote tweet dicts from scraping
+        user_handle: User's Twitter handle (for filtering out user's own tweets)
+        quoted_tweet_id: The ID of the user's tweet that was quoted
+
+    Returns:
+        List of new quote tweet IDs that were added
+    """
+    from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+
+    posted_tweets = read_posted_tweets_cache(username)
+    comments_map = read_comments_cache(username)
+    user_tweet_ids = set(k for k in posted_tweets.keys() if k != "_order")
+
+    # Verify the quoted tweet belongs to the user
+    if quoted_tweet_id not in user_tweet_ids:
+        return []
+
+    # Get IDs of comments the user has already replied to
+    user_replied_ids = get_user_replied_comment_ids(username)
+
+    new_qt_ids = []
+
+    for qt in scraped_quote_tweets:
+        qt_id = qt.get("id")
+        qt_handle = qt.get("handle", "")
+
+        if not qt_id:
+            continue
+
+        # Skip user's own quote tweets
+        if qt_handle.lower() == user_handle.lower():
+            continue
+
+        # Skip if user has already replied to this QT
+        if qt_id in user_replied_ids:
+            continue
+
+        # Skip if already in comments (just update metrics)
+        if qt_id in comments_map:
+            update_comment_metrics(
+                username, qt_id,
+                likes=qt.get("likes", 0),
+                retweets=qt.get("retweets", 0),
+                quotes=qt.get("quotes", 0),
+                replies=qt.get("replies", 0),
+                impressions=qt.get("impressions", 0)
+            )
+            continue
+
+        # For QTs, the "parent" is the quoted tweet, not in_reply_to
+        # parent_chain is just [quoted_tweet_id] since QT directly references user's tweet
+        parent_chain = [quoted_tweet_id]
+
+        # Add as a comment with engagement_type marker
+        add_comment(
+            username=username,
+            comment_id=qt_id,
+            text=qt.get("text", ""),
+            handle=qt_handle,
+            commenter_username=qt.get("username", qt_handle),
+            in_reply_to_id=quoted_tweet_id,  # QT is in response to this tweet
+            parent_chain=parent_chain,
+            created_at=qt.get("created_at", datetime.now(UTC).isoformat()),
+            url=qt.get("url", f"https://x.com/{qt_handle}/status/{qt_id}"),
+            author_profile_pic_url=qt.get("author_profile_pic_url", ""),
+            followers=qt.get("followers", 0),
+            likes=qt.get("likes", 0),
+            retweets=qt.get("retweets", 0),
+            quotes=qt.get("quotes", 0),
+            replies=qt.get("replies", 0),
+            impressions=qt.get("impressions", 0),
+            thread=None,  # QTs don't have thread context in same way
+            other_replies=None,
+            media=qt.get("media"),
+            quoted_tweet=None,  # The QT itself is the quote, not quoting another
+            engagement_type="quote_tweet"  # Mark this as a quote tweet
+        )
+
+        new_qt_ids.append(qt_id)
+
+        # Refresh comments_map for subsequent lookups
+        comments_map = read_comments_cache(username)
+
+    if new_qt_ids:
+        notify(f"💬 Found {len(new_qt_ids)} new quote tweets for @{username}")
+
+    return new_qt_ids

@@ -13,7 +13,7 @@ except ImportError:
     from datetime import timezone
     UTC = timezone.utc
 
-from backend.scraping.twitter.scraping_utils import (
+from backend.browser_automation.twitter.scraping_utils import (
     extract_likes,
     extract_metrics,
     extract_text,

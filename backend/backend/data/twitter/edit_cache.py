@@ -290,7 +290,8 @@ async def cleanup_old_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) ->
     try:  # Python 3.11+
         from datetime import UTC  # type: ignore[attr-defined]
     except ImportError:  # Python <3.11
-        UTC = UTC
+        from datetime import timezone
+        UTC = timezone.utc
 
     def parse_twitter_date(s: str) -> datetime:
         """Parse Twitter's date format: 'Sat Oct 11 15:07:12 +0000 2025'"""

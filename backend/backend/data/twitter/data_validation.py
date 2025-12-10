@@ -13,6 +13,8 @@ class QuotedTweet(BaseModel):
     text: str
     author_handle: str
     author_name: str
+    author_profile_pic_url: str = ""
+    url: str = ""
     media: list[MediaItem] = []
 
 
@@ -43,6 +45,7 @@ class User(BaseModel):
     max_tweets_retrieve: int = 30
     number_of_generations: int = 2
     intent: str = ""  # User's intent for filtering and query generation
+    intent_filter_examples: list[dict] = []  # Up to 5 examples of posts user replied to, cleared when intent changes
 
     # metrics
     lifetime_new_follows: int = 0
@@ -154,6 +157,9 @@ class PostedTweet(BaseModel):
 
     # Reply tracking for activity detection
     last_scraped_reply_ids: list[str] = Field(default_factory=list)
+
+    # Quoted tweet (if this tweet quotes another)
+    quoted_tweet: "QuotedTweet | None" = None
 
     # Post classification and engagement
     post_type: PostType = "reply"  # original, reply, or comment_reply

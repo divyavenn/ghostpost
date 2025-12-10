@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 from backend.config import OBELISK_KEY
 from backend.data.twitter.data_validation import ScrapedTweet
 
-from ..scraping.twitter.timeline import USERNAME
+from ..browser_automation.twitter.timeline import USERNAME
 from ..utlils.utils import error, notify, read_user_info
 
 try:
@@ -17,11 +17,7 @@ try:
 except ModuleNotFoundError:  # Running from inside backend/
     from backend.utlils.resolve_imports import ensure_standalone_imports
 
-# Import scraping status tracker from read_tweets for status updates
-try:
-    from backend.scraping.twitter.timeline import scraping_status, update_status_to_reflect_finished_scraping
-except ImportError:
-    from backend.scraping.twitter.timeline import scraping_status, update_status_to_reflect_finished_scraping
+# NOTE: Status tracking is now handled by job_status in twitter_jobs.py
 
 ensure_standalone_imports(globals())
 
@@ -407,8 +403,6 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     if not OBELISK_KEY:
         error("❌ OBELISK_KEY environment variable is not set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
 
-    scraping_status[username] = {"type": "generating", "value": "Starting...", "phase": "generating"}
-
     # Purge tweets with empty thread content from cache and seen_tweets
     # so they can be re-scraped with proper thread data
     purged_count = await purge_empty_thread_tweets(username)
@@ -424,8 +418,6 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
     if not tweets:
         notify("⚠️ No tweets found in cache")
-        # Update status to complete and then idle since there's nothing to process
-        await update_status_to_reflect_finished_scraping(username)
         return []
 
     notify(f"📝 Processing {len(tweets)} tweets for user {username} using models: {models}...")
@@ -451,11 +443,6 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
 
         # Generate replies using the reusable function
         try:
-            # Update status BEFORE generation to show current progress
-            processed_count = count + skipped + errors + 1
-            if username:
-                scraping_status[username] = {"type": "generating", "value": f"{processed_count}/{total_to_process}", "phase": "generating"}
-
             replies = await generate_replies_for_tweet(tweet, models, needed_generations, delay_seconds, batch=True, username=username)
 
             # Store all replies as array of tuples (reply_text, model_name)
@@ -489,9 +476,6 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     if errors > 0:
         error(f"{errors} errors batch-generating replies for tweets", status_code=500, function_name="generate_replies", username=username, critical=True)
 
-    # Mark generation as complete and reset to idle after 5 seconds
-    await update_status_to_reflect_finished_scraping(username)
-
     notify(f"✅ Done! Generated: {count}, Skipped: {skipped}, Errors: {errors}")
 
     return tweets
@@ -518,9 +502,6 @@ class GenerateRepliesRequest(BaseModel):
 async def generate_replies_endpoint(username: str, payload: GenerateRepliesRequest | None = None) -> dict:
     """Generate AI replies for tweets in the cache."""
     try:
-        # Set status to generating immediately when endpoint is called
-        scraping_status[username] = {"type": "generating", "value": "Starting...", "phase": "generating"}
-
         if payload is None:
             tweets = await generate_replies(username=username)
         else:

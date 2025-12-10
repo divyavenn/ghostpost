@@ -1,181 +1,380 @@
 import { useState } from 'react';
-import styled from 'styled-components';
-import { type CommentData, type ThreadContext } from '../api/client';
+import styled, { css } from 'styled-components';
+import { type PostWithComments as CommentGroupData, type CommentWithContext } from '../api/client';
+import { AnimatedText } from './WordStyles';
+import { QuotedTweetDisplay, TweetMediaGrid } from './TweetMediaComponents';
 
-const Card = styled.div<{ $isDeleting?: boolean; $isPosting?: boolean }>`
-  background: rgba(30, 30, 30, 0.8);
-  border-radius: 16px;
-  padding: 20px;
+const Container = styled.div<{ $expanded: boolean }>`
+  width: 100%;
+  padding-left: 2%;
+  padding-right: 2%;
+  padding-bottom: 2%;
+  border-radius: 1rem;
+  background-color: black;
+  color: white;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  max-height: ${({ $expanded }) => $expanded ? '90vh' : '75vh'};
+  transition: max-height 0.3s ease;
+`;
+
+const PostSection = styled.div<{ $expanded: boolean }>`
+  padding: 1rem 1.25rem 1.5rem 1.25rem;
+  flex: ${({ $expanded }) => $expanded ? '0 0 auto' : '0 0 auto'};
+  max-height: ${({ $expanded }) => $expanded ? 'none' : '14rem'};
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: ${({ $expanded }) => $expanded ? 'visible' : 'hidden'};
   transition: all 0.3s ease;
-  opacity: ${props => (props.$isDeleting || props.$isPosting) ? 0.5 : 1};
-  transform: ${props => props.$isDeleting ? 'scale(0.95)' : props.$isPosting ? 'scale(1.02)' : 'scale(1)'};
 `;
 
-const ThreadContextSection = styled.div`
-  margin-bottom: 16px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-`;
-
-const ContextItem = styled.div<{ $isUser: boolean }>`
-  padding: 12px;
-  margin-bottom: 8px;
-  background: ${props => props.$isUser ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255, 255, 255, 0.05)'};
-  border-radius: 8px;
-  border-left: 3px solid ${props => props.$isUser ? '#38bdf8' : 'transparent'};
-`;
-
-const ContextAuthor = styled.div<{ $isUser: boolean }>`
+const PostHeader = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-  font-size: 0.75rem;
-  color: ${props => props.$isUser ? '#38bdf8' : '#a3a3a3'};
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  flex-shrink: 0;
 `;
 
-const ContextText = styled.p`
+const PostLabel = styled.div`
   font-size: 0.875rem;
-  color: #e5e5e5;
-  line-height: 1.4;
-  margin: 0;
+  color: #737373;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 `;
 
-const CommentSection = styled.div`
+const CommentsCount = styled.span`
+  background: rgba(14, 165, 233, 0.15);
+  color: #38bdf8;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+`;
+
+const ExpandButton = styled.button`
+  background: transparent;
+  border: none;
+  color: #737373;
+  font-size: 0.75rem;
+  cursor: pointer;
   display: flex;
-  gap: 12px;
-  margin-bottom: 16px;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.25rem;
+  transition: all 0.2s;
+
+  &:hover {
+    color: white;
+    background: #262626;
+  }
+
+  i {
+    font-size: 0.625rem;
+  }
+`;
+
+const PostContentWrapper = styled.div`
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+`;
+
+const PostContent = styled.div`
+  display: flex;
+  gap: 0.75rem;
 `;
 
 const Avatar = styled.img`
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  object-fit: cover;
+  height: 2.5rem;
+  width: 2.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
 `;
 
-const CommentContent = styled.div`
+const SmallAvatar = styled.img`
+  height: 2.25rem;
+  width: 2.25rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+`;
+
+const PostBody = styled.div`
   flex: 1;
+  min-width: 0;
+`;
+
+const PostText = styled.p`
+  white-space: pre-wrap;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: white;
+  margin: 0 0 0.5rem 0;
+`;
+
+const PostFade = styled.div`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3rem;
+  background: linear-gradient(to top, black, transparent);
+  pointer-events: none;
+`;
+
+const PostStats = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  font-size: 0.8rem;
+  color: #737373;
+  flex-shrink: 0;
+  margin-top: 0.5rem;
+
+  i {
+    font-size: 0.9rem;
+    color: #737373;
+  }
+
+  span {
+    font-weight: 500;
+  }
+`;
+
+const StatItem = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+`;
+
+const PostLink = styled.a`
+  color: #38bdf8;
+  font-size: 0.75rem;
+  text-decoration: none;
+  margin-left: auto;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const Divider = styled.div`
+  border-top: 1px solid #262626;
+  margin: 0 1.25rem;
+  flex-shrink: 0;
+`;
+
+const CommentsScrollArea = styled.div`
+  flex: 2;
+  overflow-y: auto;
+  min-height: 0;
+  padding: 1rem 1.25rem;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #404040;
+    border-radius: 3px;
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background: #525252;
+  }
+`;
+
+const CommentsGrid = styled.div`
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+
+  @media (max-width: 1200px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+  }
+`;
+
+const CommentCard = styled.div<{ $isDeleting?: boolean; $isPosting?: boolean }>`
+  background: #0a0a0a;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  transition: all 0.3s ease;
+  display: flex;
+  flex-direction: column;
+
+  ${({ $isDeleting }) => $isDeleting && css`
+    transform: scale(0.95);
+    opacity: 0;
+  `}
+
+  ${({ $isPosting }) => $isPosting && css`
+    transition-duration: 0.4s;
+    transform: translateX(150%);
+    opacity: 0;
+  `}
 `;
 
 const CommentHeader = styled.div`
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+`;
+
+const AuthorInfo = styled.div`
+  flex: 1;
+  min-width: 0;
 `;
 
 const Username = styled.span`
+  font-size: 0.875rem;
   font-weight: 600;
-  color: #fff;
+  color: white;
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 `;
 
 const Handle = styled.span`
   color: #737373;
+  font-size: 0.75rem;
+`;
+
+const CommentLink = styled.a`
+  color: #525252;
   font-size: 0.875rem;
+  transition: color 0.2s;
+  flex-shrink: 0;
+
+  &:hover {
+    color: #38bdf8;
+  }
 `;
 
 const CommentText = styled.p`
-  color: #e5e5e5;
+  white-space: pre-wrap;
+  font-size: 0.9375rem;
   line-height: 1.5;
-  margin: 0 0 8px 0;
+  color: #e5e5e5;
+  margin: 0 0 0.5rem 0;
+  flex: 1;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 `;
 
-const Stats = styled.div`
+const CommentStats = styled.div`
   display: flex;
-  gap: 16px;
+  align-items: center;
+  gap: 1rem;
   font-size: 0.75rem;
   color: #737373;
+  margin-bottom: 0.75rem;
+
+  i {
+    font-size: 0.875rem;
+  }
 `;
 
-const RepliesSection = styled.div`
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+const ReplySection = styled.div`
+  border-top: 1px solid #262626;
+  padding-top: 0.75rem;
+  margin-top: auto;
 `;
 
-const ReplyOption = styled.div<{ $selected: boolean }>`
-  padding: 12px;
-  margin-bottom: 8px;
-  background: ${props => props.$selected ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255, 255, 255, 0.05)'};
-  border: 1px solid ${props => props.$selected ? '#38bdf8' : 'transparent'};
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.2s ease;
+const ReplyPreview = styled.div`
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+`;
+
+const ReplyTextPreview = styled.p`
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #a3a3a3;
+  margin: 0;
+  flex: 1;
+  white-space: pre-wrap;
+  cursor: text;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  transition: background-color 0.2s;
 
   &:hover {
-    background: rgba(56, 189, 248, 0.15);
+    background: #171717;
   }
 `;
 
-const ReplyText = styled.p`
-  color: #e5e5e5;
-  line-height: 1.5;
-  margin: 0 0 4px 0;
-`;
-
-const ModelTag = styled.span`
-  font-size: 0.65rem;
-  color: #737373;
-  background: rgba(255, 255, 255, 0.1);
-  padding: 2px 6px;
-  border-radius: 4px;
-`;
-
-const EditTextarea = styled.textarea`
-  width: 100%;
-  min-height: 80px;
-  padding: 12px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 8px;
-  color: #fff;
+const InlineEditTextarea = styled.textarea`
+  flex: 1;
+  min-height: 4rem;
+  resize: none;
+  background: #171717;
   font-size: 0.875rem;
-  resize: vertical;
-  margin-bottom: 8px;
-
-  &:focus {
-    outline: none;
-    border-color: #38bdf8;
-  }
+  line-height: 1.4;
+  color: white;
+  outline: none;
+  border: 1px solid #0ea5e9;
+  border-radius: 0.375rem;
+  padding: 0.5rem;
+  font-family: inherit;
 `;
 
-const ButtonGroup = styled.div`
+const ActionButtons = styled.div`
   display: flex;
-  gap: 8px;
-  margin-top: 12px;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+  justify-content: flex-end;
 `;
 
-const Button = styled.button<{ $variant?: 'primary' | 'secondary' | 'danger' }>`
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
+const IconButton = styled.button<{ $variant?: 'primary' | 'danger' | 'secondary' }>`
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s;
+  font-size: 0.875rem;
 
-  ${props => {
-    switch (props.$variant) {
+  ${({ $variant }) => {
+    switch ($variant) {
       case 'primary':
-        return `
-          background: #38bdf8;
-          color: #000;
-          border: none;
-          &:hover { background: #7dd3fc; }
+        return css`
+          background: #0ea5e9;
+          color: white;
+          &:hover { background: #0284c7; }
         `;
       case 'danger':
-        return `
+        return css`
           background: transparent;
-          color: #ef4444;
-          border: 1px solid #ef4444;
-          &:hover { background: rgba(239, 68, 68, 0.1); }
+          color: #737373;
+          &:hover { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
         `;
       default:
-        return `
-          background: rgba(255, 255, 255, 0.1);
-          color: #fff;
-          border: none;
-          &:hover { background: rgba(255, 255, 255, 0.2); }
+        return css`
+          background: transparent;
+          color: #737373;
+          &:hover { color: white; background: #404040; }
         `;
     }
   }}
@@ -186,17 +385,56 @@ const Button = styled.button<{ $variant?: 'primary' | 'secondary' | 'danger' }>`
   }
 `;
 
-const EmptyReplies = styled.div`
-  text-align: center;
-  padding: 24px;
-  color: #737373;
+const BottomBar = styled.div`
+  padding: 1rem 1.25rem;
+  border-top: 1px solid #262626;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
 `;
 
-interface CommentDisplayProps {
-  comment: CommentData;
-  threadContext: ThreadContext[];
-  myProfilePicUrl: string;
-  maxReplies?: number;
+const PostAllButton = styled.button`
+  border-radius: 9999px;
+  background-color: #0ea5e9;
+  padding: 0.625rem 2rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: white;
+  transition: background-color 0.2s;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  &:hover {
+    background-color: #0284c7;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
+const ReplyAvatar = styled.img`
+  height: 1.5rem;
+  width: 1.5rem;
+  border-radius: 9999px;
+  flex-shrink: 0;
+`;
+
+const RegeneratingState = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+`;
+
+interface CommentItemProps {
+  comment: CommentWithContext;
+  maxReplies: number;
+  myProfilePicUrl?: string;
   onPublish: (text: string, replyIndex: number) => void;
   onSkip: () => void;
   onEditReply?: (newReply: string, replyIndex: number) => void;
@@ -206,11 +444,10 @@ interface CommentDisplayProps {
   isRegenerating?: boolean;
 }
 
-export function CommentDisplay({
+function CommentItem({
   comment,
-  threadContext,
-  myProfilePicUrl: _myProfilePicUrl,
-  maxReplies = 2,
+  maxReplies,
+  myProfilePicUrl,
   onPublish,
   onSkip,
   onEditReply,
@@ -218,143 +455,323 @@ export function CommentDisplay({
   isDeleting = false,
   isPosting = false,
   isRegenerating = false,
-}: CommentDisplayProps) {
-  const [selectedReplyIndex, setSelectedReplyIndex] = useState(0);
+}: CommentItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
   const generatedReplies = comment.generated_replies || [];
   const displayedReplies = generatedReplies.slice(0, maxReplies);
+  const selectedReply = displayedReplies[0];
 
-  const handleEdit = () => {
-    if (displayedReplies.length > 0) {
-      setEditText(displayedReplies[selectedReplyIndex][0]);
+  const formatMetric = (value: number): string => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+    return String(value);
+  };
+
+  const handleStartEdit = () => {
+    if (selectedReply) {
+      setEditText(selectedReply[0]);
       setIsEditing(true);
     }
   };
 
-  const handleSaveEdit = () => {
-    if (onEditReply && editText.trim()) {
-      onEditReply(editText, selectedReplyIndex);
+  const handleBlurSave = () => {
+    // Auto-save on blur if text changed
+    if (onEditReply && editText.trim() && selectedReply && editText !== selectedReply[0]) {
+      onEditReply(editText, 0);
     }
     setIsEditing(false);
   };
 
-  const handleCancelEdit = () => {
-    setIsEditing(false);
-    setEditText('');
-  };
-
   const handlePublish = () => {
-    const replyText = displayedReplies[selectedReplyIndex]?.[0];
-    if (replyText) {
-      onPublish(replyText, selectedReplyIndex);
+    if (selectedReply) {
+      onPublish(selectedReply[0], 0);
     }
   };
 
   return (
-    <Card $isDeleting={isDeleting} $isPosting={isPosting}>
-      {/* Thread Context */}
-      {threadContext.length > 1 && (
-        <ThreadContextSection>
-          <div style={{ fontSize: '0.75rem', color: '#737373', marginBottom: '8px' }}>
-            Thread Context
-          </div>
-          {threadContext.slice(0, -1).map((ctx, idx) => (
-            <ContextItem key={ctx.id || idx} $isUser={ctx.is_user}>
-              <ContextAuthor $isUser={ctx.is_user}>
-                {ctx.is_user ? 'You' : `@${ctx.handle}`}
-                {ctx.deleted && ' (deleted)'}
-              </ContextAuthor>
-              <ContextText>{ctx.text}</ContextText>
-            </ContextItem>
-          ))}
-        </ThreadContextSection>
-      )}
-
-      {/* Comment */}
-      <CommentSection>
-        <Avatar
-          src={comment.author_profile_pic_url || '/default-avatar.png'}
+    <CommentCard $isDeleting={isDeleting} $isPosting={isPosting}>
+      <CommentHeader>
+        <SmallAvatar
+          src={comment.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
           alt={comment.username}
           onError={(e) => {
-            (e.target as HTMLImageElement).src = '/default-avatar.png';
+            (e.target as HTMLImageElement).src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
           }}
         />
-        <CommentContent>
-          <CommentHeader>
-            <Username>{comment.username}</Username>
-            <Handle>@{comment.handle}</Handle>
-          </CommentHeader>
-          <CommentText>{comment.text}</CommentText>
-          <Stats>
-            <span>{comment.likes} likes</span>
-            <span>{comment.replies} replies</span>
-            {comment.followers > 0 && <span>{comment.followers.toLocaleString()} followers</span>}
-          </Stats>
-        </CommentContent>
-      </CommentSection>
-
-      {/* Generated Replies */}
-      <RepliesSection>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-          <span style={{ fontSize: '0.875rem', color: '#a3a3a3' }}>
-            Your Reply {displayedReplies.length > 1 && `(${selectedReplyIndex + 1}/${displayedReplies.length})`}
-          </span>
-          {onRegenerate && (
-            <Button onClick={onRegenerate} disabled={isRegenerating}>
-              {isRegenerating ? 'Regenerating...' : 'Regenerate'}
-            </Button>
-          )}
-        </div>
-
-        {displayedReplies.length === 0 ? (
-          <EmptyReplies>
-            No replies generated yet.
-            {onRegenerate && (
-              <Button onClick={onRegenerate} style={{ marginTop: '8px' }}>
-                Generate Replies
-              </Button>
-            )}
-          </EmptyReplies>
-        ) : isEditing ? (
-          <div>
-            <EditTextarea
-              value={editText}
-              onChange={(e) => setEditText(e.target.value)}
-              autoFocus
-            />
-            <ButtonGroup>
-              <Button $variant="primary" onClick={handleSaveEdit}>Save</Button>
-              <Button onClick={handleCancelEdit}>Cancel</Button>
-            </ButtonGroup>
-          </div>
-        ) : (
-          <>
-            {displayedReplies.map(([text, model], idx) => (
-              <ReplyOption
-                key={idx}
-                $selected={selectedReplyIndex === idx}
-                onClick={() => setSelectedReplyIndex(idx)}
-              >
-                <ReplyText>{text}</ReplyText>
-                <ModelTag>{model}</ModelTag>
-              </ReplyOption>
-            ))}
-
-            <ButtonGroup>
-              <Button $variant="primary" onClick={handlePublish} disabled={isPosting}>
-                {isPosting ? 'Posting...' : 'Post Reply'}
-              </Button>
-              <Button onClick={handleEdit}>Edit</Button>
-              <Button $variant="danger" onClick={onSkip} disabled={isDeleting}>
-                Skip
-              </Button>
-            </ButtonGroup>
-          </>
+        <AuthorInfo>
+          <Username>{comment.username}</Username>
+          <Handle>@{comment.handle}</Handle>
+        </AuthorInfo>
+        {comment.url && (
+          <CommentLink href={comment.url} target="_blank" rel="noopener noreferrer" title="View on X">
+            <i className="fa-solid fa-arrow-up-right-from-square" />
+          </CommentLink>
         )}
-      </RepliesSection>
-    </Card>
+      </CommentHeader>
+
+      <CommentText>{comment.text}</CommentText>
+
+      {/* Display media if present */}
+      {comment.media && comment.media.length > 0 && (
+        <TweetMediaGrid media={comment.media} compact />
+      )}
+
+      {/* Display quoted tweet if present */}
+      {comment.quoted_tweet && (
+        <QuotedTweetDisplay quotedTweet={comment.quoted_tweet} compact />
+      )}
+
+      <CommentStats>
+        <StatItem>
+          <i className="fa-regular fa-heart" aria-hidden="true" />
+          <span>{formatMetric(comment.likes)}</span>
+        </StatItem>
+        <StatItem>
+          <i className="fa-regular fa-comment" aria-hidden="true" />
+          <span>{formatMetric(comment.replies)}</span>
+        </StatItem>
+      </CommentStats>
+
+      <ReplySection>
+        {isRegenerating ? (
+          <RegeneratingState>
+            {myProfilePicUrl && <ReplyAvatar src={myProfilePicUrl} alt="You" />}
+            <AnimatedText text="Generating reply" className="text-sm" />
+          </RegeneratingState>
+        ) : selectedReply ? (
+          <>
+            <ReplyPreview>
+              {myProfilePicUrl && <ReplyAvatar src={myProfilePicUrl} alt="You" />}
+              {isEditing ? (
+                <InlineEditTextarea
+                  value={editText}
+                  onChange={(e) => setEditText(e.target.value)}
+                  onBlur={handleBlurSave}
+                  autoFocus
+                  placeholder="Edit your reply..."
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setIsEditing(false);
+                      setEditText('');
+                    }
+                  }}
+                />
+              ) : (
+                <ReplyTextPreview onClick={handleStartEdit}>
+                  {selectedReply[0]}
+                </ReplyTextPreview>
+              )}
+            </ReplyPreview>
+            <ActionButtons>
+              {onRegenerate && (
+                <IconButton
+                  $variant="secondary"
+                  onClick={onRegenerate}
+                  disabled={isRegenerating}
+                  title="Regenerate reply"
+                >
+                  <i className="fa-solid fa-rotate-right" />
+                </IconButton>
+              )}
+              <IconButton
+                $variant="danger"
+                onClick={onSkip}
+                disabled={isDeleting}
+                title="Skip comment"
+              >
+                <i className="fa-solid fa-xmark" />
+              </IconButton>
+              <IconButton
+                $variant="primary"
+                onClick={handlePublish}
+                disabled={isPosting}
+                title="Post reply"
+              >
+                <i className="fa-solid fa-paper-plane" />
+              </IconButton>
+            </ActionButtons>
+          </>
+        ) : (
+          <ActionButtons style={{ justifyContent: 'center' }}>
+            {onRegenerate && (
+              <IconButton
+                $variant="secondary"
+                onClick={onRegenerate}
+                disabled={isRegenerating}
+                title="Generate reply"
+                style={{ width: 'auto', padding: '0.5rem 1rem', gap: '0.5rem' }}
+              >
+                <i className="fa-solid fa-wand-magic-sparkles" />
+              </IconButton>
+            )}
+            <IconButton
+              $variant="danger"
+              onClick={onSkip}
+              disabled={isDeleting}
+              title="Skip comment"
+            >
+              <i className="fa-solid fa-xmark" />
+            </IconButton>
+          </ActionButtons>
+        )}
+      </ReplySection>
+    </CommentCard>
+  );
+}
+
+interface CommentDisplayProps {
+  data: CommentGroupData;
+  maxReplies?: number;
+  myProfilePicUrl?: string;
+  onPublishReply: (commentId: string, text: string, replyIndex: number) => Promise<void>;
+  onSkipComment: (commentId: string) => void;
+  onEditReply?: (commentId: string, newReply: string, replyIndex: number) => void;
+  onRegenerateReply?: (commentId: string) => void;
+  postingCommentIds: Set<string>;
+  skippingCommentIds: Set<string>;
+  regeneratingCommentIds: Set<string>;
+}
+
+export function CommentDisplay({
+  data,
+  maxReplies = 2,
+  myProfilePicUrl,
+  onPublishReply,
+  onSkipComment,
+  onEditReply,
+  onRegenerateReply,
+  postingCommentIds,
+  skippingCommentIds,
+  regeneratingCommentIds,
+}: CommentDisplayProps) {
+  const { post, comments } = data;
+  const [isPostingAll, setIsPostingAll] = useState(false);
+  const [isPostExpanded, setIsPostExpanded] = useState(false);
+
+  const formatMetric = (value: number): string => {
+    if (value >= 1000000) return `${(value / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (value >= 1000) return `${(value / 1000).toFixed(1).replace(/\.0$/, '')}K`;
+    return String(value);
+  };
+
+  // Get comments that have generated replies ready to post
+  const commentsWithReplies = comments.filter(c =>
+    c.generated_replies && c.generated_replies.length > 0
+  );
+
+  const handlePostAll = async () => {
+    if (commentsWithReplies.length === 0) return;
+
+    setIsPostingAll(true);
+
+    // Post each comment sequentially and wait for each to complete
+    for (const comment of commentsWithReplies) {
+      const reply = comment.generated_replies?.[0];
+      if (reply) {
+        try {
+          await onPublishReply(comment.id, reply[0], 0);
+        } catch (error) {
+          console.error('Failed to post reply:', error);
+          // Continue with remaining posts even if one fails
+        }
+        // Small delay between posts for rate limiting
+        await new Promise(resolve => setTimeout(resolve, 300));
+      }
+    }
+
+    setIsPostingAll(false);
+  };
+
+  return (
+    <Container $expanded={isPostExpanded}>
+      <PostSection $expanded={isPostExpanded}>
+        <PostHeader>
+          <PostLabel>
+            Your Post
+            <CommentsCount>{comments.length} comment{comments.length !== 1 ? 's' : ''}</CommentsCount>
+          </PostLabel>
+          <ExpandButton onClick={() => setIsPostExpanded(!isPostExpanded)}>
+            <i className={`fa-solid fa-chevron-${isPostExpanded ? 'up' : 'down'}`} />
+            {isPostExpanded ? 'Less' : 'More'}
+          </ExpandButton>
+        </PostHeader>
+        <PostContentWrapper>
+          <PostContent>
+            {myProfilePicUrl && (
+              <Avatar
+                src={myProfilePicUrl}
+                alt="Your post"
+              />
+            )}
+            <PostBody>
+              <PostText>{post.text}</PostText>
+            </PostBody>
+          </PostContent>
+          {!isPostExpanded && <PostFade />}
+        </PostContentWrapper>
+        <PostStats>
+          <StatItem>
+            <i className="fa-regular fa-comment" aria-hidden="true" />
+            <span>{formatMetric(post.replies)}</span>
+          </StatItem>
+          <StatItem>
+            <i className="fa-solid fa-retweet" aria-hidden="true" />
+            <span>{formatMetric(post.retweets)}</span>
+          </StatItem>
+          <StatItem>
+            <i className="fa-regular fa-heart" aria-hidden="true" />
+            <span>{formatMetric(post.likes)}</span>
+          </StatItem>
+          {post.impressions > 0 && (
+            <StatItem>
+              <i className="fa-regular fa-eye" aria-hidden="true" />
+              <span>{formatMetric(post.impressions)}</span>
+            </StatItem>
+          )}
+          {post.url && (
+            <PostLink href={post.url} target="_blank" rel="noopener noreferrer">
+              View on X →
+            </PostLink>
+          )}
+        </PostStats>
+      </PostSection>
+
+      <Divider />
+
+      <CommentsScrollArea>
+        <CommentsGrid>
+          {comments.map((comment) => (
+            <CommentItem
+              key={comment.id}
+              comment={comment}
+              maxReplies={maxReplies}
+              myProfilePicUrl={myProfilePicUrl}
+              onPublish={(text, replyIndex) => onPublishReply(comment.id, text, replyIndex)}
+              onSkip={() => onSkipComment(comment.id)}
+              onEditReply={onEditReply ? (newReply, replyIndex) => onEditReply(comment.id, newReply, replyIndex) : undefined}
+              onRegenerate={onRegenerateReply ? () => onRegenerateReply(comment.id) : undefined}
+              isDeleting={skippingCommentIds.has(comment.id)}
+              isPosting={postingCommentIds.has(comment.id)}
+              isRegenerating={regeneratingCommentIds.has(comment.id)}
+            />
+          ))}
+        </CommentsGrid>
+      </CommentsScrollArea>
+
+      {commentsWithReplies.length > 1 && (
+        <BottomBar>
+          <PostAllButton
+            onClick={handlePostAll}
+            disabled={isPostingAll || commentsWithReplies.length === 0}
+          >
+            <i className="fa-solid fa-paper-plane" />
+            Post All ({commentsWithReplies.length})
+          </PostAllButton>
+        </BottomBar>
+      )}
+    </Container>
   );
 }
 

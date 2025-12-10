@@ -1,7 +1,24 @@
-import { type TweetData } from '../components/TweetDisplay';
-import { type PostedTweetData } from '../components/posted_tweet';
+import { type ReplyData } from '../components/ReplyDisplay';
+import { type PostedData } from '../components/PostedDisplay';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://x.ghostposter.app/api';
+
+// Media item type
+export interface MediaItem {
+  type: string;  // "photo", "video", "animated_gif"
+  url: string;
+  alt_text?: string;
+}
+
+// Quoted tweet type
+export interface QuotedTweet {
+  text: string;
+  author_handle: string;
+  author_name: string;
+  author_profile_pic_url?: string;
+  url?: string;
+  media?: MediaItem[];
+}
 
 // Comment data type
 export interface CommentData {
@@ -30,6 +47,8 @@ export interface CommentData {
     author_name: string;
     likes: number;
   }>;
+  media?: MediaItem[];
+  quoted_tweet?: QuotedTweet | null;
 }
 
 export interface ThreadContext {
@@ -164,6 +183,33 @@ export interface UserInfo {
   posts_left?: number;
 }
 
+// Job status types
+export interface JobStatus {
+  status: 'idle' | 'running' | 'complete' | 'error';
+  phase: string;
+  percentage: number;
+  details?: string | null;  // Human-readable details (e.g., "@handle", "keyword", "your feed")
+  progress?: { current: number; total: number };
+  triggered_by?: string | null;
+  error?: string | null;
+  results?: Record<string, unknown>;
+  started_at?: string | null;
+}
+
+export interface AllJobsStatus {
+  jobs: {
+    find_and_reply_to_new_posts: JobStatus;
+    find_user_activity: JobStatus;
+    find_and_reply_to_engagement: JobStatus;
+  };
+  overall: {
+    status: 'idle' | 'running' | 'complete' | 'error';
+    running_jobs: string[];
+    completed_jobs: string[];
+    error_jobs: string[];
+  };
+}
+
 export interface ValidationDelayConfig {
   delay_seconds: number;
   delay_ms: number;
@@ -242,7 +288,7 @@ export const api = {
   },
 
   // Tweet cache endpoints
-  getTweetsCache: async (username: string): Promise<TweetData[]> => {
+  getTweetsCache: async (username: string): Promise<ReplyData[]> => {
     const response = await fetch(`${API_BASE_URL}/tweets/${username}`);
     if (!response.ok) throw new Error('Failed to fetch tweets');
     return response.json();
@@ -328,11 +374,7 @@ export const api = {
     }
   },
 
-  getScrapingStatus: async (username: string): Promise<{ type: string; value: string; phase: string; summary?: string }> => {
-    const response = await fetch(`${API_BASE_URL}/read/${encodeURIComponent(username)}/status`);
-    if (!response.ok) throw new Error('Failed to get scraping status');
-    return response.json();
-  },
+  // NOTE: getScrapingStatus removed - use getJobsStatus instead for unified status tracking
 
   generateReplies: async (username: string, payload?: {
     delay_seconds?: number;
@@ -490,7 +532,7 @@ export const api = {
   },
 
   // Posted tweets endpoints
-  getPostedTweets: async (username: string, limit: number = 50, offset: number = 0): Promise<{ username: string; total: number; count: number; limit: number; offset: number; tweets: PostedTweetData[] }> => {
+  getPostedTweets: async (username: string, limit: number = 50, offset: number = 0): Promise<{ username: string; total: number; count: number; limit: number; offset: number; tweets: PostedData[] }> => {
     const response = await fetch(`${API_BASE_URL}/performance/${encodeURIComponent(username)}/posted-tweets?limit=${limit}&offset=${offset}`);
     if (!response.ok) throw new Error('Failed to get posted tweets');
     return response.json();
@@ -689,6 +731,19 @@ export const api = {
       method: 'POST',
     });
     if (!response.ok) throw new Error('Failed to purge seen tweets');
+    return response.json();
+  },
+
+  // Job status endpoints
+  getJobsStatus: async (username: string): Promise<AllJobsStatus> => {
+    const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(username)}/status`);
+    if (!response.ok) throw new Error('Failed to get jobs status');
+    return response.json();
+  },
+
+  getJobStatus: async (username: string, jobName: string): Promise<JobStatus> => {
+    const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(username)}/status/${encodeURIComponent(jobName)}`);
+    if (!response.ok) throw new Error('Failed to get job status');
     return response.json();
   },
 };

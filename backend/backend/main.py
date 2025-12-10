@@ -4,8 +4,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.data.twitter.edit_cache import router as tweets_router
-from backend.scraping.twitter.metrics import router as performance_router
-from backend.scraping.twitter.timeline import router as read_router
+from backend.browser_automation.twitter.metrics import router as performance_router
+from backend.browser_automation.twitter.timeline import router as read_router
 from backend.twitter.auth_routes import router as auth_router
 from backend.twitter.comment_replies import router as comment_replies_router
 from backend.twitter.comments_routes import router as comments_router
@@ -14,6 +14,7 @@ from backend.twitter.intent_to_queries import router as intent_router
 from backend.twitter.logging import router as logging_router
 from backend.twitter.posted_tweets import router as posted_router
 from backend.twitter.posting import router as post_router
+from backend.twitter.twitter_jobs import router as jobs_router
 from backend.user.user import router as user_router
 from backend.utlils.scheduler import router as scheduler_router
 from backend.utlils.scheduler import start_scheduler, stop_scheduler
@@ -59,6 +60,7 @@ app.include_router(user_router)
 app.include_router(scheduler_router)
 app.include_router(comments_router)
 app.include_router(comment_replies_router)
+app.include_router(jobs_router)
 
 
 @app.get("/health")

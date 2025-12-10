@@ -12,7 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.data.twitter.posted_tweets_cache import get_posted_tweets_list, read_posted_tweets_cache, update_tweet_metrics
-from backend.scraping.twitter.scraping_utils import extract_metrics
+from backend.browser_automation.twitter.scraping_utils import extract_metrics
 from backend.twitter.authentication import ensure_access_token
 from backend.utlils.utils import notify
 

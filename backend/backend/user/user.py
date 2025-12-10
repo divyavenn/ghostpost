@@ -308,10 +308,6 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
 
                     notify(f"📊 Found {tweets_to_update} tweets that need additional replies")
 
-                    # Initialize scraping status before starting generation
-                    from backend.twitter.generate_replies import scraping_status
-                    scraping_status[handle] = {"type": "generating", "value": f"0/{tweets_to_update}", "phase": "generating"}
-
                     updated_count = 0
                     for _idx, tweet in enumerate(tweets):
                         if "generated_replies" not in tweet or not tweet["generated_replies"]:
@@ -322,10 +318,6 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
 
                         if needed_replies <= 0:
                             continue
-
-                        # Update scraping status for frontend polling
-                        from backend.twitter.generate_replies import scraping_status
-                        scraping_status[handle] = {"type": "generating", "value": f"{updated_count + 1}/{tweets_to_update}", "phase": "generating"}
 
                         tweet_id = tweet.get('id', tweet.get('tweet_id', 'unknown'))
                         notify(f"🔄 Generating {needed_replies} additional replies for tweet {tweet_id} (currently has {current_reply_count})")
@@ -343,22 +335,6 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
 
                     # Save updated cache
                     await write_to_cache(tweets, f"Updated replies (increased to {new_num_generations})", username=handle)
-
-                    # Mark generation as complete
-                    import asyncio
-
-                    from backend.twitter.generate_replies import scraping_status
-                    scraping_status[handle] = {"type": "complete", "value": "", "phase": "complete"}
-
-                    # Reset to idle after 5 seconds
-                    async def reset_to_idle():
-                        await asyncio.sleep(5)
-                        if handle in scraping_status and scraping_status[handle]["type"] == "complete":
-                            scraping_status[handle] = {"type": "idle", "value": "", "phase": "idle"}
-                            notify(f"🔄 Status reset to idle for {handle}")
-
-                    # Start the reset task in the background
-                    asyncio.create_task(reset_to_idle())
 
                 elif new_num_generations < old_num_generations:
                     # Note: We don't actually delete replies when count is reduced

@@ -13,7 +13,7 @@ async def test_get_thread_scrapes_thread_and_replies(browser_context):
 
     Tests URL: https://x.com/divya_venn/status/1991059548111843523
     """
-    from backend.scraping.twitter.api import get_thread
+    from backend.browser_automation.twitter.api import get_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
     test_root_id = "1991059548111843523"
@@ -41,7 +41,7 @@ async def test_get_thread_returns_correct_structure(browser_context):
     """
     Test that get_thread returns the expected dict structure.
     """
-    from backend.scraping.twitter.api import get_thread
+    from backend.browser_automation.twitter.api import get_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
 
@@ -69,7 +69,7 @@ async def test_get_thread_extracts_media(browser_context):
     Tests URL: https://x.com/divya_venn/status/1996077319887487008
     This tweet has an image attached.
     """
-    from backend.scraping.twitter.api import get_thread
+    from backend.browser_automation.twitter.api import get_thread
 
     test_url = "https://x.com/divya_venn/status/1996077319887487008"
     test_root_id = "1996077319887487008"
@@ -102,7 +102,7 @@ async def test_deep_scrape_thread_extracts_metrics(browser_context):
 
     Tests URL: https://x.com/divya_venn/status/1996077319887487008
     """
-    from backend.scraping.twitter.api import deep_scrape_thread
+    from backend.browser_automation.twitter.api import deep_scrape_thread
 
     test_url = "https://x.com/divya_venn/status/1996077319887487008"
     test_id = "1996077319887487008"

@@ -23,11 +23,11 @@ from backend.utlils.resolve_imports import ensure_standalone_imports
 ensure_standalone_imports(globals())
 
 try:
-    from backend.scraping.twitter.tools import collect_from_page
+    from backend.browser_automation.twitter.tools import collect_from_page
     from backend.twitter.logging import log_scrape_action
     from backend.utlils.utils import error, notify, read_user_info, write_user_info
 except ImportError:
-    from backend.scraping.twitter.tools import collect_from_page
+    from backend.browser_automation.twitter.tools import collect_from_page
     from backend.twitter.logging import log_scrape_action
     from backend.utlils.utils import error, notify, read_user_info, write_user_info
 
@@ -47,26 +47,51 @@ def should_use_browserbase_for_scraping() -> bool:
 
 see_browser = SHOW_BROWSER
 
-# Global status tracker for scraping progress
-scraping_status = {}  # {username: {"type": "account"/"query", "value": "handle/query", "phase": "scraping"/"complete"}}
+# NOTE: Status tracking is now handled by job_status in twitter_jobs.py
+# The scraping_status global has been removed - use get_scraping_status_from_job_status() instead
 
 
-async def update_status_to_reflect_finished_scraping(username: str):
+def get_scraping_status_from_job_status(username: str) -> dict:
     """
-    Update status to complete, then reset to idle after 5 seconds.
-    Used when scraping/generation finishes (including when there are no tweets to process).
+    Get scraping status by translating from job_status.
+    Provides backward compatibility for frontend polling.
     """
-    scraping_status[username] = {"type": "complete", "value": "", "phase": "complete"}
-    notify(f"✅ Status set to complete for {username}")
+    from backend.twitter.twitter_jobs import get_job_status
 
-    async def reset_to_idle():
-        # Reset to idle after 5 seconds
-        await asyncio.sleep(5)
-        if username in scraping_status and scraping_status[username]["type"] == "complete":
-            scraping_status[username] = {"type": "idle", "value": "", "phase": "idle"}
-            notify(f"🔄 Status reset to idle for {username}")
+    # Get the find_and_reply_to_new_posts job status (main scraping job)
+    job = get_job_status(username, "find_and_reply_to_new_posts")
 
-    asyncio.create_task(reset_to_idle())
+    if job["status"] == "idle":
+        return {"type": "idle", "value": "", "phase": "idle"}
+
+    if job["status"] == "complete":
+        return {"type": "complete", "value": "", "phase": "complete"}
+
+    if job["status"] == "error":
+        return {"type": "error", "value": job.get("error", ""), "phase": "error"}
+
+    # Running - translate phase to type/value format
+    phase = job.get("phase", "")
+
+    # Phase format: "scraping_account:handle" or "scraping_query:text" or "scanning_home_timeline"
+    if ":" in phase:
+        action, target = phase.split(":", 1)
+        if action == "scraping_account":
+            return {"type": "account", "value": target, "phase": "scraping_api"}
+        elif action == "scraping_query":
+            return {"type": "query", "value": target, "summary": target, "phase": "scraping_api"}
+
+    if phase == "scanning_home_timeline":
+        return {"type": "home_timeline", "value": "following", "phase": "scraping_api"}
+
+    if phase == "generating_replies":
+        return {"type": "generating", "value": "", "phase": "generating"}
+
+    if phase == "cleanup":
+        return {"type": "cleanup", "value": "", "phase": "cleanup"}
+
+    # Default - show as running
+    return {"type": "scraping", "value": "", "phase": phase or "running"}
 
 
 # headless login, legacy code, currently use oAuth instead
@@ -137,7 +162,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     Returns:
         dict: Scraped tweets with thread content
     """
-    from backend.scraping.twitter.api import collect_from_page as api_collect_from_page
+    from backend.browser_automation.twitter.api import collect_from_page as api_collect_from_page
 
     notify(f"🚀 [gather_trending] Starting API scraping for {username}: {len(usernames)} accounts, {len(queries)} queries")
     results = {}
@@ -145,9 +170,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     # Scrape user timelines via API (collect_from_page includes thread fetching)
     for u in usernames:
         try:
-            if username:
-                scraping_status[username] = {"type": "account", "value": u, "phase": "scraping_api"}
-                notify(f"📍 Status: Scraping from @{u} via API")
+            notify(f"📍 Scraping from @{u} via API")
 
             url = f"https://x.com/{u}"
             tweets = await api_collect_from_page(None, url, handle=u, username=username, write_callback=write_callback)
@@ -162,9 +185,7 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     for q in queries:
         try:
             summary = query_summary_map.get(q, q) if query_summary_map else q
-            if username:
-                scraping_status[username] = {"type": "query", "value": q, "summary": summary, "phase": "scraping_api"}
-                notify(f"📍 Status: Scraping query [{q}] via API")
+            notify(f"📍 Scraping query [{q}] via API")
 
             from urllib.parse import quote_plus
             url = f"https://x.com/search?q={quote_plus(q)}"
@@ -175,9 +196,6 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
             notify(f"✅ [API] Fetched {len(tweets)} tweets with threads for query [{q}]")
         except Exception as e:
             notify(f"❌ [API] Error searching [{q}]: {e}")
-
-    if username:
-        scraping_status[username] = {"type": "generating", "value": "", "phase": "generating"}
 
     notify(f"✅ [gather_trending] Completed for {username}: {len(results)} tweets scraped via API")
     return results
@@ -301,8 +319,11 @@ class ReadTweetsRequest(BaseModel):
 
 async def _scrape_and_generate_background(username: str, relevant_accounts: list[str] | None, queries: list[str] | None, max_tweets: int | None):
     """
-    Background task that handles both scraping and reply generation.
+    Background task that handles both scraping and reply generation using browser automation.
     This allows the endpoint to return immediately while work continues in background.
+
+    NOTE: Currently not used - endpoint uses find_and_reply_to_new_posts job instead.
+    Kept for potential future use if we need to switch back to browser automation.
     """
     try:
         # Track scraping time
@@ -334,7 +355,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         log_scrape_action(username, len(tweets))
 
         # Generate replies only for premium users (this will also update status to complete/idle when done)
-        account_type = user_info.get("account_type", "trial")
+        account_type = user_info.get("account_type", "trial") if user_info else "trial"
         if account_type == "premium":
             notify(f"💬 [Background] Generating replies for {username} (premium user)...")
             from backend.twitter.generate_replies import generate_replies
@@ -343,25 +364,21 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
             notify(f"✅ [Background] Generated {reply_count} replies for {username}")
         else:
             notify(f"⏭️ [Background] Skipping reply generation for {username} (account type: {account_type}, premium required)")
-            # Update status to complete since we're not generating
-            if username in scraping_status:
-                await update_status_to_reflect_finished_scraping(username)
 
     except Exception as e:
         error(f"Error in background scraping/generation for {username}: {e}", status_code=500, function_name="_scrape_and_generate_background", username=username, critical=False)
-        # Ensure status gets reset to idle even on error
-        if username in scraping_status:
-            await update_status_to_reflect_finished_scraping(username)
 
 
 @router.post("/{username}/tweets")
 async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks, payload: ReadTweetsRequest | None = None) -> dict:
     """
     Start tweet scraping and reply generation in background. Returns immediately.
-    Frontend should poll /read/{username}/status to track progress.
+    Frontend should poll /jobs/{username}/status to track progress.
 
-    Note: Reply generation only occurs for premium users. Non-premium users will only get scraping.
+    Uses find_and_reply_to_new_posts job which fetches full thread context for each tweet.
     """
+    from backend.twitter.twitter_jobs import find_and_reply_to_new_posts
+
     try:
         notify(f"📋 [API] Received scrape request for {username}")
 
@@ -374,35 +391,26 @@ async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks,
         account_type = user_info.get("account_type", "trial")
         notify(f"📋 [API] User {username} has account type: {account_type}")
 
-        # Set initial status to scraping
-        scraping_status[username] = {"type": "scraping", "value": "", "phase": "scraping"}
+        # Schedule the unified job that handles scraping + thread fetching + reply generation
+        background_tasks.add_task(find_and_reply_to_new_posts, username, "user")
 
-        # Extract payload parameters
-        relevant_accounts = payload.usernames if payload else None
-        queries = payload.queries if payload else None
-        max_tweets = payload.max_tweets if payload else None
+        notify(f"✅ [API] Background job scheduled for {username}")
 
-        # Schedule scraping and generation in background
-        background_tasks.add_task(_scrape_and_generate_background, username, relevant_accounts, queries, max_tweets)
-
-        notify(f"✅ [API] Background scraping scheduled for {username}")
-
-        message = "Scraping started in background. Poll /read/{username}/status to track progress."
+        message = "Job started in background. Poll /jobs/{username}/status to track progress."
         if account_type != "premium":
             message += " (Reply generation requires premium account)"
 
-        return {"message": message, "status": "scraping_started", "background_task": "scraping_and_generation_scheduled", "account_type": account_type}
+        return {"message": message, "status": "scraping_started", "background_task": "find_and_reply_to_new_posts", "account_type": account_type}
     except Exception as e:
-        notify(f"❌ [API] Error scheduling scrape for {username}: {str(e)}")
+        notify(f"❌ [API] Error scheduling job for {username}: {str(e)}")
         print(str(e))
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error starting scrape: {str(e)}") from e
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error starting job: {str(e)}") from e
 
 
 @router.get("/{username}/status")
-async def get_scraping_status(username: str) -> dict:
-    """Get the current scraping status for a user."""
-    status = scraping_status.get(username, {"type": "idle", "value": "", "phase": "idle"})
-    return status
+async def get_scraping_status_endpoint(username: str) -> dict:
+    """Get the current scraping status for a user (from job_status)."""
+    return get_scraping_status_from_job_status(username)
 
 
 if __name__ == "__main__":

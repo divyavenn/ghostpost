@@ -1,13 +1,20 @@
-import { AnimatedText } from './WordStyles';
+import { JobProgressButton } from './JobProgressButton';
 
 interface HeaderProps {
+  username: string;
   onSettingsClick: () => void;
   onScrapeClick: () => void;
+  onRefreshClick: () => void;
   hasInvalidAccounts: boolean;
-  isScraping?: boolean;
 }
 
-export function Header({ onSettingsClick, onScrapeClick, hasInvalidAccounts, isScraping = false }: HeaderProps) {
+export function Header({
+  username,
+  onSettingsClick,
+  onScrapeClick,
+  onRefreshClick,
+  hasInvalidAccounts,
+}: HeaderProps) {
   return (
     <>
       {/* Logo - Top Left */}
@@ -19,7 +26,7 @@ export function Header({ onSettingsClick, onScrapeClick, hasInvalidAccounts, isS
         />
       </div>
 
-      {/* Settings & Scrape - Top Right */}
+      {/* Settings & Actions - Top Right */}
       <div className="absolute top-6 right-6 z-10 flex gap-3">
         <button
           onClick={onSettingsClick}
@@ -37,23 +44,24 @@ export function Header({ onSettingsClick, onScrapeClick, hasInvalidAccounts, isS
             </span>
           )}
         </button>
-        <button
+
+        <JobProgressButton
+          username={username}
+          jobNames={['find_user_activity', 'find_and_reply_to_engagement']}
+          onClick={onRefreshClick}
+          label="refresh"
+          loadingLabel="refreshing"
+          variant="secondary"
+        />
+
+        <JobProgressButton
+          username={username}
+          jobNames={['find_and_reply_to_new_posts']}
           onClick={onScrapeClick}
-          disabled={isScraping}
-          className={`rounded-full px-5 py-2.5 text-base font-bold transition ${
-            isScraping
-              ? 'bg-slate-900 border-2 border-blue-500 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700'
-          }`}
-          aria-label={isScraping ? "Finding new posts" : "Find new posts"}
-          title={isScraping ? "Finding new posts..." : "Find new posts and generate replies"}
-        >
-          {isScraping ? (
-            <AnimatedText text="finding new posts" />
-          ) : (
-            'find new posts'
-          )}
-        </button>
+          label="find new posts"
+          loadingLabel="finding new posts"
+          variant="primary"
+        />
       </div>
     </>
   );

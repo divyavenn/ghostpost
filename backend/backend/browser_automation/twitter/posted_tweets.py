@@ -13,7 +13,7 @@ except ImportError:
     from datetime import timezone
     UTC = timezone.utc
 
-from backend.scraping.twitter.scraping_utils import (
+from backend.browser_automation.twitter.scraping_utils import (
     extract_metrics,
     extract_text,
     extract_user_info,
@@ -49,6 +49,66 @@ def _extract_media(node: dict) -> list[dict]:
                 media_items.append({"type": "photo", "url": media_url, "alt_text": alt_text})
 
     return media_items
+
+
+def _extract_quoted_tweet(node: dict) -> dict | None:
+    """
+    Extract quoted tweet data from GraphQL response.
+
+    Args:
+        node: Tweet node from GraphQL response
+
+    Returns:
+        Quoted tweet dict or None if no quoted tweet
+    """
+    from backend.utlils.utils import notify
+
+    inner_node = node.get("tweet") or node
+
+    # GraphQL format: quoted_status_result contains the quoted tweet
+    quoted_result = inner_node.get("quoted_status_result", {}).get("result", {})
+    if not quoted_result:
+        # Debug: check if there's quoted tweet data in legacy
+        legacy = inner_node.get("legacy", {})
+        if legacy.get("is_quote_status"):
+            notify(f"⚠️ Tweet is_quote_status=True but no quoted_status_result found")
+        return None
+
+    quoted_node = quoted_result.get("tweet") or quoted_result
+    quoted_legacy = quoted_node.get("legacy", {})
+
+    if not quoted_legacy:
+        return None
+
+    quoted_id = quoted_legacy.get("id_str")
+    if not quoted_id:
+        return None
+
+    # Extract author info from quoted tweet's core.user_results
+    quoted_user_result = quoted_node.get("core", {}).get("user_results", {}).get("result", {})
+    quoted_user_legacy = quoted_user_result.get("legacy", {})
+
+    quoted_handle = quoted_user_legacy.get("screen_name", "")
+    quoted_name = quoted_user_legacy.get("name", "")
+    quoted_pfp = quoted_user_legacy.get("profile_image_url_https", "")
+
+    # Extract text
+    quoted_text = quoted_legacy.get("full_text", "") or quoted_legacy.get("text", "")
+
+    # Extract media from quoted tweet
+    quoted_media = _extract_media(quoted_node)
+
+    # Build URL
+    quoted_url = f"https://x.com/{quoted_handle}/status/{quoted_id}" if quoted_handle else f"https://x.com/i/web/status/{quoted_id}"
+
+    return {
+        "text": quoted_text,
+        "author_handle": quoted_handle,
+        "author_name": quoted_name,
+        "author_profile_pic_url": quoted_pfp,
+        "url": quoted_url,
+        "media": quoted_media
+    }
 
 
 async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) -> list[dict[str, Any]]:
@@ -170,6 +230,7 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
                     metrics = extract_metrics(node)
                     text = extract_text(node)
                     media = _extract_media(node)
+                    quoted_tweet = _extract_quoted_tweet(node)
 
                     # Get created_at
                     created_at = legacy.get("created_at", "")
@@ -193,6 +254,7 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
                         "created_at": created_at,
                         "url": f"https://x.com/{username}/status/{tid}",
                         "media": media,
+                        "quoted_tweet": quoted_tweet,
                         **metrics
                     }
 

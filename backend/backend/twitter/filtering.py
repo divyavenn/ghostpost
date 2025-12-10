@@ -158,14 +158,21 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
         # No text to evaluate, reject
         return False
 
-    # NOTE: Examples disabled for now
-    # replied_to, skipped = get_recent_reply_examples(username, limit=5)
-    # examples_context = build_examples_context(replied_to, skipped)
+    # Get intent filter examples from user_info (posts user has replied to)
+    examples = user_info.get("intent_filter_examples", [])
+    examples_context = ""
+    if examples:
+        examples_context = "\n\n[EXAMPLES OF POSTS THE USER HAS REPLIED TO]\n"
+        for i, ex in enumerate(examples, 1):
+            author = ex.get("author", "unknown")
+            text = ex.get("text", "")
+            examples_context += f"{i}. @{author}: {text}\n"
+        examples_context += "[END EXAMPLES]\n"
 
     # Build a quick prompt for initial filtering
     system_prompt = "You are a content relevance evaluator. Answer only YES or NO."
     prompt = f"""User intent: "{intent}"
-
+{examples_context}
     Tweet text: "{tweet_text}"
     Tweet author: @{tweet_handle}
 
@@ -173,6 +180,7 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
     - Does it relate to the topics they're interested in?
     - Could it lead to valuable conversations?
     - Is there ANY connection to their stated interests?
+    - Is it similar to the examples of posts they've replied to before?
 
     Be lenient - we want to catch potential matches.
 

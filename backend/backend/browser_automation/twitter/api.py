@@ -33,10 +33,11 @@ except ImportError:
 API_BASE = "https://api.twitter.com/2"
 
 # Import centralized rate limiter
-from backend.twitter.rate_limiter import EndpointType, twitter_rate_limiter as _rate_limiter
+from backend.twitter.rate_limiter import EndpointType, TWITTER_HOME_TIMELINE, twitter_rate_limiter as _rate_limiter
 
 # Default tweet fields to request
-TWEET_FIELDS = "id,text,created_at,public_metrics,conversation_id,in_reply_to_user_id,referenced_tweets,author_id"
+# note_tweet contains full text for tweets > 280 characters
+TWEET_FIELDS = "id,text,created_at,public_metrics,conversation_id,in_reply_to_user_id,referenced_tweets,author_id,note_tweet"
 USER_FIELDS = "id,name,username,profile_image_url,public_metrics"
 EXPANSIONS = "author_id,referenced_tweets.id,referenced_tweets.id.author_id,attachments.media_keys"
 MEDIA_FIELDS = "type,url,preview_image_url,alt_text"
@@ -45,6 +46,27 @@ MEDIA_FIELDS = "type,url,preview_image_url,alt_text"
 def _get_headers(access_token: str) -> dict:
     """Get authorization headers for API requests."""
     return {"Authorization": f"Bearer {access_token}"}
+
+
+def _get_full_text(tweet: dict) -> str:
+    """
+    Extract full text from a tweet, handling long tweets (> 280 chars).
+
+    Twitter API v2 truncates long tweets in the 'text' field.
+    The full text is available in 'note_tweet.text' for long tweets.
+
+    Args:
+        tweet: Tweet data from API
+
+    Returns:
+        Full tweet text
+    """
+    # Check for note_tweet (long tweets > 280 chars)
+    note_tweet = tweet.get("note_tweet", {})
+    if note_tweet and note_tweet.get("text"):
+        return note_tweet.get("text", "")
+    # Fall back to regular text field
+    return tweet.get("text", "")
 
 
 def _parse_twitter_date(date_str: str) -> datetime:
@@ -76,16 +98,23 @@ def _calculate_engagement_score(metrics: dict) -> int:
     return likes + 2 * retweets + 3 * quotes + replies
 
 
-def _extract_media_from_includes(tweet_id: str, includes: dict, tweet_data: dict) -> list[dict]:
-    """Extract media URLs from includes for a specific tweet."""
-    media_items = []
+def _build_media_map(includes: dict) -> dict:
+    """Build a map of media_key -> media_data from includes."""
     media_map = {}
-
-    # Build media map from includes
     for media in includes.get("media", []):
         media_key = media.get("media_key")
         if media_key:
             media_map[media_key] = media
+    return media_map
+
+
+def _extract_media_from_includes(tweet_id: str, includes: dict, tweet_data: dict, media_map: dict | None = None) -> list[dict]:
+    """Extract media URLs from includes for a specific tweet."""
+    media_items = []
+
+    # Build media map if not provided
+    if media_map is None:
+        media_map = _build_media_map(includes)
 
     # Get media keys for this tweet (from attachments if available)
     # Note: attachments info might be in the tweet data or we need to check referenced tweets
@@ -102,6 +131,74 @@ def _extract_media_from_includes(tweet_id: str, includes: dict, tweet_data: dict
             })
 
     return media_items
+
+
+def _build_tweets_map(includes: dict) -> dict:
+    """Build a map of tweet_id -> tweet_data from includes.tweets (for referenced tweets)."""
+    tweets_map = {}
+    for tweet in includes.get("tweets", []):
+        tweet_id = tweet.get("id")
+        if tweet_id:
+            tweets_map[tweet_id] = tweet
+    return tweets_map
+
+
+def _extract_quoted_tweet(tweet: dict, user_map: dict, includes: dict) -> dict | None:
+    """
+    Extract quoted tweet data from referenced_tweets and includes.
+
+    Args:
+        tweet: Main tweet data
+        user_map: Map of user_id -> user_data
+        includes: API includes with tweets and users
+
+    Returns:
+        Quoted tweet dict or None if no quoted tweet
+    """
+    referenced = tweet.get("referenced_tweets", [])
+
+    # Find the quoted tweet reference
+    quoted_ref = None
+    for ref in referenced:
+        if ref.get("type") == "quoted":
+            quoted_ref = ref
+            break
+
+    if not quoted_ref:
+        return None
+
+    quoted_id = quoted_ref.get("id")
+    if not quoted_id:
+        return None
+
+    # Look up the quoted tweet in includes.tweets
+    tweets_map = _build_tweets_map(includes)
+    quoted_tweet_data = tweets_map.get(quoted_id)
+
+    if not quoted_tweet_data:
+        # Tweet data not in includes (might be deleted/private)
+        return None
+
+    # Get author info
+    quoted_author_id = quoted_tweet_data.get("author_id", "")
+    quoted_author_info = user_map.get(quoted_author_id, {})
+    quoted_handle = quoted_author_info.get("handle", "")
+
+    # Build media map for extracting quoted tweet media
+    media_map = _build_media_map(includes)
+    quoted_media = _extract_media_from_includes(quoted_id, includes, quoted_tweet_data, media_map)
+
+    # Build URL for the quoted tweet
+    quoted_url = f"https://x.com/{quoted_handle}/status/{quoted_id}" if quoted_handle else f"https://x.com/i/web/status/{quoted_id}"
+
+    return {
+        "text": _get_full_text(quoted_tweet_data),
+        "author_handle": quoted_handle,
+        "author_name": quoted_author_info.get("username", ""),
+        "author_profile_pic_url": quoted_author_info.get("author_profile_pic_url", ""),
+        "url": quoted_url,
+        "media": quoted_media
+    }
 
 
 def _build_user_map(includes: dict) -> dict:
@@ -139,7 +236,7 @@ def _tweet_to_dict(tweet: dict, user_map: dict, includes: dict) -> dict:
 
     return {
         "id": tid,
-        "text": tweet.get("text", ""),
+        "text": _get_full_text(tweet),
         "likes": metrics.get("like_count", 0),
         "retweets": metrics.get("retweet_count", 0),
         "quotes": metrics.get("quote_count", 0),
@@ -153,7 +250,7 @@ def _tweet_to_dict(tweet: dict, user_map: dict, includes: dict) -> dict:
         "handle": handle,
         "author_profile_pic_url": user_info.get("author_profile_pic_url", ""),
         "media": _extract_media_from_includes(tid, includes, tweet),
-        "quoted_tweet": None,  # TODO: Extract from referenced_tweets if needed
+        "quoted_tweet": _extract_quoted_tweet(tweet, user_map, includes),
         "in_reply_to_status_id": _get_in_reply_to(tweet),
         "conversation_id": tweet.get("conversation_id"),
     }
@@ -485,7 +582,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
     thread_tweet_ids = {root_id}  # Track IDs that are part of the thread chain
 
     # Add root tweet first
-    thread_texts.append(data.get("text", ""))
+    thread_texts.append(_get_full_text(data))
 
     # Search for author's other tweets in this conversation (thread continuations)
     if author_handle:
@@ -523,7 +620,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
         )
 
         for tweet in sorted_thread_tweets:
-            thread_texts.append(tweet.get("text", ""))
+            thread_texts.append(_get_full_text(tweet))
 
     # Get top replies from OTHER users (not the author)
     reply_query = f"conversation_id:{conversation_id} -from:{author_handle} is:reply"
@@ -539,7 +636,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
         reply_user_info = reply_user_map.get(reply_author_id, {})
 
         other_replies.append({
-            "text": reply.get("text", ""),
+            "text": _get_full_text(reply),
             "author_handle": reply_user_info.get("handle", ""),
             "author_name": reply_user_info.get("username", ""),
             "likes": reply.get("public_metrics", {}).get("like_count", 0)
@@ -556,7 +653,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
 
 async def deep_scrape_thread(ctx, tweet_url: str, tweet_id: str, author_handle: str) -> dict[str, Any]:
     """
-    Get full thread with all replies using Twitter API.
+    Get full thread with all replies and quote tweets using Twitter API.
 
     Same interface as thread.deep_scrape_thread but uses API instead of scraping.
 
@@ -567,7 +664,7 @@ async def deep_scrape_thread(ctx, tweet_url: str, tweet_id: str, author_handle: 
         author_handle: Handle of the tweet author
 
     Returns:
-        Dict with reply_count, like_count, quote_count, retweet_count, all_reply_ids, replies
+        Dict with reply_count, like_count, quote_count, retweet_count, all_reply_ids, replies, quote_tweets
     """
     result = {
         "reply_count": 0,
@@ -575,7 +672,9 @@ async def deep_scrape_thread(ctx, tweet_url: str, tweet_id: str, author_handle: 
         "quote_count": 0,
         "retweet_count": 0,
         "all_reply_ids": [],
-        "replies": []
+        "all_quote_tweet_ids": [],
+        "replies": [],
+        "quote_tweets": []
     }
 
     # Get access token
@@ -632,9 +731,13 @@ async def deep_scrape_thread(ctx, tweet_url: str, tweet_id: str, author_handle: 
 
             reply_handle = reply_user_info.get("handle", "")
 
+            # Extract media and quoted tweet from reply
+            reply_media = _extract_media_from_includes(reply_id, reply_includes, reply)
+            reply_quoted_tweet = _extract_quoted_tweet(reply, reply_user_map, reply_includes)
+
             all_replies.append({
                 "id": reply_id,
-                "text": reply.get("text", ""),
+                "text": _get_full_text(reply),
                 "handle": reply_handle,
                 "username": reply_user_info.get("username", ""),
                 "author_profile_pic_url": reply_user_info.get("author_profile_pic_url", ""),
@@ -647,6 +750,8 @@ async def deep_scrape_thread(ctx, tweet_url: str, tweet_id: str, author_handle: 
                 "quotes": metrics.get("quote_count", 0),
                 "replies": metrics.get("reply_count", 0),
                 "impressions": metrics.get("impression_count", 0),
+                "media": reply_media,
+                "quoted_tweet": reply_quoted_tweet,
             })
 
         # Check for more pages
@@ -655,6 +760,70 @@ async def deep_scrape_thread(ctx, tweet_url: str, tweet_id: str, author_handle: 
             break
 
     result["replies"] = all_replies
+
+    # Search for quote tweets of this tweet
+    qt_query = f"quoted_tweet_id:{tweet_id}"
+    all_quote_tweets = []
+    next_token = None
+
+    # Paginate through quote tweets (up to 2 pages)
+    for _ in range(2):
+        qt_response = await _search_tweets(access_token, qt_query, max_results=100, next_token=next_token)
+
+        qt_data = qt_response.get("data", [])
+        qt_includes = qt_response.get("includes", {})
+        qt_user_map = _build_user_map(qt_includes)
+
+        for qt in qt_data:
+            qt_author_id = qt.get("author_id", "")
+            qt_user_info = qt_user_map.get(qt_author_id, {})
+
+            # Skip author's own quote tweets
+            if qt_user_info.get("handle", "").lower() == author_handle.lower():
+                continue
+
+            qt_id = qt.get("id", "")
+            result["all_quote_tweet_ids"].append(qt_id)
+
+            metrics = qt.get("public_metrics", {})
+            created_at = qt.get("created_at", "")
+
+            try:
+                dt = _parse_twitter_date(created_at)
+                created_at_iso = dt.isoformat()
+            except Exception:
+                created_at_iso = created_at
+
+            qt_handle = qt_user_info.get("handle", "")
+
+            # Extract media from quote tweet
+            qt_media = _extract_media_from_includes(qt_id, qt_includes, qt)
+
+            all_quote_tweets.append({
+                "id": qt_id,
+                "text": _get_full_text(qt),
+                "handle": qt_handle,
+                "username": qt_user_info.get("username", ""),
+                "author_profile_pic_url": qt_user_info.get("author_profile_pic_url", ""),
+                "followers": qt_user_info.get("followers", 0),
+                "quoted_tweet_id": tweet_id,  # The tweet being quoted
+                "created_at": created_at_iso,
+                "url": f"https://x.com/{qt_handle}/status/{qt_id}",
+                "likes": metrics.get("like_count", 0),
+                "retweets": metrics.get("retweet_count", 0),
+                "quotes": metrics.get("quote_count", 0),
+                "replies": metrics.get("reply_count", 0),
+                "impressions": metrics.get("impression_count", 0),
+                "media": qt_media,
+                "engagement_type": "quote_tweet",
+            })
+
+        # Check for more pages
+        next_token = qt_response.get("meta", {}).get("next_token")
+        if not next_token:
+            break
+
+    result["quote_tweets"] = all_quote_tweets
     return result
 
 
@@ -732,12 +901,14 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
     # Search for user's tweets (including replies)
     query = f"from:{username}"
 
-    notify(f"[API] Fetching recent tweets from @{username}")
+    print(f"[API] Fetching recent tweets from @{username} with query: {query}")
 
     tweets = []
     next_token = None
+    page = 0
 
     while len(tweets) < max_tweets:
+        page += 1
         remaining = max_tweets - len(tweets)
         batch_size = min(remaining, 100)
 
@@ -745,7 +916,10 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
 
         data = response.get("data", [])
         includes = response.get("includes", {})
+        meta = response.get("meta", {})
         user_map = _build_user_map(includes)
+
+        print(f"[API] Page {page}: Got {len(data)} tweets, meta: {meta}")
 
         for tweet in data:
             tweet_dict = _tweet_to_dict(tweet, user_map, includes)
@@ -755,11 +929,12 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
                 break
 
         # Check for more pages
-        next_token = response.get("meta", {}).get("next_token")
+        next_token = meta.get("next_token")
         if not next_token or not data:
+            print(f"[API] Stopping pagination: next_token={next_token}, data_len={len(data)}")
             break
 
-    notify(f"[API] Fetched {len(tweets)} tweets from @{username}")
+    print(f"[API] Fetched {len(tweets)} total tweets from @{username}")
     return tweets
 
 
@@ -907,3 +1082,238 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
         notify(f"🚀 Started {len(generation_tasks)} parallel reply generation task(s) in background")
 
     return tweets_with_threads
+
+
+async def _get_authenticated_user_id(access_token: str, _retry_count: int = 0) -> str | None:
+    """
+    Get the authenticated user's Twitter ID from their access token.
+
+    Args:
+        access_token: User's OAuth access token
+        _retry_count: Internal retry counter
+
+    Returns:
+        User's Twitter ID or None if failed
+    """
+    await _rate_limiter.wait_if_needed(EndpointType.USER_LOOKUP)
+
+    url = f"{API_BASE}/users/me"
+    headers = _get_headers(access_token)
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        _rate_limiter.update_last_request(EndpointType.USER_LOOKUP)
+
+        if response.status_code == 429:
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.USER_LOOKUP)
+                return await _get_authenticated_user_id(access_token, _retry_count + 1)
+            return None
+
+        if response.status_code >= 400:
+            notify(f"⚠️ Failed to get user ID: HTTP {response.status_code}")
+            return None
+
+        data = response.json()
+        return data.get("data", {}).get("id")
+
+    except requests.RequestException as e:
+        notify(f"⚠️ Failed to get user ID: {e}")
+        return None
+
+
+async def _fetch_home_timeline_raw(
+    access_token: str,
+    user_id: str,
+    max_results: int = 100,
+    pagination_token: str | None = None,
+    _retry_count: int = 0
+) -> dict:
+    """
+    Fetch the authenticated user's home timeline (reverse chronological).
+
+    This is the "Following" tab - tweets from accounts the user follows.
+
+    Args:
+        access_token: User's OAuth access token
+        user_id: User's Twitter ID
+        max_results: Max results per request (1-100)
+        pagination_token: Pagination token for next page
+        _retry_count: Internal retry counter
+
+    Returns:
+        API response dict with data, includes, and meta
+    """
+    await _rate_limiter.wait_if_needed(TWITTER_HOME_TIMELINE)
+
+    url = f"{API_BASE}/users/{user_id}/timelines/reverse_chronological"
+
+    params = {
+        "max_results": min(max_results, 100),
+        "tweet.fields": TWEET_FIELDS,
+        "user.fields": USER_FIELDS,
+        "expansions": EXPANSIONS,
+        "media.fields": MEDIA_FIELDS,
+    }
+
+    if pagination_token:
+        params["pagination_token"] = pagination_token
+
+    headers = _get_headers(access_token)
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        _rate_limiter.update_last_request(TWITTER_HOME_TIMELINE)
+
+        if response.status_code == 401:
+            error("Twitter API authentication failed for home timeline", status_code=401, function_name="_fetch_home_timeline_raw", critical=False)
+            return {"data": [], "includes": {}, "meta": {}}
+
+        if response.status_code == 429:
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), TWITTER_HOME_TIMELINE)
+                return await _fetch_home_timeline_raw(access_token, user_id, max_results, pagination_token, _retry_count + 1)
+            else:
+                error("Twitter API rate limit exceeded for home timeline", status_code=429, function_name="_fetch_home_timeline_raw", critical=False)
+                return {"data": [], "includes": {}, "meta": {}}
+
+        if response.status_code >= 400:
+            error(f"Twitter API error for home timeline: {response.text}", status_code=response.status_code, function_name="_fetch_home_timeline_raw", critical=False)
+            return {"data": [], "includes": {}, "meta": {}}
+
+        return response.json()
+
+    except requests.RequestException as e:
+        error(f"Twitter API request failed for home timeline: {e}", status_code=503, function_name="_fetch_home_timeline_raw", critical=False)
+        return {"data": [], "includes": {}, "meta": {}}
+
+
+async def fetch_home_timeline_with_intent_filter(
+    username: str,
+    max_tweets: int = 50,
+    write_callback=None,
+    generate_replies_inline: bool = True
+) -> dict:
+    """
+    Fetch tweets from the user's home timeline and filter by intent.
+
+    This fetches the "Following" tab (reverse chronological timeline) and
+    filters tweets through the user's intent filter before adding to cache.
+
+    Args:
+        username: Username for authentication and cache operations
+        max_tweets: Maximum tweets to fetch and filter
+        write_callback: Async callback for progressive writes
+        generate_replies_inline: If True, generate replies for matching tweets
+
+    Returns:
+        Dict of tweet_id -> tweet_data for tweets that passed intent filter
+    """
+    from backend.twitter.filtering import check_tweet_matches_intent_initial
+    from backend.utlils.utils import is_tweet_seen
+
+    # Get access token for the user
+    access_token = await ensure_access_token(username)
+
+    if not access_token:
+        error("No access token available for home timeline", status_code=401, function_name="fetch_home_timeline_with_intent_filter", critical=False)
+        return {}
+
+    # Get user's Twitter ID
+    user_id = await _get_authenticated_user_id(access_token)
+    if not user_id:
+        error("Could not get user ID for home timeline", status_code=400, function_name="fetch_home_timeline_with_intent_filter", critical=False)
+        return {}
+
+    notify(f"[API] Fetching home timeline for @{username} (user_id: {user_id})")
+
+    # Fetch timeline
+    response = await _fetch_home_timeline_raw(access_token, user_id, max_results=min(max_tweets, 100))
+
+    data = response.get("data", [])
+    includes = response.get("includes", {})
+    user_map = _build_user_map(includes)
+
+    notify(f"[API] Got {len(data)} tweets from home timeline")
+
+    # Process tweets and filter by intent
+    tweets = {}
+    passed_filter = 0
+    failed_filter = 0
+    skipped_seen = 0
+    generation_tasks = []
+
+    for tweet in data:
+        tweet_id = tweet.get("id")
+
+        # Skip already seen tweets
+        if tweet_id and is_tweet_seen(username, str(tweet_id)):
+            skipped_seen += 1
+            continue
+
+        # Skip old tweets
+        created_at = tweet.get("created_at", "")
+        if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
+            continue
+
+        # Skip replies (we want original posts only)
+        if _get_in_reply_to(tweet):
+            continue
+
+        # Skip retweets
+        referenced = tweet.get("referenced_tweets", [])
+        is_retweet = any(ref.get("type") == "retweeted" for ref in referenced)
+        if is_retweet:
+            continue
+
+        tweet_dict = _tweet_to_dict(tweet, user_map, includes)
+
+        # Check intent filter
+        passes_intent = await check_tweet_matches_intent_initial(tweet_dict, username)
+
+        if not passes_intent:
+            failed_filter += 1
+            continue
+
+        passed_filter += 1
+
+        # Get thread data
+        thread_data = await get_thread(None, tweet_dict["url"], root_id=tweet_dict["id"])
+        tweet_dict["thread"] = thread_data.get("thread", [])
+        tweet_dict["other_replies"] = thread_data.get("other_replies", [])
+
+        if thread_data.get("author_profile_pic_url"):
+            tweet_dict["author_profile_pic_url"] = thread_data["author_profile_pic_url"]
+        if thread_data.get("media"):
+            tweet_dict["media"] = thread_data["media"]
+
+        # Skip tweets without thread content
+        if not tweet_dict["thread"] or len(tweet_dict["thread"]) == 0:
+            notify(f"⚠️ Skipping home timeline tweet {tweet_dict['id']}: no thread content")
+            continue
+
+        # Replace truncated text with full text from thread
+        tweet_dict["text"] = tweet_dict["thread"][0]
+
+        # Mark where this tweet came from
+        tweet_dict["scraped_from"] = {"type": "home_timeline", "value": "following"}
+
+        # Write to cache
+        if write_callback:
+            await write_callback([tweet_dict], username)
+
+            # Start generating replies in the background
+            if generate_replies_inline:
+                task = asyncio.create_task(_generate_reply_for_tweet_background(tweet_dict, username))
+                generation_tasks.append(task)
+
+        tweets[tweet_dict["id"]] = tweet_dict
+
+    notify(f"[API] Home timeline: {passed_filter} passed intent filter, {failed_filter} filtered out, {skipped_seen} already seen")
+
+    if generation_tasks:
+        notify(f"🚀 Started {len(generation_tasks)} parallel reply generation task(s) for home timeline tweets")
+
+    return tweets

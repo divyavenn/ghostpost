@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from collections.abc import Iterable
 from datetime import datetime
@@ -21,9 +22,14 @@ from backend.config import (
 # Ensure cache directory exists
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
+# Check DEBUG_LOGS env variable once at module load
+DEBUG_LOGS = os.getenv("DEBUG_LOGS", "").lower() in ("true", "1", "yes")
+
 
 def notify(msg: str):
-    print(msg)
+    """Print message to console only if DEBUG_LOGS is enabled."""
+    if DEBUG_LOGS:
+        print(msg)
 
 
 def error(msg: str, status_code: int = 500, exception_text: str | None = None, function_name: str | None = None, username: str | None = None, critical: bool = False):
@@ -627,7 +633,8 @@ def cleanup_seen_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) -> int:
     try:  # Python 3.11+
         from datetime import UTC  # type: ignore[attr-defined]
     except ImportError:  # Python <3.11
-        UTC = UTC
+        from datetime import timezone
+        UTC = timezone.utc
 
     user_info = read_user_info(username)
     if not user_info:

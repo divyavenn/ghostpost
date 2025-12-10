@@ -7,7 +7,8 @@ from typing import Any
 try:  # Python 3.11+
     from datetime import UTC  # type: ignore[attr-defined]
 except ImportError:  # Python <3.11
-    UTC = UTC
+    from datetime import timezone
+    UTC = timezone.utc
 
 from fastapi import APIRouter
 from pydantic import BaseModel

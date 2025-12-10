@@ -433,6 +433,25 @@ async def get_comments_stats(username: str) -> dict:
 
 
 # Engagement monitoring endpoints
+@router.get("/{username}/monitor/status")
+async def get_engagement_monitoring_status(username: str) -> dict:
+    """
+    Get the current status of engagement monitoring jobs.
+
+    Returns:
+        - job: Current job running (idle, discover_recently_posted, discover_engagement, discover_resurrected, complete, error)
+        - phase: Current phase within the job (starting, scraping, processing, etc.)
+        - progress: Progress info (current, total)
+        - results: Results from completed jobs
+        - started_at: When the job started
+        - error: Error message if any
+    """
+    from backend.twitter.monitoring import get_monitoring_status
+
+    status = get_monitoring_status(username)
+    return status
+
+
 @router.post("/{username}/monitor/start")
 async def start_engagement_monitoring(
     username: str,
@@ -441,12 +460,11 @@ async def start_engagement_monitoring(
     """
     Start background engagement monitoring.
 
-    Runs all three jobs in order:
-    1. discover_recently_posted
-    2. discover_engagement
-    3. discover_resurrected
+    Runs the two engagement jobs:
+    1. find_user_activity - Discover user's external posts
+    2. find_and_reply_to_engagement - Monitor engagement and generate replies
     """
-    from backend.twitter.monitoring import run_engagement_monitoring
+    from backend.twitter.twitter_jobs import find_user_activity, find_and_reply_to_engagement
 
     user_info = read_user_info(username)
     if not user_info:
@@ -454,8 +472,12 @@ async def start_engagement_monitoring(
 
     user_handle = user_info.get("handle", username)
 
-    # Run in background
-    background_tasks.add_task(run_engagement_monitoring, username, user_handle)
+    # Run jobs in background (they run sequentially within the background task)
+    async def run_jobs():
+        await find_user_activity(username, triggered_by="refresh")
+        await find_and_reply_to_engagement(username, triggered_by="refresh")
+
+    background_tasks.add_task(run_jobs)
 
     notify(f"🚀 Started engagement monitoring for @{user_handle}")
 

@@ -167,11 +167,12 @@ async def update_intent_endpoint(username: str, background_tasks: BackgroundTask
         if not user_info:
             raise HTTPException(status_code=404, detail=f"User {username} not found")
 
-        # Update intent immediately
+        # Update intent immediately and clear examples (they're no longer relevant to new intent)
         user_info["intent"] = payload.intent
+        user_info["intent_filter_examples"] = []  # Clear examples when intent changes
         write_user_info(user_info)
 
-        notify(f"✅ [Intent] Updated intent for {username}")
+        notify(f"✅ [Intent] Updated intent for {username} (cleared filter examples)")
 
         # Schedule query generation in background
         background_tasks.add_task(_generate_and_update_queries_background, username, payload.intent)

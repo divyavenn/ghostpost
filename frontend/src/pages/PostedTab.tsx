@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
+import { AnimatePresence } from 'framer-motion';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import xLottie from '../assets/x.lottie';
-import { type PostedTweetData, type TweetSource } from '../components/posted_tweet';
+import { type PostedData, type TweetSource } from '../components/PostedDisplay';
+import { AnimatedListItem } from '../components/AnimatedListItem';
 
 /** A thread is a group of tweets in the same conversation replying to the same person */
 interface ThreadGroup {
@@ -9,11 +11,11 @@ interface ThreadGroup {
   respondingTo: string;  // Handle of person being replied to
   respondingToPfp: string;  // Profile pic of person being replied to
   originalTweetUrl: string;  // URL of original tweet
-  tweets: PostedTweetData[];
+  tweets: PostedData[];
 }
 
 interface PostedTabProps {
-  postedTweets: PostedTweetData[];
+  postedTweets: PostedData[];
   userProfilePicUrl: string;
   userHandle: string;
   userUsername: string;
@@ -24,9 +26,9 @@ interface PostedTabProps {
 }
 
 /** Group tweets by immediate parent (what we're directly replying to) */
-function groupTweetsIntoThreads(tweets: PostedTweetData[]): ThreadGroup[] {
+function groupTweetsIntoThreads(tweets: PostedData[]): ThreadGroup[] {
   const conversationMap = new Map<string, {
-    tweets: PostedTweetData[];
+    tweets: PostedData[];
     respondingTo: string;
     respondingToPfp: string;
     originalTweetUrl: string;
@@ -91,7 +93,6 @@ interface ThreadCardProps {
   userProfilePicUrl: string;
   userHandle: string;
   userUsername: string;
-  deletingTweetIds: Set<string>;
   onDelete: (tweetId: string) => void;
   onViewTweet: (tweetId: string) => void;
 }
@@ -101,7 +102,6 @@ function ThreadCard({
   userProfilePicUrl,
   userHandle,
   userUsername,
-  deletingTweetIds,
   onDelete,
   onViewTweet,
 }: ThreadCardProps) {
@@ -138,8 +138,6 @@ function ThreadCard({
   const firstTweet = thread.tweets[0];
   const visibleTweets = isExpanded ? thread.tweets : [firstTweet];
 
-  const isAnyDeleting = thread.tweets.some(t => deletingTweetIds.has(t.id));
-
   const getRelativeTime = (dateStr: string): string => {
     try {
       const tweetDate = new Date(dateStr);
@@ -166,17 +164,13 @@ function ThreadCard({
 
   const isGhostpost = (source?: TweetSource) => source !== 'external';
 
-  const handleViewTweet = (tweet: PostedTweetData) => {
+  const handleViewTweet = (tweet: PostedData) => {
     onViewTweet(tweet.id);
     window.open(tweet.url, '_blank', 'noopener,noreferrer');
   };
 
   return (
-    <div
-      className={`w-full px-[2%] pb-[4%] rounded-2xl bg-black text-white shadow-2xl transition-all duration-300 ${
-        isAnyDeleting ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
-      }`}
-    >
+    <div className="w-full px-[2%] pb-[4%] rounded-2xl bg-black text-white shadow-2xl">
       {/* Header with delete button and source label */}
       <div className="flex items-center justify-between p-5 ml-[-20px] mb-2">
         <div className="flex items-center gap-2">
@@ -419,7 +413,7 @@ export function PostedTab({
   userProfilePicUrl,
   userHandle,
   userUsername,
-  deletingTweetIds,
+  deletingTweetIds: _deletingTweetIds, // Animation handled by framer-motion
   isLoadingMore,
   onDelete,
   onViewTweet,
@@ -445,18 +439,24 @@ export function PostedTab({
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {columns.map((columnThreads, colIndex) => (
           <div key={colIndex} className="flex flex-col gap-6">
-            {columnThreads.map((thread) => (
-              <ThreadCard
-                key={thread.groupKey}
-                thread={thread}
-                userProfilePicUrl={userProfilePicUrl}
-                userHandle={userHandle}
-                userUsername={userUsername}
-                deletingTweetIds={deletingTweetIds}
-                onDelete={onDelete}
-                onViewTweet={onViewTweet}
-              />
-            ))}
+            <AnimatePresence mode="popLayout">
+              {columnThreads.map((thread) => (
+                <AnimatedListItem
+                  key={thread.groupKey}
+                  itemKey={thread.groupKey}
+                  variant="scale"
+                >
+                  <ThreadCard
+                    thread={thread}
+                    userProfilePicUrl={userProfilePicUrl}
+                    userHandle={userHandle}
+                    userUsername={userUsername}
+                    onDelete={onDelete}
+                    onViewTweet={onViewTweet}
+                  />
+                </AnimatedListItem>
+              ))}
+            </AnimatePresence>
           </div>
         ))}
       </div>

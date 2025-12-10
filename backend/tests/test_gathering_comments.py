@@ -19,7 +19,7 @@ async def test_get_thread_discovers_comments(browser_context):
 
     Tests URL: https://x.com/divya_venn/status/1991059548111843523
     """
-    from backend.scraping.twitter.api import get_thread
+    from backend.browser_automation.twitter.api import get_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
     test_root_id = "1991059548111843523"
@@ -49,7 +49,7 @@ async def test_deep_scrape_thread_gets_all_replies(browser_context):
 
     Tests URL: https://x.com/divya_venn/status/1991059548111843523
     """
-    from backend.scraping.twitter.api import deep_scrape_thread
+    from backend.browser_automation.twitter.api import deep_scrape_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
     test_tweet_id = "1991059548111843523"
@@ -97,7 +97,7 @@ async def test_shallow_scrape_detects_reply_activity(browser_context):
 
     Tests URL: https://x.com/divya_venn/status/1991059548111843523
     """
-    from backend.scraping.twitter.api import shallow_scrape_thread
+    from backend.browser_automation.twitter.api import shallow_scrape_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
     test_tweet_id = "1991059548111843523"
@@ -134,7 +134,7 @@ async def test_deep_scrape_excludes_author_replies(browser_context):
     Test that deep_scrape_thread excludes the author's own replies from the replies list.
     Author's self-replies are thread continuations, not comments.
     """
-    from backend.scraping.twitter.api import deep_scrape_thread
+    from backend.browser_automation.twitter.api import deep_scrape_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
     test_tweet_id = "1991059548111843523"
@@ -159,7 +159,7 @@ async def test_replies_have_valid_urls(browser_context):
     """
     Test that discovered replies have valid Twitter URLs.
     """
-    from backend.scraping.twitter.api import deep_scrape_thread
+    from backend.browser_automation.twitter.api import deep_scrape_thread
 
     test_url = "https://x.com/divya_venn/status/1991059548111843523"
     test_tweet_id = "1991059548111843523"

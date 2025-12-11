@@ -523,7 +523,17 @@ function App() {
           const sorted = tweetsWithThreads.sort((a, b) => {
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
           });
-          setTweets(sorted);
+          // Merge: preserve local edits for existing tweets
+          setTweets(prevTweets => {
+            const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
+            return sorted.map(newTweet => {
+              const existingTweet = prevTweetsMap.get(newTweet.id);
+              if (existingTweet?.edited) {
+                return existingTweet;
+              }
+              return newTweet;
+            });
+          });
 
           // Calculate new posts and show modal
           const newCount = sorted.length - tweetCountBeforeScrapeRef.current;
@@ -547,7 +557,17 @@ function App() {
           const sorted = tweetsWithThreads.sort((a, b) => {
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
           });
-          setTweets(sorted);
+          // Merge: preserve local edits for existing tweets
+          setTweets(prevTweets => {
+            const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
+            return sorted.map(newTweet => {
+              const existingTweet = prevTweetsMap.get(newTweet.id);
+              if (existingTweet?.edited) {
+                return existingTweet;
+              }
+              return newTweet;
+            });
+          });
 
           // Calculate new posts and show modal
           const newCount = sorted.length - tweetCountBeforeScrapeRef.current;
@@ -559,6 +579,7 @@ function App() {
         }
 
         // Poll tweets to show them appearing in real-time
+        // Merge with existing state to preserve local edits
         const data = await api.getTweetsCache(username);
         const tweetsWithThreads = data.filter(tweet => {
           const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
@@ -567,7 +588,18 @@ function App() {
         const sorted = tweetsWithThreads.sort((a, b) => {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
         });
-        setTweets(sorted);
+        // Merge: preserve local edits for existing tweets, add new tweets
+        setTweets(prevTweets => {
+          const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
+          return sorted.map(newTweet => {
+            const existingTweet = prevTweetsMap.get(newTweet.id);
+            // If we have a local edit, preserve it
+            if (existingTweet?.edited) {
+              return existingTweet;
+            }
+            return newTweet;
+          });
+        });
       } catch (error) {
         console.error('Polling error:', error);
       }
@@ -681,11 +713,15 @@ function App() {
   const handleEditReply = async (tweetId: string, newReply: string, replyIndex: number = 0) => {
     if (!username) return;
 
+    // Immediately mark as edited to prevent polling from overwriting during API call
+    setTweets(prev => prev.map(t => t.id === tweetId ? { ...t, edited: true } : t));
+
     try {
       await api.editTweetReply(username, tweetId, newReply, replyIndex);
       // Update local state - update the specific reply in the generated_replies array
       // Preserve tuple format: [(text, model), ...]
-      setTweets(tweets.map(t => {
+      // Reset edited flag since backend cache now has the update
+      setTweets(prev => prev.map(t => {
         if (t.id === tweetId) {
           const generatedReplies: Array<[string, string]> = t.generated_replies || (t.reply ? [[t.reply, 'unknown']] : []);
           const updatedReplies: Array<[string, string]> = [...generatedReplies];
@@ -694,12 +730,13 @@ function App() {
             ? updatedReplies[replyIndex][1]
             : 'unknown';
           updatedReplies[replyIndex] = [newReply, currentModel];
-          return { ...t, generated_replies: updatedReplies };
+          return { ...t, generated_replies: updatedReplies, edited: false };
         }
         return t;
       }));
     } catch (error) {
       console.error('Failed to edit reply:', error);
+      // Keep edited: true on error to preserve user's local changes
     }
   };
 
@@ -1075,7 +1112,17 @@ function App() {
                   const sorted = tweetsWithThreads.sort((a, b) => {
                     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
                   });
-                  setTweets(sorted);
+                  // Merge: preserve local edits for existing tweets
+                  setTweets(prevTweets => {
+                    const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
+                    return sorted.map(newTweet => {
+                      const existingTweet = prevTweetsMap.get(newTweet.id);
+                      if (existingTweet?.edited) {
+                        return existingTweet;
+                      }
+                      return newTweet;
+                    });
+                  });
                 } catch (error) {
                   console.error('Polling error:', error);
                 }

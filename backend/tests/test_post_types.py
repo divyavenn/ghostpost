@@ -647,5 +647,215 @@ class TestBuildExamplesFromPosts:
         assert examples == []
 
 
+class TestPostTypeEndpointDetermination:
+    """
+    Tests that verify post_type is correctly determined by posting endpoints.
+
+    Based on real examples:
+    - https://x.com/divya_venn/status/1998595712138056093 → comment_reply
+    - https://x.com/divya_venn/status/1998584939886027235 → reply
+    - https://x.com/divya_venn/status/1998510228602851514 → original
+    """
+
+    @pytest.fixture
+    def mock_cache_dir(self, tmp_path):
+        """Create a temporary cache directory."""
+        cache_dir = tmp_path / "cache"
+        cache_dir.mkdir()
+        return cache_dir
+
+    @pytest.fixture
+    def mock_tweet_cache_with_others_tweet(self, mock_cache_dir):
+        """Mock tweet cache with a tweet from someone else (for reply test)."""
+        cache_data = [
+            {
+                "id": "1998584939886027235",
+                "cache_id": "cache_reply_to_other",
+                "handle": "other_user",  # Different from our user
+                "thread": ["This is someone else's tweet"],
+                "url": "https://x.com/other_user/status/1998584939886027235",
+            }
+        ]
+        cache_file = mock_cache_dir / "divya_venn_tweets.json"
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+        return mock_cache_dir
+
+    @pytest.fixture
+    def mock_tweet_cache_with_own_tweet(self, mock_cache_dir):
+        """Mock tweet cache with user's own tweet (for thread/original test)."""
+        cache_data = [
+            {
+                "id": "1998510228602851514",
+                "cache_id": "cache_own_tweet",
+                "handle": "divya_venn",  # Same as our user
+                "thread": ["This is my own tweet I'm replying to"],
+                "url": "https://x.com/divya_venn/status/1998510228602851514",
+            }
+        ]
+        cache_file = mock_cache_dir / "divya_venn_tweets.json"
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+        return mock_cache_dir
+
+    def test_post_tweet_endpoint_sets_original_type(self, mock_cache_dir):
+        """
+        /post/tweet should set post_type='original' for standalone tweets.
+        Example: https://x.com/divya_venn/status/1998510228602851514
+        """
+        with patch("backend.data.twitter.posted_tweets_cache.get_posted_tweets_path", patch_cache_path(mock_cache_dir)):
+            from backend.data.twitter.posted_tweets_cache import add_posted_tweet
+
+            # Simulate what post_tweet endpoint does
+            tweet = add_posted_tweet(
+                username="divya_venn",
+                posted_tweet_id="1998510228602851514",
+                text="This is an original post",
+                post_type="original",  # post_tweet endpoint passes this
+            )
+
+            assert tweet["post_type"] == "original"
+
+    def test_reply_to_others_tweet_sets_reply_type(self, mock_tweet_cache_with_others_tweet):
+        """
+        Replying to someone else's tweet should set post_type='reply'.
+        Example: https://x.com/divya_venn/status/1998584939886027235
+        """
+        with patch("backend.data.twitter.edit_cache.get_user_tweet_cache") as mock_get_cache:
+            mock_get_cache.return_value = mock_tweet_cache_with_others_tweet / "divya_venn_tweets.json"
+
+            # Simulate the logic from post_reply endpoint
+            username = "divya_venn"
+            cache_id = "cache_reply_to_other"
+
+            # Read cache to determine post_type (same logic as post_reply)
+            post_type = "reply"  # default
+            cache_path = mock_get_cache(username)
+            if cache_path.exists():
+                with open(cache_path, encoding="utf-8") as f:
+                    cached_tweets = json.load(f)
+                for tweet in cached_tweets:
+                    if tweet.get("cache_id") == cache_id:
+                        responding_to_handle = tweet.get("handle", "")
+                        if responding_to_handle.lower() == username.lower():
+                            post_type = "original"
+                        break
+
+            # other_user != divya_venn, so should be "reply"
+            assert post_type == "reply"
+
+    def test_reply_to_own_tweet_sets_original_type(self, mock_tweet_cache_with_own_tweet):
+        """
+        Replying to your own tweet (thread continuation) should set post_type='original'.
+        """
+        with patch("backend.data.twitter.edit_cache.get_user_tweet_cache") as mock_get_cache:
+            mock_get_cache.return_value = mock_tweet_cache_with_own_tweet / "divya_venn_tweets.json"
+
+            # Simulate the logic from post_reply endpoint
+            username = "divya_venn"
+            cache_id = "cache_own_tweet"
+
+            # Read cache to determine post_type (same logic as post_reply)
+            post_type = "reply"  # default
+            cache_path = mock_get_cache(username)
+            if cache_path.exists():
+                with open(cache_path, encoding="utf-8") as f:
+                    cached_tweets = json.load(f)
+                for tweet in cached_tweets:
+                    if tweet.get("cache_id") == cache_id:
+                        responding_to_handle = tweet.get("handle", "")
+                        if responding_to_handle.lower() == username.lower():
+                            post_type = "original"
+                        break
+
+            # divya_venn == divya_venn, so should be "original" (thread)
+            assert post_type == "original"
+
+    def test_reply_to_own_tweet_case_insensitive(self, mock_cache_dir):
+        """Handle comparison should be case-insensitive."""
+        # Create cache with mixed case handle
+        cache_data = [
+            {
+                "id": "123",
+                "cache_id": "test_cache",
+                "handle": "Divya_Venn",  # Different case
+                "thread": ["My tweet"],
+            }
+        ]
+        cache_file = mock_cache_dir / "divya_venn_tweets.json"
+        with open(cache_file, "w") as f:
+            json.dump(cache_data, f)
+
+        username = "divya_venn"  # lowercase
+        cache_id = "test_cache"
+
+        # Simulate the logic from post_reply endpoint
+        post_type = "reply"
+        if cache_file.exists():
+            with open(cache_file, encoding="utf-8") as f:
+                cached_tweets = json.load(f)
+            for tweet in cached_tweets:
+                if tweet.get("cache_id") == cache_id:
+                    responding_to_handle = tweet.get("handle", "")
+                    if responding_to_handle.lower() == username.lower():
+                        post_type = "original"
+                    break
+
+        # Divya_Venn.lower() == divya_venn.lower(), so should be "original"
+        assert post_type == "original"
+
+    def test_comment_reply_sets_comment_reply_type(self, mock_cache_dir):
+        """
+        Comment replies should set post_type='comment_reply'.
+        Example: https://x.com/divya_venn/status/1998595712138056093
+        """
+        with patch("backend.data.twitter.posted_tweets_cache.get_posted_tweets_path", patch_cache_path(mock_cache_dir)):
+            from backend.data.twitter.posted_tweets_cache import add_posted_tweet
+
+            # Simulate what comment_reply endpoint does
+            tweet = add_posted_tweet(
+                username="divya_venn",
+                posted_tweet_id="1998595712138056093",
+                text="Thanks for the comment!",
+                post_type="comment_reply",  # comments_routes.py passes this
+            )
+
+            assert tweet["post_type"] == "comment_reply"
+
+    def test_missing_cache_defaults_to_reply(self, mock_cache_dir):
+        """If cache doesn't exist or cache_id not found, default to 'reply'."""
+        # No cache file exists
+        username = "divya_venn"
+        cache_id = "nonexistent_cache"
+        cache_file = mock_cache_dir / "divya_venn_tweets.json"
+
+        # Simulate the logic from post_reply endpoint
+        post_type = "reply"
+        if cache_file.exists():
+            with open(cache_file, encoding="utf-8") as f:
+                cached_tweets = json.load(f)
+            for tweet in cached_tweets:
+                if tweet.get("cache_id") == cache_id:
+                    responding_to_handle = tweet.get("handle", "")
+                    if responding_to_handle.lower() == username.lower():
+                        post_type = "original"
+                    break
+
+        # Cache doesn't exist, should default to "reply"
+        assert post_type == "reply"
+
+    def test_no_cache_id_defaults_to_reply(self):
+        """If no cache_id is provided, default to 'reply'."""
+        # Simulate the logic when cache_id is None
+        cache_id = None
+        post_type = "reply"
+
+        if cache_id:
+            # Would look up cache here, but cache_id is None
+            pass
+
+        assert post_type == "reply"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

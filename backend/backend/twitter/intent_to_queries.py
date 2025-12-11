@@ -1,6 +1,7 @@
+import asyncio
 import json
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.config import OBELISK_KEY
@@ -158,7 +159,7 @@ async def _generate_and_update_queries_background(username: str, intent: str):
 
 
 @router.post("/{username}/update")
-async def update_intent_endpoint(username: str, background_tasks: BackgroundTasks, payload: UpdateIntentRequest):
+async def update_intent_endpoint(username: str, payload: UpdateIntentRequest):
     try:
         notify(f"📝 [Intent] Received intent update for {username}")
 
@@ -174,8 +175,8 @@ async def update_intent_endpoint(username: str, background_tasks: BackgroundTask
 
         notify(f"✅ [Intent] Updated intent for {username} (cleared filter examples)")
 
-        # Schedule query generation in background
-        background_tasks.add_task(_generate_and_update_queries_background, username, payload.intent)
+        # Schedule query generation in background with asyncio.create_task
+        asyncio.create_task(_generate_and_update_queries_background(username, payload.intent))
 
         return {"message": "Intent updated. Queries are being generated in background.", "intent": payload.intent, "background_task": "query_generation_scheduled"}
 

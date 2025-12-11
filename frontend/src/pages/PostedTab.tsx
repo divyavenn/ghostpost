@@ -4,6 +4,7 @@ import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import xLottie from '../assets/x.lottie';
 import { type PostedData, type TweetSource } from '../components/PostedDisplay';
 import { AnimatedListItem } from '../components/AnimatedListItem';
+import { QuotedTweetDisplay, TweetMediaGrid } from '../components/TweetMediaComponents';
 
 /** A thread is a group of tweets in the same conversation replying to the same person */
 interface ThreadGroup {
@@ -327,6 +328,11 @@ function ThreadCard({
                       </>
                     );
                   })()}
+
+                  {/* Quoted Tweet */}
+                  {tweet.quoted_tweet && (
+                    <QuotedTweetDisplay quotedTweet={tweet.quoted_tweet} />
+                  )}
 
                   {/* Media Grid */}
                   {tweet.media && tweet.media.length > 0 && (

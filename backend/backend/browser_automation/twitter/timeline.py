@@ -3,7 +3,7 @@ import os
 import re
 import time
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from playwright.async_api import async_playwright
 from pydantic import BaseModel
 
@@ -369,16 +369,30 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         error(f"Error in background scraping/generation for {username}: {e}", status_code=500, function_name="_scrape_and_generate_background", username=username, critical=False)
 
 
+async def _run_find_and_reply_with_error_handling(username: str, triggered_by: str = "user"):
+    """
+    Wrapper that catches and logs any exceptions from find_and_reply_to_new_posts.
+    asyncio.create_task() silently swallows exceptions, so we need explicit handling.
+    """
+    try:
+        from backend.twitter.twitter_jobs import find_and_reply_to_new_posts
+        await find_and_reply_to_new_posts(username, triggered_by)
+    except Exception as e:
+        import traceback
+        error_msg = f"find_and_reply_to_new_posts crashed: {e}\n{traceback.format_exc()}"
+        notify(f"❌ [Background] {error_msg}")
+        error(error_msg, status_code=500, function_name="find_and_reply_to_new_posts", username=username, critical=False)
+
+
 @router.post("/{username}/tweets")
-async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks, payload: ReadTweetsRequest | None = None) -> dict:
+async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None = None) -> dict:
     """
     Start tweet scraping and reply generation in background. Returns immediately.
     Frontend should poll /jobs/{username}/status to track progress.
 
     Uses find_and_reply_to_new_posts job which fetches full thread context for each tweet.
+    Uses asyncio.create_task() for true parallel execution with other background jobs.
     """
-    from backend.twitter.twitter_jobs import find_and_reply_to_new_posts
-
     try:
         notify(f"📋 [API] Received scrape request for {username}")
 
@@ -391,8 +405,8 @@ async def read_tweets_endpoint(username: str, background_tasks: BackgroundTasks,
         account_type = user_info.get("account_type", "trial")
         notify(f"📋 [API] User {username} has account type: {account_type}")
 
-        # Schedule the unified job that handles scraping + thread fetching + reply generation
-        background_tasks.add_task(find_and_reply_to_new_posts, username, "user")
+        # Use asyncio.create_task with error handling wrapper for true parallel execution
+        asyncio.create_task(_run_find_and_reply_with_error_handling(username, "user"))
 
         notify(f"✅ [API] Background job scheduled for {username}")
 

@@ -8,7 +8,6 @@ Three main background jobs:
 """
 import asyncio
 from datetime import datetime
-from typing import Any
 
 try:
     from datetime import UTC
@@ -16,17 +15,29 @@ except ImportError:
     from datetime import timezone
     UTC = timezone.utc
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, HTTPException
 
 from backend.twitter.display_progress import (
-    clear_phase_tracking,
     get_job_display_name,
     print_job_complete,
-    print_job_error,
     print_job_start,
     print_progress_bar,
 )
 from backend.utlils.utils import error, notify, read_user_info
+
+
+async def _run_job_with_error_handling(coro, job_name: str, username: str):
+    """
+    Wrapper that catches and logs any exceptions from background job coroutines.
+    asyncio.create_task() silently swallows exceptions, so we need explicit handling.
+    """
+    try:
+        return await coro
+    except Exception as e:
+        import traceback
+        error_msg = f"{job_name} crashed: {e}\n{traceback.format_exc()}"
+        notify(f"❌ [Background] {error_msg}")
+        error(error_msg, status_code=500, function_name=job_name, username=username, critical=False)
 
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -261,9 +272,10 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         Summary dict with counts
     """
     import time
+
+    from backend.browser_automation.twitter.api import collect_from_page as api_collect_from_page
     from backend.config import MAX_TWEET_AGE_HOURS
     from backend.data.twitter.edit_cache import cleanup_old_tweets, write_to_cache
-    from backend.browser_automation.twitter.api import collect_from_page as api_collect_from_page
     from backend.user.user import read_user_settings
     from backend.utlils.utils import cleanup_seen_tweets, is_tweet_seen, write_user_info
 
@@ -316,32 +328,93 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         await cleanup_old_tweets(username, hours=MAX_TWEET_AGE_HOURS)
         cleanup_seen_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
-        # Track background reply generation tasks
-        reply_tasks = []
+        # Generate replies for any cached tweets that don't have them (for premium users)
+        if is_premium:
+            from backend.data.twitter.edit_cache import read_from_cache, write_to_cache
+            from backend.twitter.generate_replies import generate_replies_for_tweet
 
-        # Progressive write callback that spawns reply generation
+            _update_job_status(username, "find_and_reply_to_new_posts", "running", "generating", details="cached tweets")
+            cached_tweets = await read_from_cache(username)
+            tweets_needing_replies = [t for t in cached_tweets if not t.get("generated_replies") and t.get("thread")]
+
+            if tweets_needing_replies:
+                notify(f"📝 Found {len(tweets_needing_replies)} cached tweet(s) without replies, generating...")
+                models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
+                num_generations = user_info.get("number_of_generations", 2)
+
+                for i, tweet in enumerate(tweets_needing_replies):
+                    tweet_id = tweet.get("id") or tweet.get("tweet_id")
+                    _update_job_status(
+                        username, "find_and_reply_to_new_posts", "running",
+                        "generating",
+                        progress={"current": i + 1, "total": len(tweets_needing_replies)},
+                        details="cached tweets"
+                    )
+                    try:
+                        replies = await generate_replies_for_tweet(
+                            tweet=tweet,
+                            models=models,
+                            needed_generations=num_generations,
+                            delay_seconds=0.5,
+                            username=username
+                        )
+                        if replies:
+                            tweet["generated_replies"] = replies
+                            await write_to_cache([tweet], f"Generated replies for cached tweet {tweet_id}", username=username)
+                            results["replies_generating"] += 1
+                            notify(f"✅ Generated {len(replies)} replies for cached tweet {tweet_id}")
+                    except Exception as e:
+                        notify(f"⚠️ Error generating replies for cached tweet {tweet_id}: {e}")
+
+        # Progressive write callback that generates replies inline before writing
         async def progressive_write_with_replies(tweets_batch, target_username):
-            """Write tweets and spawn reply generation in parallel."""
-            nonlocal reply_tasks
+            """Generate replies for each tweet, then write to cache with replies included."""
+            from backend.twitter.generate_replies import generate_replies_for_tweet
+
+            notify(f"📥 [Callback] Received {len(tweets_batch)} tweets for {target_username}, is_premium={is_premium}")
 
             filtered_batch = []
             for tweet in tweets_batch:
                 tweet_id = tweet.get("id") or tweet.get("tweet_id")
                 if tweet_id and not is_tweet_seen(target_username, str(tweet_id)):
                     filtered_batch.append(tweet)
+                else:
+                    notify(f"⏭️ Skipping tweet {tweet_id} (already seen)")
 
-            if filtered_batch:
-                await write_to_cache(filtered_batch, "Progressive tweet scraping", username=target_username)
-                results["tweets_scraped"] += len(filtered_batch)
+            if not filtered_batch:
+                notify(f"⚠️ [Callback] No new tweets to process (all filtered out)")
+                return
 
-                # Spawn reply generation for each tweet (premium only)
-                if is_premium:
-                    for tweet in filtered_batch:
-                        task = asyncio.create_task(
-                            _generate_reply_for_tweet_background(tweet, target_username)
+            notify(f"📝 [Callback] Processing {len(filtered_batch)} new tweets, is_premium={is_premium}")
+
+            # For premium users, generate replies BEFORE writing to cache
+            if is_premium:
+                models = user_info.get("models", ["claude-3-5-sonnet-20241022"]) if user_info else ["claude-3-5-sonnet-20241022"]
+                num_generations = user_info.get("number_of_generations", 2) if user_info else 2
+
+                for tweet in filtered_batch:
+                    tweet_id = tweet.get("id") or tweet.get("tweet_id")
+                    try:
+                        # Generate replies inline (await - not background)
+                        replies = await generate_replies_for_tweet(
+                            tweet=tweet,
+                            models=models,
+                            needed_generations=num_generations,
+                            delay_seconds=0.5,
+                            username=target_username
                         )
-                        reply_tasks.append(task)
-                        results["replies_generating"] += 1
+                        if replies:
+                            tweet["generated_replies"] = replies
+                            results["replies_generating"] += 1
+                            notify(f"✅ Generated {len(replies)} replies for tweet {tweet_id}")
+                    except Exception as e:
+                        notify(f"⚠️ Error generating replies for tweet {tweet_id}: {e}")
+            else:
+                notify(f"⚠️ [Callback] Skipping reply generation - user is not premium (is_premium={is_premium})")
+
+            # Write tweets (with replies if generated) to cache
+            await write_to_cache(filtered_batch, "Progressive tweet scraping", username=target_username)
+            results["tweets_scraped"] += len(filtered_batch)
 
         # Scrape accounts
         total_sources = len(relevant_accounts) + len(queries)
@@ -361,7 +434,8 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
                 url = f"https://x.com/{account}"
                 tweets = await api_collect_from_page(
                     None, url, handle=account, username=username,
-                    write_callback=progressive_write_with_replies
+                    write_callback=progressive_write_with_replies,
+                    generate_replies_inline=False  # We handle reply generation in progressive_write_with_replies
                 )
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "account", "value": account}
@@ -386,7 +460,8 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
                 url = f"https://x.com/search?q={quote_plus(query)}"
                 tweets = await api_collect_from_page(
                     None, url, handle=None, username=username,
-                    write_callback=progressive_write_with_replies
+                    write_callback=progressive_write_with_replies,
+                    generate_replies_inline=False  # We handle reply generation in progressive_write_with_replies
                 )
                 for tweet_data in tweets.values():
                     tweet_data["scraped_from"] = {"type": "query", "value": query, "summary": summary}
@@ -410,7 +485,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
                 username=username,
                 max_tweets=max_tweets,
                 write_callback=progressive_write_with_replies,
-                generate_replies_inline=is_premium
+                generate_replies_inline=False  # We handle reply generation in progressive_write_with_replies
             )
             for tweet_data in home_tweets.values():
                 tweet_data["scraped_from"] = {"type": "home_timeline", "value": "following"}
@@ -420,16 +495,6 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         except Exception as e:
             notify(f"⚠️ Error fetching home timeline: {e}")
             results["errors"].append(f"Home timeline: {e}")
-
-        # Wait for all reply generation tasks to complete
-        if reply_tasks:
-            _update_job_status(
-                username, "find_and_reply_to_new_posts", "running",
-                "generating_replies",
-                progress={"current": 0, "total": len(reply_tasks)}
-            )
-            notify(f"⏳ Waiting for {len(reply_tasks)} reply generation tasks...")
-            await asyncio.gather(*reply_tasks, return_exceptions=True)
 
         # Update scrolling time saved
         end_time = time.time()
@@ -489,6 +554,7 @@ async def find_user_activity(username: str, max_tweets: int = 50, triggered_by: 
         Combined results from both jobs
     """
     import time
+
     from backend.twitter.monitoring import discover_recently_posted, discover_resurrected
 
     start_time = time.time()
@@ -671,17 +737,12 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
         Summary dict with counts
     """
     import time
-    from backend.browser_management.context import cleanup_browser_resources, get_authenticated_context
-    from backend.data.twitter.comments_cache import (
-        get_comment, get_thread_context, process_scraped_quote_tweets, process_scraped_replies
-    )
-    from backend.data.twitter.posted_tweets_cache import (
-        get_tweets_by_monitoring_state, read_posted_tweets_cache, write_posted_tweets_cache
-    )
+
     from backend.browser_automation.twitter.api import deep_scrape_thread, shallow_scrape_thread
-    from backend.twitter.monitoring import (
-        _determine_monitoring_state, _should_promote_to_active
-    )
+    from backend.browser_management.context import cleanup_browser_resources, get_authenticated_context
+    from backend.data.twitter.comments_cache import get_comment, get_thread_context, process_scraped_quote_tweets, process_scraped_replies
+    from backend.data.twitter.posted_tweets_cache import get_tweets_by_monitoring_state, read_posted_tweets_cache, write_posted_tweets_cache
+    from backend.twitter.monitoring import _determine_monitoring_state, _should_promote_to_active
 
     start_time = time.time()
     print_job_start("find_and_reply_to_engagement", username, triggered_by)
@@ -938,7 +999,6 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
 @router.post("/{username}/find-and-reply-to-new-posts")
 async def start_find_and_reply_to_new_posts(
     username: str,
-    background_tasks: BackgroundTasks,
     triggered_by: str = "user"
 ) -> dict:
     """
@@ -947,6 +1007,8 @@ async def start_find_and_reply_to_new_posts(
     Scrapes tweets from configured accounts/queries and generates AI replies
     in parallel as tweets are discovered.
 
+    Uses asyncio.create_task() for true parallel execution with other background jobs.
+
     Args:
         triggered_by: "user" for manual trigger, "scheduler" for background scheduler
     """
@@ -954,7 +1016,10 @@ async def start_find_and_reply_to_new_posts(
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
-    background_tasks.add_task(find_and_reply_to_new_posts, username, triggered_by)
+    asyncio.create_task(_run_job_with_error_handling(
+        find_and_reply_to_new_posts(username, triggered_by),
+        "find_and_reply_to_new_posts", username
+    ))
 
     return {
         "message": "Job started: find_and_reply_to_new_posts",
@@ -967,7 +1032,6 @@ async def start_find_and_reply_to_new_posts(
 @router.post("/{username}/find-user-activity")
 async def start_find_user_activity(
     username: str,
-    background_tasks: BackgroundTasks,
     max_tweets: int = 50,
     triggered_by: str = "user"
 ) -> dict:
@@ -977,6 +1041,8 @@ async def start_find_user_activity(
     Discovers user's external posts and resurrects cold tweets.
     Runs discover_recently_posted and discover_resurrected in parallel.
 
+    Uses asyncio.create_task() for true parallel execution with other background jobs.
+
     Args:
         triggered_by: "user" for manual trigger, "scheduler" for background scheduler
     """
@@ -984,7 +1050,10 @@ async def start_find_user_activity(
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
-    background_tasks.add_task(find_user_activity, username, max_tweets, triggered_by)
+    asyncio.create_task(_run_job_with_error_handling(
+        find_user_activity(username, max_tweets, triggered_by),
+        "find_user_activity", username
+    ))
 
     return {
         "message": "Job started: find_user_activity",
@@ -997,7 +1066,6 @@ async def start_find_user_activity(
 @router.post("/{username}/find-and-reply-to-engagement")
 async def start_find_and_reply_to_engagement(
     username: str,
-    background_tasks: BackgroundTasks,
     triggered_by: str = "user"
 ) -> dict:
     """
@@ -1008,6 +1076,8 @@ async def start_find_and_reply_to_engagement(
 
     Order: Shallow scrape warm first, then deep scrape active (including promoted).
 
+    Uses asyncio.create_task() for true parallel execution with other background jobs.
+
     Args:
         triggered_by: "user" for manual trigger, "scheduler" for background scheduler
     """
@@ -1015,7 +1085,10 @@ async def start_find_and_reply_to_engagement(
     if not user_info:
         raise HTTPException(status_code=404, detail="User not found")
 
-    background_tasks.add_task(find_and_reply_to_engagement, username, triggered_by)
+    asyncio.create_task(_run_job_with_error_handling(
+        find_and_reply_to_engagement(username, triggered_by),
+        "find_and_reply_to_engagement", username
+    ))
 
     return {
         "message": "Job started: find_and_reply_to_engagement",

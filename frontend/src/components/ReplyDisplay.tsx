@@ -51,6 +51,8 @@ export interface ReplyData {
     created_at: string;
     url: string;
   };
+  /** Flag to indicate this tweet has been locally edited and should not be overwritten by polling */
+  edited?: boolean;
 }
 
 interface ReplyDisplayProps {

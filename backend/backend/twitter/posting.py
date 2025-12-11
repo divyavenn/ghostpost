@@ -181,8 +181,9 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                 current_posts = user_info.get("lifetime_posts", 0)
                 user_info["lifetime_posts"] = current_posts + 1
 
-                # Add to intent_filter_examples if we have < 5 examples and this is a reply to a scraped post
-                if response_to_thread and responding_to_handle:
+                # Add to intent_filter_examples if we have < 5 examples and this is a reply to someone else's post
+                # Only add "reply" type posts (not comment_reply or original)
+                if response_to_thread and responding_to_handle and post_type == "reply":
                     examples = user_info.get("intent_filter_examples", [])
                     if len(examples) < 5:
                         # Add the original tweet as an example
@@ -207,16 +208,39 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
 @router.post("/tweet")
 async def post_tweet(username: str, payload: Tweet) -> dict:
     data = {"text": payload.text}
-    return await post(username, data, cache_id=payload.cache_id)
+    return await post(username, data, cache_id=payload.cache_id, post_type="original")
 
 
 @router.post("/reply")
 async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
-    from backend.data.twitter.edit_cache import delete_tweet
+    import json
+
+    from backend.data.twitter.edit_cache import delete_tweet, get_user_tweet_cache
 
     data = {"text": payload.text, "reply": {"in_reply_to_tweet_id": payload.tweet_id}}
+
+    # Determine post_type based on who we're replying to
+    # If replying to our own tweet (thread continuation) → "original"
+    # If replying to someone else's tweet → "reply"
+    post_type = "reply"  # default
+    if payload.cache_id:
+        try:
+            cache_path = get_user_tweet_cache(username)
+            if cache_path.exists():
+                with open(cache_path, encoding="utf-8") as f:
+                    cached_tweets = json.load(f)
+                for tweet in cached_tweets:
+                    if tweet.get("cache_id") == payload.cache_id:
+                        responding_to_handle = tweet.get("handle", "")
+                        # Compare handles (case-insensitive)
+                        if responding_to_handle.lower() == username.lower():
+                            post_type = "original"  # Thread continuation
+                        break
+        except Exception:
+            pass  # Default to "reply" on any error
+
     try:
-        return await post(username, data, cache_id=payload.cache_id, reply_index=payload.reply_index)
+        return await post(username, data, cache_id=payload.cache_id, reply_index=payload.reply_index, post_type=post_type)
     except HTTPException as e:
         # Handle deleted tweet - remove from cache and return informative response
         if e.status_code == status.HTTP_410_GONE and e.detail == "TWEET_DELETED":

@@ -8,10 +8,26 @@ Provides endpoints for:
 - Posting replies to comments
 - Running engagement monitoring jobs
 """
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+import asyncio
+
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from backend.utlils.utils import error, notify, read_user_info
+
+
+async def _run_with_error_handling(coro, func_name: str, username: str):
+    """
+    Wrapper that catches and logs any exceptions from background coroutines.
+    asyncio.create_task() silently swallows exceptions, so we need explicit handling.
+    """
+    try:
+        return await coro
+    except Exception as e:
+        import traceback
+        error_msg = f"{func_name} crashed: {e}\n{traceback.format_exc()}"
+        notify(f"❌ [Background] {error_msg}")
+        error(error_msg, status_code=500, function_name=func_name, username=username, critical=False)
 
 
 router = APIRouter(prefix="/comments", tags=["comments"])
@@ -455,7 +471,6 @@ async def get_engagement_monitoring_status(username: str) -> dict:
 @router.post("/{username}/monitor/start")
 async def start_engagement_monitoring(
     username: str,
-    background_tasks: BackgroundTasks
 ) -> dict:
     """
     Start background engagement monitoring.
@@ -463,6 +478,8 @@ async def start_engagement_monitoring(
     Runs the two engagement jobs:
     1. find_user_activity - Discover user's external posts
     2. find_and_reply_to_engagement - Monitor engagement and generate replies
+
+    Uses asyncio.create_task() for true parallel execution with other background jobs.
     """
     from backend.twitter.twitter_jobs import find_user_activity, find_and_reply_to_engagement
 
@@ -472,12 +489,13 @@ async def start_engagement_monitoring(
 
     user_handle = user_info.get("handle", username)
 
-    # Run jobs in background (they run sequentially within the background task)
+    # Run jobs sequentially (activity discovery then engagement monitoring)
+    # but use asyncio.create_task so they don't block other endpoints' tasks
     async def run_jobs():
         await find_user_activity(username, triggered_by="refresh")
         await find_and_reply_to_engagement(username, triggered_by="refresh")
 
-    background_tasks.add_task(run_jobs)
+    asyncio.create_task(_run_with_error_handling(run_jobs(), "engagement_monitoring", username))
 
     notify(f"🚀 Started engagement monitoring for @{user_handle}")
 
@@ -491,7 +509,6 @@ async def start_engagement_monitoring(
 @router.post("/{username}/monitor/discover-recent")
 async def run_discover_recently_posted(
     username: str,
-    background_tasks: BackgroundTasks,
     max_tweets: int = Query(default=50, ge=1, le=200)
 ) -> dict:
     """
@@ -505,8 +522,11 @@ async def run_discover_recently_posted(
 
     user_handle = user_info.get("handle", username)
 
-    # Run in background
-    background_tasks.add_task(discover_recently_posted, username, user_handle, max_tweets)
+    # Run in background with asyncio.create_task for parallel execution
+    asyncio.create_task(_run_with_error_handling(
+        discover_recently_posted(username, user_handle, max_tweets),
+        "discover_recently_posted", username
+    ))
 
     return {
         "message": "discover_recently_posted started",
@@ -519,7 +539,6 @@ async def run_discover_recently_posted(
 @router.post("/{username}/monitor/discover-engagement")
 async def run_discover_engagement(
     username: str,
-    background_tasks: BackgroundTasks
 ) -> dict:
     """
     Run discover_engagement job to monitor active/warm tweets.
@@ -532,8 +551,11 @@ async def run_discover_engagement(
 
     user_handle = user_info.get("handle", username)
 
-    # Run in background
-    background_tasks.add_task(discover_engagement, username, user_handle)
+    # Run in background with asyncio.create_task for parallel execution
+    asyncio.create_task(_run_with_error_handling(
+        discover_engagement(username, user_handle),
+        "discover_engagement", username
+    ))
 
     return {
         "message": "discover_engagement started",
@@ -545,7 +567,6 @@ async def run_discover_engagement(
 @router.post("/{username}/monitor/discover-resurrected")
 async def run_discover_resurrected(
     username: str,
-    background_tasks: BackgroundTasks
 ) -> dict:
     """
     Run discover_resurrected job to check notifications for cold tweets.
@@ -558,8 +579,11 @@ async def run_discover_resurrected(
 
     user_handle = user_info.get("handle", username)
 
-    # Run in background
-    background_tasks.add_task(discover_resurrected, username, user_handle)
+    # Run in background with asyncio.create_task for parallel execution
+    asyncio.create_task(_run_with_error_handling(
+        discover_resurrected(username, user_handle),
+        "discover_resurrected", username
+    ))
 
     return {
         "message": "discover_resurrected started",

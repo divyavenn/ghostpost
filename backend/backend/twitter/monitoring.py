@@ -102,6 +102,43 @@ def _determine_monitoring_state(tweet: dict) -> str:
         return "warm"
 
 
+def _update_intent_filter_examples(username: str, limit: int = 5) -> None:
+    """
+    Update intent_filter_examples in user_info with top-performing replies.
+
+    Uses get_top_posts_by_type("reply") to get replies sorted by engagement score,
+    then extracts the original posts (not the user's reply text) as examples.
+
+    Args:
+        username: User's handle
+        limit: Max number of examples to store
+    """
+    from backend.data.twitter.posted_tweets_cache import get_top_posts_by_type
+    from backend.utlils.utils import read_user_info, write_user_info
+
+    top_replies = get_top_posts_by_type(username, post_type="reply", limit=limit)
+
+    examples = []
+    for post in top_replies:
+        response_to_thread = post.get("response_to_thread", [])
+        responding_to = post.get("responding_to", "")
+
+        if response_to_thread and responding_to:
+            # Join thread texts and truncate - only include original post, not user's reply
+            original_text = " | ".join(response_to_thread)[:500]
+            examples.append({
+                "author": responding_to,
+                "text": original_text
+            })
+
+    # Update user_info with new examples
+    user_info = read_user_info(username)
+    if user_info:
+        user_info["intent_filter_examples"] = examples
+        write_user_info(user_info)
+        notify(f"📚 Updated intent filter examples ({len(examples)}) for @{username}")
+
+
 async def discover_recently_posted(username: str, user_handle: str, max_tweets: int = 50) -> dict[str, Any]:
     """
     Job 1: Discover user's recently posted tweets not tracked by the app.
@@ -502,6 +539,12 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
                 results["errors"].append(f"Shallow scrape {tweet_id}: {e}")
 
         notify(f"✅ [discover_engagement] Complete: {results['active_scraped']} deep, {results['warm_scraped']} shallow, {results['new_comments']} comments, {results['new_quote_tweets']} QTs")
+
+        # Update intent_filter_examples with top-performing replies (sorted by engagement)
+        try:
+            _update_intent_filter_examples(username)
+        except Exception as e:
+            notify(f"⚠️ Failed to update intent filter examples: {e}")
 
     except Exception as e:
         error(f"discover_engagement failed: {e}", status_code=500, function_name="discover_engagement", username=username, critical=False)

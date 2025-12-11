@@ -138,6 +138,30 @@ async def ask_llm(system_prompt, prompt, tweet_id: str = "unknown", username: st
         return ""
 
 
+def get_intent_filter_examples(username: str, limit: int = 5) -> list[dict]:
+    """
+    Get examples of original posts the user has replied to.
+
+    Reads from user_info.intent_filter_examples which is updated by:
+    - discover_engagement job (uses top-performing replies sorted by engagement)
+    - posting.py fallback (adds examples when posting replies)
+
+    Args:
+        username: User's handle
+        limit: Max number of examples
+
+    Returns:
+        List of {"author": handle, "text": original_post_text}
+    """
+    try:
+        user_info = read_user_info(username)
+        if user_info:
+            return user_info.get("intent_filter_examples", [])[:limit]
+        return []
+    except Exception:
+        return []
+
+
 async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) -> bool:
     user_info = read_user_info(username)
     if not user_info:
@@ -158,11 +182,11 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
         # No text to evaluate, reject
         return False
 
-    # Get intent filter examples from user_info (posts user has replied to)
-    examples = user_info.get("intent_filter_examples", [])
+    # Get examples from top-performing replies (sorted by engagement score)
+    examples = get_intent_filter_examples(username, limit=5)
     examples_context = ""
     if examples:
-        examples_context = "\n\n[EXAMPLES OF POSTS THE USER HAS REPLIED TO]\n"
+        examples_context = "\n\n[EXAMPLES OF POSTS THE USER HAS REPLIED TO (sorted by engagement)]\n"
         for i, ex in enumerate(examples, 1):
             author = ex.get("author", "unknown")
             text = ex.get("text", "")

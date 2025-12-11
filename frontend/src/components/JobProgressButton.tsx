@@ -130,13 +130,19 @@ export function JobProgressButton({
     }
   };
 
-  // Initial status check on mount
+  // Initial status check on mount - only runs once per username
+  const hasCheckedInitialRef = useRef(false);
+
   useEffect(() => {
-    if (!username || username.trim() === '') return;
+    if (!username || username.trim() === '' || hasCheckedInitialRef.current) return;
+
+    hasCheckedInitialRef.current = true;
 
     const checkInitialStatus = async () => {
       try {
         const allStatus = await api.getJobsStatus(username);
+        if (!mountedRef.current) return;
+
         const newStatuses: Record<string, JobStatus> = {};
         for (const jobName of jobNames) {
           const jobKey = jobName as keyof typeof allStatus.jobs;
@@ -150,7 +156,7 @@ export function JobProgressButton({
         const anyRunning = Object.values(newStatuses).some(
           (s) => s.status === 'running'
         );
-        if (anyRunning && !isPolling) {
+        if (anyRunning) {
           setIsPolling(true);
           pollTimeoutRef.current = setTimeout(pollJobStatus, pollInterval);
         }
@@ -160,7 +166,8 @@ export function JobProgressButton({
     };
 
     checkInitialStatus();
-  }, [username, jobNames, pollInterval, isPolling, pollJobStatus]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [username]); // Only re-run when username changes
 
   // Cleanup on unmount
   useEffect(() => {

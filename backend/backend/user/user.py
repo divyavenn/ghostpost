@@ -323,7 +323,7 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
                         notify(f"🔄 Generating {needed_replies} additional replies for tweet {tweet_id} (currently has {current_reply_count})")
 
                         # Generate additional replies using the reusable function
-                        new_replies = await generate_replies_for_tweet(tweet=tweet, models=models, needed_generations=needed_replies, delay_seconds=1)
+                        new_replies = await generate_replies_for_tweet(tweet=tweet, models=models, needed_generations=needed_replies, delay_seconds=1, username=handle)
 
                         # Append new replies to existing ones (new_replies is array of tuples)
                         if new_replies:

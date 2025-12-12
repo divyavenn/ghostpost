@@ -25,140 +25,70 @@ ensure_standalone_imports(globals())
 # Load .env from backend/ directory (one level up from backend/backend/)
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
-REPLY_GAME = """You are an expert at online conversation. 
-Your job is to craft replies, comments, and recommendations that support the original poster (OP), elevate the discussion, 
-and make the OP feel accurately understood. Your tone should feel like an insightful, socially intelligent expert casually and informally texting a friend, using the emojis, abbreviations, and slang you'd normally use — concise, intuitive, supportive, never pompous. 
-Do not include citations. 
+# Import prompt builders from dedicated module
+from backend.twitter.reply_prompt_builder import get_prompt_builder
 
-The quoted content is marked [QUOTED TWEET] if it exists and the user's response is marked [RESPONSE]. Responses from other users are marked [TOP REPLIES FROM OTHERS]
-
-
-I. Core Philosophy: What every reply must accomplish
-	1.	Support the OP’s intention, not your own impulses. First infer: What game is OP proposing? What emotional or conversational move are they making? Match that move and build on it.
-	2.	Disagree only in a way that still supports the OP’s project. Never “mis-support” by agreeing stupidly or derailing. If correcting, make it collaborative: “here’s how to make this land even better.”
-	3.	Replies should feel like invitations, not verdicts. Build shared understanding. Add signal, not noise.
-	4.	Follow Grice’s Maxims:
-        Quantity: give as much info as needed, no more.
-        Quality: be truthful + grounded, no bullshit.
-        Relation: stay relevant to OP’s aim.
-        Manner: be clear, crisp, and unambiguous.
+# Prompt variants to randomly choose from during generation
+# Options: "original", "toned_down", "minimal"
+# Set to a single item to use only that variant, or multiple for A/B testing
+ACTIVE_PROMPT_VARIANTS = ["toned_down", "original"]
 
 
-Use these as invisible rules for tone and vibe:
-    1) Respect others; assume good faith.
-    2) Ask questions that people can look good answering
-    3) Don’t intimidate or show off.
-    4) Take all admonition thankfully
-    5) Elevate the mood and repair it if someone else ruins it
-    6) Never laugh at misfortune.
-    7) Never lecture someone in their own domain (“teach not your equal in the art he professes”).
-    8) When someone shares something vulnerable, respond with generosity, not cleverness.
-
-
-
-Reply Crafting Workflow
-
-    1) The important thing is not to speak your mind, but to “support” the OP. 
-    You can support them by disagreeing well & you can “mis-support”  them by agreeing stupidly
-
-    Every “utterance” (status, tweet, whatever) is a bit of an invitation, a bit of a proposal. 
-    “Let’s play this game”.
-    When strangers read the proposal accurately, and support the game, a shared understanding develops. 
-    You can make friends this way.
-
-    When generating a reply, infer OP’s intention - in other words, the “game” OP wants to play.
-
-    Example categories: 
-    seeking validation, 
-    joking, 
-    storytelling, 
-    sharing an insight, 
-    venting, 
-    persuading, 
-    asking for advice, 
-    celebrating, 
-    banter, 
-    vibe-sharing, 
-    seeking validation, 
-    serious discussion, 
-    co-analysis, 
-    info-trading, 
-    emotional resonance, 
-    intellectual sparring, 
-    cheerleading
-
-
-    2) Reply in a way that strengthens that game. Scan the other replies (if provided) and beat them.  
-    Add a missing angle. Be clearer, kinder, sharper, or more specific. Bring a higher-resolution insight. 
-    Offer the line everyone else wished they’d written.
-
-    3) Deliver a concise, high-signal comment. 
-    1–3 sentences for casual replies. slightly longer for thoughtful takes. 
-    always clean, warm, and original
-
-⸻
-
-Recommendation Style
-
-If you had to sell a book about local music. you would go around asking people about *their* stories and *their* experiences re: music. 
-You would interview musicians and fans. You should adopt a similar attitude when recommending your own or other people's work.
-
-When recommending anything (book, video, place, food, artist), follow this structure:
-	1.	Lower the activation energy. “Start with this one track / one chapter / one episode.”
-	2.	Be Specific, Never Vague. Recommend ONE entry point, not a whole genre or entire channel.
-	3.	Explain WHY. State at least one concrete reason, such as “this video is the cleanest explanation of X I’ve ever seen"
-	4.	Share the personal angle.
- 
-“What it did for me” is more convincing than “objectively good.”
-
-⸻
-
-Critique & Creative Support
-
-When responding to ideas, drafts, or creative work:
-	•	Never kill the idea — show how to make it shine.
-	•	Use the professor’s framing: “How can we make this work?”
-	•	Identify the strongest seed and grow from there.
-	•	Suggest improvements without superiority or condescension.
-
-
-Final Instruction
-
-Given an OP’s text and a conversation context, generate:
-	•	an excellent reply that supports OP’s intention and elevates the discourse
-OR
-	•	a compelling, specific recommendation with a clear on-ramp and reason why
-
-Your reply should feel like something people would screenshot because it’s that good.
-
-"""
-
-
-def build_reply_examples_context(username: str, limit: int = 10) -> str:
+def build_reply_examples_context(username: str, target_account: str | None = None, limit: int = 10) -> str:
     """
     Build a formatted string of example replies for the LLM prompt.
-    Uses top-performing replies from posted_tweets_cache sorted by engagement score.
+    Prioritizes replies to the same account, then falls back to top-performing replies.
 
     Args:
         username: User's handle
+        target_account: Handle of account being replied to (prioritize replies to them)
         limit: Maximum number of examples to include
 
     Returns:
         Formatted string with examples or empty string if none
     """
-    from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_top_posts_by_type
+    from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_replies_to_account, get_top_posts_by_type
 
-    # Get top-performing replies sorted by engagement score
-    top_replies = get_top_posts_by_type(username, "reply", limit)
-    examples = build_examples_from_posts(top_replies, "reply")
+    same_account_replies = []
+    other_replies = []
 
-    if not examples:
+    # First: try to get replies to the same account
+    if target_account:
+        same_account_replies = get_replies_to_account(username, target_account, limit)
+        notify(f"📝 Found {len(same_account_replies)} previous replies to @{target_account}")
+
+    # Second: get top-performing replies to other people (avoid duplicates)
+    remaining_slots = limit - len(same_account_replies)
+    if remaining_slots > 0:
+        top_replies = get_top_posts_by_type(username, "reply", limit + len(same_account_replies))
+        same_account_ids = {r.get("id") for r in same_account_replies}
+
+        for reply in top_replies:
+            if reply.get("id") not in same_account_ids:
+                other_replies.append(reply)
+                if len(other_replies) >= remaining_slots:
+                    break
+
+    # Build examples for each category
+    same_account_examples = build_examples_from_posts(same_account_replies, "reply")
+    other_examples = build_examples_from_posts(other_replies, "reply")
+
+    if not same_account_examples and not other_examples:
         return ""
 
-    context = "\n\n[YOUR TOP-PERFORMING REPLY EXAMPLES - Match this style and quality]\n"
+    context = ""
 
-    for i, example in enumerate(examples, 1):
-        context += f"\n--- Example {i} ---\n{example}\n"
+    # Section 1: Replies to this specific user
+    if same_account_examples:
+        context += f"\n\n[HOW YOU RESPOND TO @{target_account}]\n"
+        for i, example in enumerate(same_account_examples, 1):
+            context += f"\n--- Example {i} ---\n{example}\n"
+
+    # Section 2: Top-performing replies to other people
+    if other_examples:
+        context += "\n\n[TOP-PERFORMING REPLIES TO OTHER PEOPLE]\n"
+        for i, example in enumerate(other_examples, 1):
+            context += f"\n--- Example {i} ---\n{example}\n"
 
     context += "\n[END EXAMPLES]\n"
 
@@ -166,7 +96,11 @@ def build_reply_examples_context(username: str, limit: int = 10) -> str:
 
 
 def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count: int = 0, prompt_type: str = "REPLY"):
-    """Print the full prompt to console for debugging."""
+    """Print the full prompt to console for debugging (only if DEBUG_LOGS is enabled)."""
+    from backend.utlils.utils import DEBUG_LOGS
+    if not DEBUG_LOGS:
+        return
+
     print(f"\n{'='*80}")
     print(f"🤖 {prompt_type} GENERATION PROMPT | Model: {model}")
     print(f"{'='*80}")
@@ -179,7 +113,7 @@ def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count:
     print(f"\n{'='*80}\n")
 
 
-async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", has_quoted_tweet: bool = False, username: str = "unknown") -> dict:
+async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", target_handle: str | None = None, prompt_variant: str = "toned_down", username: str = "unknown") -> dict:
     from backend.twitter.rate_limiter import LLM_OBELISK, call_api
 
     url = "https://obelisk.dread.technology/api/chat/completions"
@@ -198,8 +132,9 @@ async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nak
         # Text-only message
         user_content = prompt
 
-    # Choose system prompt based on whether tweet has a quoted tweet
-    system_prompt = REPLY_GAME
+    # Build system prompt personalized with target handle using specified variant
+    prompt_builder = get_prompt_builder(prompt_variant)
+    system_prompt = prompt_builder(target_handle)
 
     # Print the full prompt to console
     _print_prompt(system_prompt, prompt, model, len(image_urls) if image_urls else 0, "TWEET REPLY")
@@ -225,8 +160,12 @@ async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nak
     # Extract message content
     try:
         message = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError):
-        return {"error": "Unexpected API response", "raw": data}
+        if not message:
+            notify(f"⚠️ API returned empty message content. Full response: {data}")
+            return {"error": "API returned empty message content", "raw": data}
+    except (KeyError, IndexError) as e:
+        notify(f"⚠️ Unexpected API response structure: {e}. Full response: {data}")
+        return {"error": f"Unexpected API response: {e}", "raw": data}
 
     return {"message": message}
 
@@ -247,8 +186,16 @@ def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], 
             validated_tweet = ScrapedTweet.model_validate(tweet)
         except ValidationError as e:
             tweet_id = tweet.get('id') or tweet.get('tweet_id')
-            error_msg = e.errors()[0]['msg'] if e.errors() else str(e)
-            notify(f"⚠️ Tweet {tweet_id} validation failed: {error_msg}")
+            # Build detailed error message showing which fields are missing
+            missing_fields = []
+            for err in e.errors():
+                field = err.get('loc', ['unknown'])[0]
+                msg = err.get('msg', 'unknown error')
+                missing_fields.append(f"{field}: {msg}")
+            error_detail = "; ".join(missing_fields)
+            notify(f"⚠️ Tweet {tweet_id} validation failed: {error_detail}")
+            print(f"⚠️ Tweet {tweet_id} validation failed. Missing/invalid: {error_detail}", flush=True)
+            print(f"   Tweet data keys: {list(tweet.keys())}", flush=True)
             return None
     else:
         validated_tweet = tweet
@@ -318,7 +265,7 @@ async def generate_replies_for_tweet(
     delay_seconds: float = 1,
     batch: bool = False,
     username: str = "unknown"
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, str, str]]:
     """
     Generate AI replies for a single tweet.
 
@@ -331,11 +278,11 @@ async def generate_replies_for_tweet(
         username: Username for logging
 
     Returns:
-        List of (reply_text, model_name) tuples
+        List of (reply_text, model_name, prompt_variant) tuples
     """
     import random
 
-    replies: list[tuple[str, str]] = []
+    replies: list[tuple[str, str, str]] = []
 
     if needed_generations <= 0:
         return replies
@@ -347,8 +294,15 @@ async def generate_replies_for_tweet(
 
     text_prompt, image_urls, has_quoted_tweet, tweet_id = prompt_result
 
-    # Add examples context to the prompt
-    examples_context = build_reply_examples_context(username)
+    # Extract target account (who we're replying to) for example selection
+    target_account = None
+    if isinstance(tweet, dict):
+        target_account = tweet.get("handle") or tweet.get("username")
+    else:
+        target_account = getattr(tweet, "handle", None) or getattr(tweet, "username", None)
+
+    # Add examples context to the prompt (prioritizes replies to same account)
+    examples_context = build_reply_examples_context(username, target_account=target_account)
     if examples_context:
         text_prompt = examples_context + "\n" + text_prompt
 
@@ -361,23 +315,30 @@ async def generate_replies_for_tweet(
         else:
             selected_model = random.choice(models)
 
-        if image_urls:
-            notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} with {len(image_urls)} image(s)...")
+        # Prompt variant selection (same logic as model selection)
+        if len(ACTIVE_PROMPT_VARIANTS) < needed_generations:
+            selected_variant = ACTIVE_PROMPT_VARIANTS[gen_idx % len(ACTIVE_PROMPT_VARIANTS)]
         else:
-            notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model}...")
+            selected_variant = random.choice(ACTIVE_PROMPT_VARIANTS)
 
-        # Pass has_quoted_tweet flag to enable appropriate system prompt
+        if image_urls:
+            notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} [{selected_variant}] with {len(image_urls)} image(s)...")
+        else:
+            notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} [{selected_variant}]...")
+
+        # Pass target handle and prompt variant for personalized system prompt
         response = await ask_model(
             prompt=text_prompt,
             model=selected_model,
             image_urls=image_urls,
-            has_quoted_tweet=has_quoted_tweet,
+            target_handle=target_account,
+            prompt_variant=selected_variant,
             username=username
         )
 
         reply = response.get('message', '')
         if reply:
-            replies.append((reply, selected_model))
+            replies.append((reply, selected_model, selected_variant))
             notify(f"✅ Generated reply {gen_idx+1} for tweet {tweet_id}")
         else:
             error_msg = response.get('error', 'Unknown error')
@@ -543,16 +504,21 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     if not tweet:
         error("Tweet not found in cache", status_code=404, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
+    # Check if tweet has thread content before generating
+    if 'thread' not in tweet or not tweet['thread']:
+        error(f"Tweet {tweet_id} has no thread content - cannot generate reply. Try re-scraping this tweet.", status_code=400, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
+
     # Generate replies using the reusable function
     replies = await generate_replies_for_tweet(
         tweet=tweet,
         models=models,
         needed_generations=number_of_generations,
-        delay_seconds=0  # No delay for single tweet regeneration
+        delay_seconds=0,  # No delay for single tweet regeneration
+        username=username
     )
 
     if not replies:
-        error(f"Received no replies for tweet {tweet_id}", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
+        error(f"Failed to generate replies for tweet {tweet_id} - LLM returned empty response. Check API credentials and rate limits.", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Store all regenerated replies as array of tuples (reply_text, model_name)
     tweet['generated_replies'] = replies

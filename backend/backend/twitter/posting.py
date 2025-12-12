@@ -109,6 +109,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
         original_tweet_url = ""
         media = []
         model_name = "unknown"
+        prompt_variant = "unknown"
 
         if cache_id:
             try:
@@ -126,22 +127,27 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                             original_tweet_url = tweet.get("url", "")
                             media = tweet.get("media", [])
 
-                            # Get model information for the posted reply
-                            # generated_replies is now an array of tuples: [(reply_text, model_name), ...]
+                            # Get model and prompt variant info for the posted reply
+                            # generated_replies is now an array of tuples: [(reply_text, model_name, prompt_variant), ...]
                             if reply_index is not None:
                                 generated_replies = tweet.get("generated_replies", [])
                                 if reply_index < len(generated_replies):
-                                    # Extract model name from tuple (reply_text, model_name)
-                                    if isinstance(generated_replies[reply_index], tuple) and len(generated_replies[reply_index]) >= 2:
-                                        model_name = generated_replies[reply_index][1]
+                                    reply_tuple = generated_replies[reply_index]
+                                    # Extract model name from tuple
+                                    if isinstance(reply_tuple, (list, tuple)) and len(reply_tuple) >= 2:
+                                        model_name = reply_tuple[1]
+                                    # Extract prompt variant from tuple (3rd element)
+                                    if isinstance(reply_tuple, (list, tuple)) and len(reply_tuple) >= 3:
+                                        prompt_variant = reply_tuple[2]
 
                             break
             except Exception as e:
                 error("Could not fetch original tweet data from cache", status_code=500, exception_text=str(e), function_name="post", username=username)
                 notify(f"⚠️ Could not fetch original tweet data from cache: {e}")
 
-        # Add model name to metadata
+        # Add model and prompt variant to metadata
         metadata["model"] = model_name
+        metadata["prompt_variant"] = prompt_variant
 
         # Add original tweet info for intent filtering examples
         if response_to_thread:

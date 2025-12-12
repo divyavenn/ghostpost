@@ -499,6 +499,46 @@ def get_top_posts_by_type(
     return tweets[:limit]
 
 
+def get_replies_to_account(
+    username: str,
+    target_account: str,
+    limit: int = 10,
+    post_type: PostType = "reply"
+) -> list[dict[str, Any]]:
+    """
+    Get replies to a specific account, sorted by engagement score.
+
+    Args:
+        username: User's handle (whose posted tweets cache to read)
+        target_account: The handle of the account being replied to (without @)
+        limit: Maximum number of replies to return
+        post_type: Filter by post type ("reply" or "comment_reply")
+
+    Returns:
+        List of replies to that account, sorted by score descending
+    """
+    tweets_map = read_posted_tweets_cache(username)
+
+    # Normalize target account (remove @ if present)
+    target_normalized = target_account.lstrip("@").lower()
+
+    replies = []
+    for tid, tweet in tweets_map.items():
+        if tid == "_order" or not isinstance(tweet, dict):
+            continue
+        if tweet.get("post_type") != post_type:
+            continue
+
+        responding_to = tweet.get("responding_to", "")
+        if responding_to and responding_to.lower() == target_normalized:
+            replies.append(tweet)
+
+    # Sort by score descending
+    replies.sort(key=lambda t: t.get("score", 0), reverse=True)
+
+    return replies[:limit]
+
+
 def get_top_posts_for_llm_context(username: str, limit_per_type: int = 10) -> dict[str, list[dict[str, Any]]]:
     """
     Get top-performing posts of each type for LLM context.

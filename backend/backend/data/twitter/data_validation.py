@@ -72,7 +72,7 @@ class ScrapedTweet(BaseModel):
 
     # retrieval info
     scraped_from: Source | None = None
-    cache_id: str
+    cache_id: str = ""  # Generated when written to cache
 
     # tweet metadata
     created_at: str  # Date string in Twitter format
@@ -94,8 +94,9 @@ class ScrapedTweet(BaseModel):
     followers: int  # follower count of author at time of tweet
     score: float  # calculated engagement score
 
-    # replies - list of tuples: (reply_text, model_name)
-    generated_replies: list[tuple[str, str]] = []
+    # replies - list of tuples: (reply_text, model_name, prompt_variant)
+    # Accepts both legacy 2-tuples and new 3-tuples
+    generated_replies: list[tuple[str, str] | tuple[str, str, str]] = []
     edited: bool = False  # True if user has edited any generated reply
     seen: bool = False  # True if user has scrolled past this tweet in the UI
 
@@ -195,7 +196,7 @@ class CommentRecord(BaseModel):
 
     # Comment-specific
     status: CommentStatus = "pending"
-    generated_replies: list[tuple[str, str]] = Field(default_factory=list)  # [(reply_text, model_name)]
+    generated_replies: list[tuple[str, str] | tuple[str, str, str]] = Field(default_factory=list)  # [(reply_text, model_name, prompt_variant)]
     edited: bool = False
 
     # Monitoring (same as PostedTweet)

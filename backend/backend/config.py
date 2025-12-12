@@ -61,6 +61,15 @@ USE_BROWSERBASE_FOR_SCRAPING = False
 OBELISK_KEY = os.getenv("OBELISK_KEY")
 
 # =============================================================================
+# STRIPE BILLING CONFIGURATION
+# =============================================================================
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_PUBLISHABLE_KEY = os.getenv("STRIPE_PUBLISHABLE_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+STRIPE_PAID_PRICE_ID = os.getenv("STRIPE_PAID_PRICE_ID")  # Price ID for $30/month paid tier
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
+
+# =============================================================================
 # EMAIL CONFIGURATION
 # =============================================================================
 # Email settings for developer notifications

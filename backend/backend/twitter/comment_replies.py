@@ -12,72 +12,121 @@ from pydantic import BaseModel
 from backend.config import OBELISK_KEY
 from backend.utlils.utils import error, notify, read_user_info
 
+# Prompt variants for comment replies - can add more for A/B testing
+# Currently only has "default" variant
+ACTIVE_COMMENT_PROMPT_VARIANTS = ["default"]
 
-def build_comment_reply_examples_context(username: str, limit: int = 10) -> str:
+
+def build_comment_reply_examples_context(username: str, target_account: str | None = None, limit: int = 10) -> str:
     """
     Build a formatted string of example comment replies for the LLM prompt.
-    Uses top-performing comment replies from posted_tweets_cache sorted by engagement score.
+    Prioritizes replies to the same commenter, then falls back to top-performing replies.
 
     Args:
         username: User's handle
+        target_account: Handle of the commenter (prioritize replies to them)
         limit: Maximum number of examples to include
 
     Returns:
         Formatted string with examples or empty string if none
     """
-    from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_top_posts_by_type
+    from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_replies_to_account, get_top_posts_by_type
 
-    # Get top-performing comment replies sorted by engagement score
-    top_replies = get_top_posts_by_type(username, "comment_reply", limit)
-    examples = build_examples_from_posts(top_replies, "comment_reply")
+    same_account_replies = []
+    other_replies = []
 
-    if not examples:
+    # First: try to get replies to the same commenter
+    if target_account:
+        same_account_replies = get_replies_to_account(username, target_account, limit, post_type="comment_reply")
+        if same_account_replies:
+            notify(f"📝 Found {len(same_account_replies)} previous replies to @{target_account}")
+
+    # Second: get top-performing replies to other people (avoid duplicates)
+    remaining_slots = limit - len(same_account_replies)
+    if remaining_slots > 0:
+        top_replies = get_top_posts_by_type(username, "comment_reply", limit + len(same_account_replies))
+        same_account_ids = {r.get("id") for r in same_account_replies}
+
+        for reply in top_replies:
+            if reply.get("id") not in same_account_ids:
+                other_replies.append(reply)
+                if len(other_replies) >= remaining_slots:
+                    break
+
+    # Build examples for each category
+    same_account_examples = build_examples_from_posts(same_account_replies, "comment_reply")
+    other_examples = build_examples_from_posts(other_replies, "comment_reply")
+
+    if not same_account_examples and not other_examples:
         return ""
 
-    context = "\n\n[YOUR TOP-PERFORMING COMMENT REPLY EXAMPLES - Match this style]\n"
+    context = ""
 
-    for i, example in enumerate(examples, 1):
-        context += f"\n--- Example {i} ---\n{example}\n"
+    # Section 1: Replies to this specific commenter
+    if same_account_examples:
+        context += f"\n\n[HOW YOU RESPOND TO @{target_account}]\n"
+        for i, example in enumerate(same_account_examples, 1):
+            context += f"\n--- Example {i} ---\n{example}\n"
+
+    # Section 2: Top-performing replies to other people
+    if other_examples:
+        context += "\n\n[TOP-PERFORMING COMMENT REPLIES TO OTHER PEOPLE]\n"
+        for i, example in enumerate(other_examples, 1):
+            context += f"\n--- Example {i} ---\n{example}\n"
 
     context += "\n[END EXAMPLES]\n"
 
     return context
 
 
-COMMENT_REPLY_PROMPT = """You are an expert at online conversation.
-Your job is to craft a reply to someone who commented on your tweet (or thread).
+def build_comment_reply_system_prompt(commenter_handle: str | None = None) -> str:
+    """
+    Build the system prompt for comment reply generation, personalized with the commenter's handle.
+
+    Args:
+        commenter_handle: The handle of the person who commented (e.g., "rebelcrayon")
+
+    Returns:
+        System prompt with "the commenter" replaced by the actual handle
+    """
+    # Use handle with @ or fallback to "the commenter"
+    commenter = f"@{commenter_handle}" if commenter_handle else "the commenter"
+    commenter_possessive = f"@{commenter_handle}'s" if commenter_handle else "the commenter's"
+
+    return f"""You are an expert at online conversation.
+Your job is to craft a reply to {commenter} who commented on your tweet (or thread).
 Your reply should be short, warm, and natural — like acknowledging a friend.
 
 
 The conversation context shows:
 - Your original post(s) that started this thread
-- The comment you're replying to
+- {commenter_possessive} comment you're replying to
 - Any intermediate replies in the chain
 
-If they are agreeing or complimenting you, a simple "thank you" ":)" or emoji is sufficient. 
+If {commenter} is agreeing or complimenting you, a simple "thank you" ":)" or emoji is sufficient.
 
-If a user is sharing their own story,
-new information, or asking a question, 
+If {commenter} is sharing their own story,
+new information, or asking a question,
 that merits a longer response (1-3 sentences)
 
 Key principles:
-1. Acknowledge their point genuinely — don't be dismissive
+1. Acknowledge {commenter_possessive} point genuinely — don't be dismissive
 2. Be conversational, not formal
 3. Add value: clarify, elaborate, or build on the discussion
 4. Match the energy of the comment (playful reply to playful comment, thoughtful to thoughtful)
-5. Keep it brief: just an emoji for casual replies. if they compliment you, say thank you. for 
+5. Keep it brief: just an emoji for casual replies. if {commenter} compliments you, say thank you. for
  substantive replies that introduce a new idea, put in a high effort reply that matches the length of the original comment
-6. Don't be defensive — even if they disagree, engage constructively
+6. Don't be defensive — even if {commenter} disagrees, engage constructively
 7. Someone disparaging you for being normal, mid, or a midwit is not a critcism. most of us are average, it's not an insult.
-8. If they make a statement about your race, ethnicity, or gender, respond with "well spotted."
+8. If {commenter} makes a statement about your race, ethnicity, or gender, respond with "well spotted."
 
 If the comment is:
 - A question → Answer helpfully with specifics, if needed look up relevant information from the web
-- A disagreement → State the strongest version of their point ("If you mean...") and then engage with that.
+- A disagreement → State the strongest version of {commenter_possessive} point ("If you mean...") and then engage with that.
 - A joke → laughing face emoji
 - Criticism → Address it directly but not defensively
 
-Your reply should feel natural and make the commenter feel heard.
+Your reply should feel natural and make {commenter} feel heard.
 """
 
 
@@ -162,7 +211,11 @@ def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str
 
 
 def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count: int = 0, prompt_type: str = "REPLY"):
-    """Print the full prompt to console for debugging."""
+    """Print the full prompt to console for debugging (only if DEBUG_LOGS is enabled)."""
+    from backend.utlils.utils import DEBUG_LOGS
+    if not DEBUG_LOGS:
+        return
+
     print(f"\n{'='*80}")
     print(f"🤖 {prompt_type} GENERATION PROMPT | Model: {model}")
     print(f"{'='*80}")
@@ -175,7 +228,7 @@ def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count:
     print(f"\n{'='*80}\n")
 
 
-async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", username: str = "unknown") -> dict:
+async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", commenter_handle: str | None = None, prompt_variant: str = "default", username: str = "unknown") -> dict:
     """Call the Obelisk API to generate a comment reply."""
     from backend.twitter.rate_limiter import LLM_OBELISK, call_api
 
@@ -190,13 +243,17 @@ async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model
     else:
         user_content = prompt
 
+    # Build system prompt personalized with commenter handle
+    # TODO: Add variant selection when more variants are available
+    system_prompt = build_comment_reply_system_prompt(commenter_handle)
+
     # Print the full prompt to console
-    _print_prompt(COMMENT_REPLY_PROMPT, prompt, model, len(image_urls) if image_urls else 0, "COMMENT REPLY")
+    _print_prompt(system_prompt, prompt, model, len(image_urls) if image_urls else 0, "COMMENT REPLY")
 
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": COMMENT_REPLY_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
         ]
     }
@@ -232,7 +289,7 @@ async def generate_replies_for_comment(
     num_generations: int,
     delay_seconds: float = 1.0,
     username: str = "unknown"
-) -> list[tuple[str, str]]:
+) -> list[tuple[str, str, str]]:
     """
     Generate AI replies for a single comment.
 
@@ -245,17 +302,20 @@ async def generate_replies_for_comment(
         username: Username for logging
 
     Returns:
-        List of (reply_text, model_name) tuples
+        List of (reply_text, model_name, prompt_variant) tuples
     """
     import random
 
-    replies = []
+    replies: list[tuple[str, str, str]] = []
     comment_id = comment.get("id", "unknown")
+
+    # Extract commenter handle for personalization
+    commenter_handle = comment.get("handle") or comment.get("username")
 
     text_prompt, image_urls = build_comment_prompt(comment, thread_context)
 
-    # Add examples context to the prompt
-    examples_context = build_comment_reply_examples_context(username)
+    # Add examples context to the prompt (prioritizes replies to same commenter)
+    examples_context = build_comment_reply_examples_context(username, target_account=commenter_handle)
     if examples_context:
         text_prompt = examples_context + "\n" + text_prompt
 
@@ -266,18 +326,26 @@ async def generate_replies_for_comment(
         else:
             selected_model = random.choice(models)
 
-        notify(f"🤖 Generating reply {gen_idx+1} for comment {comment_id} using {selected_model}...")
+        # Prompt variant selection (same logic as model selection)
+        if len(ACTIVE_COMMENT_PROMPT_VARIANTS) < num_generations:
+            selected_variant = ACTIVE_COMMENT_PROMPT_VARIANTS[gen_idx % len(ACTIVE_COMMENT_PROMPT_VARIANTS)]
+        else:
+            selected_variant = random.choice(ACTIVE_COMMENT_PROMPT_VARIANTS)
+
+        notify(f"🤖 Generating reply {gen_idx+1} for comment {comment_id} using {selected_model} [{selected_variant}]...")
 
         response = await ask_model_for_comment(
             prompt=text_prompt,
             image_urls=image_urls,
             model=selected_model,
+            commenter_handle=commenter_handle,
+            prompt_variant=selected_variant,
             username=username
         )
 
         reply = response.get('message', '')
         if reply:
-            replies.append((reply, selected_model))
+            replies.append((reply, selected_model, selected_variant))
             notify(f"✅ Generated reply {gen_idx+1} for comment {comment_id}")
         else:
             error_msg = response.get('error', 'Unknown error')
@@ -478,12 +546,13 @@ async def edit_comment_reply_endpoint(
     if payload.reply_index >= len(generated_replies):
         error(f"Reply index {payload.reply_index} out of range", status_code=400, function_name="edit_comment_reply_endpoint", username=username, critical=True)
 
-    # Preserve the model name, update the text
+    # Preserve the model name and prompt variant, update the text
     old_reply = generated_replies[payload.reply_index]
     old_text = old_reply[0] if isinstance(old_reply, (list, tuple)) else old_reply
     model_name = old_reply[1] if isinstance(old_reply, (list, tuple)) and len(old_reply) > 1 else "edited"
+    prompt_variant = old_reply[2] if isinstance(old_reply, (list, tuple)) and len(old_reply) > 2 else "unknown"
 
-    generated_replies[payload.reply_index] = (payload.new_reply, model_name)
+    generated_replies[payload.reply_index] = (payload.new_reply, model_name, prompt_variant)
 
     update_comment_generated_replies(username, comment_id, generated_replies)
 

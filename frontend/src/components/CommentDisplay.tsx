@@ -266,17 +266,34 @@ const CommentLink = styled.a`
   }
 `;
 
-const CommentText = styled.p`
+const CommentText = styled.p<{ $expanded?: boolean }>`
   white-space: pre-wrap;
   font-size: 0.9375rem;
   line-height: 1.5;
   color: #e5e5e5;
   margin: 0 0 0.5rem 0;
   flex: 1;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  ${({ $expanded }) => !$expanded && css`
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  `}
+`;
+
+const ExpandTextButton = styled.button`
+  background: transparent;
+  border: none;
+  color: #737373;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  margin-bottom: 0.5rem;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #a3a3a3;
+  }
 `;
 
 const CommentStats = styled.div`
@@ -458,6 +475,10 @@ function CommentItem({
 }: CommentItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
+  const [isTextExpanded, setIsTextExpanded] = useState(false);
+
+  // Rough heuristic: if text is longer than ~150 chars, it's likely truncatable
+  const isTextTruncatable = comment.text.length > 150;
 
   const generatedReplies = comment.generated_replies || [];
   const displayedReplies = generatedReplies.slice(0, maxReplies);
@@ -511,7 +532,12 @@ function CommentItem({
         )}
       </CommentHeader>
 
-      <CommentText>{comment.text}</CommentText>
+      <CommentText $expanded={isTextExpanded}>{comment.text}</CommentText>
+      {isTextTruncatable && (
+        <ExpandTextButton onClick={() => setIsTextExpanded(!isTextExpanded)}>
+          {isTextExpanded ? 'Show less' : 'Show more'}
+        </ExpandTextButton>
+      )}
 
       {/* Display media if present */}
       {comment.media && comment.media.length > 0 && (

@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface PremiumFeatureModalProps {
@@ -6,6 +7,13 @@ interface PremiumFeatureModalProps {
 }
 
 export function PremiumFeatureModal({ isOpen, onClose }: PremiumFeatureModalProps) {
+  const navigate = useNavigate();
+
+  const handleViewPricing = () => {
+    onClose();
+    navigate('/pricing');
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -25,26 +33,27 @@ export function PremiumFeatureModal({ isOpen, onClose }: PremiumFeatureModalProp
             onClick={(e) => e.stopPropagation()}
           >
             <div className="text-center">
-              <div className="mb-4 text-4xl">✨</div>
+              <div className="mb-4 text-4xl">*</div>
               <h2 className="text-2xl font-semibold text-white mb-3">
                 This is a premium feature!
               </h2>
               <p className="text-slate-300 mb-6">
-                Email{' '}
-                <a
-                  href="mailto:divya@aibread.com"
-                  className="text-purple-400 hover:text-purple-300 underline transition"
-                >
-                  divya@aibread.com
-                </a>
-                {' '}to upgrade
+                AI-generated replies and auto-posting are available on the Premium plan.
               </p>
-              <button
-                onClick={onClose}
-                className="px-6 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded-lg transition"
-              >
-                Close
-              </button>
+              <div className="flex gap-3 justify-center">
+                <button
+                  onClick={onClose}
+                  className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={handleViewPricing}
+                  className="px-6 py-2 bg-purple-700 hover:bg-purple-600 text-white rounded-lg transition font-semibold"
+                >
+                  View Pricing
+                </button>
+              </div>
             </div>
           </motion.div>
         </motion.div>

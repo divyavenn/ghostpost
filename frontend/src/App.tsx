@@ -78,6 +78,8 @@ function App() {
   const seenTweetIdsRef = useRef<Set<string>>(new Set());
   // Track tweet count before scrape to calculate new posts count
   const tweetCountBeforeScrapeRef = useRef<number>(0);
+  // Track tweet IDs before scrape to identify new tweets
+  const tweetIdsBeforeScrapeRef = useRef<Set<string>>(new Set());
   // Track if engagement monitoring is already in progress (debounce post-triggered refreshes)
   const engagementMonitoringInProgressRef = useRef(false);
 
@@ -480,6 +482,8 @@ function App() {
     setOverlayDismissed(false);
     // Track current tweet count before scrape
     tweetCountBeforeScrapeRef.current = tweets.length;
+    // Track tweet IDs before scrape to identify new tweets
+    tweetIdsBeforeScrapeRef.current = new Set(tweets.map(t => t.id));
 
     // Start polling for scraping status and tweets in the background
     const pollInterval = setInterval(async () => {
@@ -535,9 +539,23 @@ function App() {
             });
           });
 
-          // Calculate new posts and show modal
-          const newCount = sorted.length - tweetCountBeforeScrapeRef.current;
+          // Calculate new posts and mark them as unseen before showing modal
+          const newTweetIds = sorted
+            .filter(t => !tweetIdsBeforeScrapeRef.current.has(t.id))
+            .map(t => t.id);
+          const newCount = newTweetIds.length;
           setNewPostsCount(Math.max(0, newCount));
+
+          // Mark new tweets as unseen so they won't be removed by "clear seen"
+          if (newTweetIds.length > 0) {
+            try {
+              await api.markTweetsUnseen(username, newTweetIds);
+              console.log(`[Polling] Marked ${newTweetIds.length} new tweets as unseen`);
+            } catch (err) {
+              console.error('[Polling] Failed to mark tweets as unseen:', err);
+            }
+          }
+
           setShowNewPostsModal(true);
         } else if (status.type === 'idle') {
           // If we're in a loading state and status is idle, scraping finished
@@ -569,9 +587,23 @@ function App() {
             });
           });
 
-          // Calculate new posts and show modal
-          const newCount = sorted.length - tweetCountBeforeScrapeRef.current;
+          // Calculate new posts and mark them as unseen before showing modal
+          const newTweetIds = sorted
+            .filter(t => !tweetIdsBeforeScrapeRef.current.has(t.id))
+            .map(t => t.id);
+          const newCount = newTweetIds.length;
           setNewPostsCount(Math.max(0, newCount));
+
+          // Mark new tweets as unseen so they won't be removed by "clear seen"
+          if (newTweetIds.length > 0) {
+            try {
+              await api.markTweetsUnseen(username, newTweetIds);
+              console.log(`[Polling] Marked ${newTweetIds.length} new tweets as unseen`);
+            } catch (err) {
+              console.error('[Polling] Failed to mark tweets as unseen:', err);
+            }
+          }
+
           setShowNewPostsModal(true);
         } else {
           // Log unexpected status types

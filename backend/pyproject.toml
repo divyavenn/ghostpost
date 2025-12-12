@@ -28,6 +28,8 @@ dependencies = [
   # Background tasks
   "apscheduler>=3.10.0",
   "httpx>=0.28.1",
+  # Billing
+  "stripe>=7.0.0",
 ]
 
 [dependency-groups]

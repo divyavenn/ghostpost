@@ -371,23 +371,28 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
             """Generate replies for each tweet, then write to cache with replies included."""
             from backend.twitter.generate_replies import generate_replies_for_tweet
 
+            print(f"📥 [Callback] Received {len(tweets_batch)} tweets for {target_username}, is_premium={is_premium}", flush=True)
             notify(f"📥 [Callback] Received {len(tweets_batch)} tweets for {target_username}, is_premium={is_premium}")
 
             filtered_batch = []
             for tweet in tweets_batch:
                 tweet_id = tweet.get("id") or tweet.get("tweet_id")
-                if tweet_id and not is_tweet_seen(target_username, str(tweet_id)):
+                seen = is_tweet_seen(target_username, str(tweet_id)) if tweet_id else True
+                print(f"   🔍 Tweet {tweet_id}: seen={seen}", flush=True)
+                if tweet_id and not seen:
                     filtered_batch.append(tweet)
                 else:
-                    notify(f"⏭️ Skipping tweet {tweet_id} (already seen)")
+                    print(f"   ⏭️ Skipping tweet {tweet_id} (already seen)", flush=True)
 
             if not filtered_batch:
-                notify(f"⚠️ [Callback] No new tweets to process (all filtered out)")
+                print(f"⚠️ [Callback] No new tweets to process (all {len(tweets_batch)} filtered out)", flush=True)
                 return
 
+            print(f"📝 [Callback] Processing {len(filtered_batch)} new tweets, is_premium={is_premium}", flush=True)
             notify(f"📝 [Callback] Processing {len(filtered_batch)} new tweets, is_premium={is_premium}")
 
             # For premium users, generate replies BEFORE writing to cache
+            tweets_to_write = []
             if is_premium:
                 models = user_info.get("models", ["claude-3-5-sonnet-20241022"]) if user_info else ["claude-3-5-sonnet-20241022"]
                 num_generations = user_info.get("number_of_generations", 2) if user_info else 2
@@ -396,6 +401,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
                     tweet_id = tweet.get("id") or tweet.get("tweet_id")
                     try:
                         # Generate replies inline (await - not background)
+                        print(f"   🔄 Generating replies for tweet {tweet_id}...", flush=True)
                         replies = await generate_replies_for_tweet(
                             tweet=tweet,
                             models=models,
@@ -406,15 +412,27 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
                         if replies:
                             tweet["generated_replies"] = replies
                             results["replies_generating"] += 1
+                            tweets_to_write.append(tweet)
+                            print(f"   ✅ Generated {len(replies)} replies for tweet {tweet_id}", flush=True)
                             notify(f"✅ Generated {len(replies)} replies for tweet {tweet_id}")
+                        else:
+                            print(f"   ⚠️ No replies generated for tweet {tweet_id}, skipping cache write", flush=True)
+                            notify(f"⚠️ No replies generated for tweet {tweet_id}, skipping cache write")
                     except Exception as e:
+                        print(f"   ❌ Error generating replies for tweet {tweet_id}: {e}", flush=True)
                         notify(f"⚠️ Error generating replies for tweet {tweet_id}: {e}")
             else:
+                # Non-premium users: write all tweets without replies
+                tweets_to_write = filtered_batch
                 notify(f"⚠️ [Callback] Skipping reply generation - user is not premium (is_premium={is_premium})")
 
-            # Write tweets (with replies if generated) to cache
-            await write_to_cache(filtered_batch, "Progressive tweet scraping", username=target_username)
-            results["tweets_scraped"] += len(filtered_batch)
+            # Only write tweets that have replies (for premium) or all tweets (for non-premium)
+            if tweets_to_write:
+                await write_to_cache(tweets_to_write, "Progressive tweet scraping", username=target_username)
+                results["tweets_scraped"] += len(tweets_to_write)
+                print(f"   💾 Wrote {len(tweets_to_write)} tweets to cache", flush=True)
+            else:
+                print(f"   ⚠️ No tweets to write (reply generation failed for all)", flush=True)
 
         # Scrape accounts
         total_sources = len(relevant_accounts) + len(queries)

@@ -30,7 +30,7 @@ export function JobProgressButton({
   pollInterval = 500,
 }: JobProgressButtonProps) {
   const [jobStatuses, setJobStatuses] = useState<Record<string, JobStatus>>({});
-  const [isPolling, setIsPolling] = useState(false);
+  const [_isPolling, setIsPolling] = useState(false);
   const [localLoading, setLocalLoading] = useState(false); // True immediately after click
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

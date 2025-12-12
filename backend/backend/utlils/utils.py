@@ -70,12 +70,16 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
         raise RuntimeError(f"❌ {msg}")
 
 
-def message_devs(text: str):
+def message_devs(text: str, subject: str = "URGENT: Ghostpost Issue") -> bool:
     """
     Send an urgent email notification to developers.
 
     Args:
         text: The message content to send
+        subject: Email subject line (default: "URGENT: Ghostpost Issue")
+
+    Returns:
+        True if email was sent successfully, False otherwise
     """
     import smtplib
     from email.mime.multipart import MIMEMultipart
@@ -86,16 +90,16 @@ def message_devs(text: str):
     # Check if email is configured
     if not SMTP_USER or not SMTP_PASSWORD:
         notify("⚠️ Email not configured (missing SMTP_USER or SMTP_PASSWORD)")
-        return
+        return False
     if not DEV_EMAIL:
         notify("⚠️ Developer email not configured (missing DEV_EMAIL)")
-        return
+        return False
     try:
         # Create message
         msg = MIMEMultipart()
         msg['From'] = SMTP_USER
         msg['To'] = DEV_EMAIL
-        msg['Subject'] = "URGENT: Ghostpost Issue"
+        msg['Subject'] = subject
 
         # Add body
         msg.attach(MIMEText(text, 'plain'))
@@ -107,8 +111,10 @@ def message_devs(text: str):
             server.send_message(msg)
 
         notify(f"📧 Alert sent to developers: {DEV_EMAIL}")
+        return True
     except Exception as e:
         notify(f"⚠️ Failed to send developer alert: {e}")
+        return False
 
 
 def cookie_still_valid(state: dict[str, Any]) -> bool:

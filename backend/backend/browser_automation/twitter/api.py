@@ -1063,7 +1063,9 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
 
         # Only write tweets with valid thread data to cache
         if write_callback and username:
+            print(f"🔧 [collect_from_page] Calling write_callback for tweet {tid}", flush=True)
             await write_callback([t], username)
+            print(f"🔧 [collect_from_page] write_callback returned for tweet {tid}", flush=True)
 
             # Start generating replies in the background (parallel with scraping)
             if generate_replies_inline:

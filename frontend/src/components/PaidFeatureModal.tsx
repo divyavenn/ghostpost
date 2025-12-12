@@ -1,3 +1,4 @@
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface PaidFeatureModalProps {
@@ -15,8 +16,14 @@ export function PaidFeatureModal({
   remaining = 0,
   onAction
 }: PaidFeatureModalProps) {
+  const navigate = useNavigate();
   const hasUsageLeft = remaining > 0;
   const actionLabel = actionType === 'scrape' ? 'Scrape' : 'Post';
+
+  const handleViewPricing = () => {
+    onClose();
+    navigate('/pricing');
+  };
 
   return (
     <AnimatePresence>
@@ -38,7 +45,7 @@ export function PaidFeatureModal({
           >
             <div className="text-center">
               <div className="mb-4 text-4xl">
-                {hasUsageLeft ? '⚠️' : '🔒'}
+                {hasUsageLeft ? '' : ''}
               </div>
 
               {actionType ? (
@@ -50,21 +57,14 @@ export function PaidFeatureModal({
                       </h2>
                       <p className="text-slate-300 mb-6">
                         You have {remaining} trial {actionType === 'scrape' ? 'scrape' : 'post'}{remaining !== 1 ? 's' : ''} left.
-                        Email{' '}
-                        <a
-                          href="mailto:divya@aibread.com"
-                          className="text-sky-400 hover:text-sky-300 underline transition"
-                        >
-                          divya@aibread.com
-                        </a>
-                        {' '}to upgrade for unlimited access.
+                        Upgrade for unlimited access.
                       </p>
                       <div className="flex gap-3 justify-center">
                         <button
-                          onClick={onClose}
+                          onClick={handleViewPricing}
                           className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition"
                         >
-                          Cancel
+                          View Pricing
                         </button>
                         <button
                           onClick={() => {
@@ -84,21 +84,22 @@ export function PaidFeatureModal({
                       </h2>
                       <p className="text-slate-300 mb-6">
                         You've used all your trial {actionType === 'scrape' ? 'scrapes' : 'posts'}.
-                        Email{' '}
-                        <a
-                          href="mailto:divya@aibread.com"
-                          className="text-sky-400 hover:text-sky-300 underline transition"
-                        >
-                          divya@aibread.com
-                        </a>
-                        {' '}to upgrade for unlimited access.
+                        Upgrade for unlimited access.
                       </p>
-                      <button
-                        onClick={onClose}
-                        className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition"
-                      >
-                        Close
-                      </button>
+                      <div className="flex gap-3 justify-center">
+                        <button
+                          onClick={onClose}
+                          className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition"
+                        >
+                          Close
+                        </button>
+                        <button
+                          onClick={handleViewPricing}
+                          className="px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition font-semibold"
+                        >
+                          View Pricing
+                        </button>
+                      </div>
                     </>
                   )}
                 </>
@@ -108,21 +109,22 @@ export function PaidFeatureModal({
                     This is a paid feature!
                   </h2>
                   <p className="text-slate-300 mb-6">
-                    Email{' '}
-                    <a
-                      href="mailto:divya@aibread.com"
-                      className="text-sky-400 hover:text-sky-300 underline transition"
-                    >
-                      divya@aibread.com
-                    </a>
-                    {' '}to upgrade
+                    Upgrade to unlock this feature.
                   </p>
-                  <button
-                    onClick={onClose}
-                    className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition"
-                  >
-                    Close
-                  </button>
+                  <div className="flex gap-3 justify-center">
+                    <button
+                      onClick={onClose}
+                      className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg transition"
+                    >
+                      Close
+                    </button>
+                    <button
+                      onClick={handleViewPricing}
+                      className="px-6 py-2 bg-sky-600 hover:bg-sky-500 text-white rounded-lg transition font-semibold"
+                    >
+                      View Pricing
+                    </button>
+                  </div>
                 </>
               )}
             </div>

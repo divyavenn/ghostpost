@@ -722,6 +722,22 @@ export const api = {
     return response.json();
   },
 
+  // Mark tweets as NOT seen (protect freshly scraped tweets from being cleared)
+  markTweetsUnseen: async (username: string, tweetIds: string[]): Promise<{
+    message: string;
+    marked_count: number;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/tweets/${encodeURIComponent(username)}/mark-unseen`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tweet_ids: tweetIds }),
+    });
+    if (!response.ok) throw new Error('Failed to mark tweets as unseen');
+    return response.json();
+  },
+
   // Purge seen (but unedited) tweets from cache
   purgeSeenTweets: async (username: string): Promise<{
     message: string;
@@ -744,6 +760,43 @@ export const api = {
   getJobStatus: async (username: string, jobName: string): Promise<JobStatus> => {
     const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(username)}/status/${encodeURIComponent(jobName)}`);
     if (!response.ok) throw new Error('Failed to get job status');
+    return response.json();
+  },
+
+  // Billing endpoints
+  createCheckoutSession: async (username: string): Promise<{ checkout_url: string; session_id: string }> => {
+    const response = await fetch(`${API_BASE_URL}/billing/${encodeURIComponent(username)}/create-checkout-session`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to create checkout session' }));
+      throw new Error(error.detail || 'Failed to create checkout session');
+    }
+    return response.json();
+  },
+
+  getBillingStatus: async (username: string): Promise<{ username: string; account_type: string; is_subscribed: boolean }> => {
+    const response = await fetch(`${API_BASE_URL}/billing/${encodeURIComponent(username)}/status`);
+    if (!response.ok) throw new Error('Failed to get billing status');
+    return response.json();
+  },
+
+  sendPremiumInquiry: async (email: string, phone?: string, twitterHandle?: string): Promise<{ message: string }> => {
+    const response = await fetch(`${API_BASE_URL}/billing/contact-premium`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        phone: phone || null,
+        twitter_handle: twitterHandle || null,
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to send contact request' }));
+      throw new Error(error.detail || 'Failed to send contact request');
+    }
     return response.json();
   },
 };

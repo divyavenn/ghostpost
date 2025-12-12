@@ -92,7 +92,11 @@ def build_examples_context(replied_to: list[dict], skipped: list[dict]) -> str:
 
 
 def _print_prompt(system_prompt: str, user_prompt: str, model: str, tweet_id: str = "unknown"):
-    """Print the full prompt to console for debugging."""
+    """Print the full prompt to console for debugging (only if DEBUG_LOGS is enabled)."""
+    from backend.utlils.utils import DEBUG_LOGS
+    if not DEBUG_LOGS:
+        return
+
     print(f"\n{'='*80}")
     print(f"🔍 INTENT FILTER PROMPT | Model: {model} | Tweet: {tweet_id}")
     print(f"{'='*80}")
@@ -203,10 +207,8 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
     Could this tweet potentially be relevant to the user's intent? Consider:
     - Does it relate to the topics they're interested in?
     - Could it lead to valuable conversations?
-    - Is there ANY connection to their stated interests?
+    - Is there any connection to their stated interests?
     - Is it similar to the examples of posts they've replied to before?
-
-    Be lenient - we want to catch potential matches.
 
     Answer with only "YES" or "NO"."""
 

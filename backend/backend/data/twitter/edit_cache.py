@@ -433,21 +433,24 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str, reply_i
         # Backward compatibility: check for old "reply" field
         old_single_reply = tweet.get("reply")
         if old_single_reply:
-            generated_replies = [(old_single_reply, "unknown")]
+            generated_replies = [(old_single_reply, "unknown", "unknown")]
         else:
             return False
 
     if reply_index < 0 or reply_index >= len(generated_replies):
         return False
 
-    # Extract old reply and model from tuple
+    # Extract old reply, model, and prompt variant from tuple
     reply_data = generated_replies[reply_index]
-    if isinstance(reply_data, tuple) and len(reply_data) >= 2:
-        old_reply, model_name = reply_data[0], reply_data[1]
+    if isinstance(reply_data, (list, tuple)) and len(reply_data) >= 2:
+        old_reply = reply_data[0]
+        model_name = reply_data[1]
+        prompt_variant = reply_data[2] if len(reply_data) >= 3 else "unknown"
     else:
         # Fallback for legacy format
         old_reply = reply_data
         model_name = "unknown"
+        prompt_variant = "unknown"
 
     cache_id = tweet.get("cache_id")
     original_tweet_id = tweet.get("id")  # The tweet this reply is responding to
@@ -455,8 +458,8 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str, reply_i
     # Generate diff
     diff = list(difflib.unified_diff(old_reply.splitlines(keepends=True), new_reply.splitlines(keepends=True), lineterm='', fromfile='old_reply', tofile='new_reply'))
 
-    # Update the specific reply - keep the model name, update the text
-    generated_replies[reply_index] = (new_reply, model_name)
+    # Update the specific reply - keep the model name and prompt variant, update the text
+    generated_replies[reply_index] = (new_reply, model_name, prompt_variant)
     tweet["generated_replies"] = generated_replies
 
     # Mark tweet as edited
@@ -618,6 +621,37 @@ async def mark_tweets_seen_endpoint(username: str, payload: MarkSeenRequest) -> 
         atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
 
     return {"message": f"Marked {marked_count} tweets as seen", "marked_count": marked_count}
+
+
+@router.post("/{username}/mark-unseen")
+async def mark_tweets_unseen_endpoint(username: str, payload: MarkSeenRequest) -> dict[str, Any]:
+    """Mark multiple tweets as NOT seen (e.g., freshly scraped tweets).
+
+    This is used to protect newly scraped tweets from being removed by 'clear seen'.
+    """
+    tweets = await read_from_cache(username)
+
+    if not tweets:
+        return {"message": "No tweets in cache", "marked_count": 0}
+
+    # Build a map for quick lookup
+    tweet_map = {}
+    for t in tweets:
+        tid = t.get("id") or t.get("tweet_id")
+        if tid:
+            tweet_map[str(tid)] = t
+
+    marked_count = 0
+    for tweet_id in payload.tweet_ids:
+        if tweet_id in tweet_map and tweet_map[tweet_id].get("seen", False):
+            tweet_map[tweet_id]["seen"] = False
+            marked_count += 1
+
+    if marked_count > 0:
+        path = get_user_tweet_cache(username)
+        atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+
+    return {"message": f"Marked {marked_count} tweets as unseen", "marked_count": marked_count}
 
 
 @router.post("/{username}/purge-seen")

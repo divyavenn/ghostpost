@@ -128,7 +128,7 @@ export const loadingPhaseState = atom<'scraping' | 'generating' | null>({
  * Loading status data (contains dynamic info like account names, progress)
  */
 export const loadingStatusDataState = atom<{
-  type: 'account' | 'query' | 'generating' | 'complete' | 'idle';
+  type: 'account' | 'query' | 'generating' | 'complete' | 'idle' | 'home_timeline' | 'discovering' | 'scraping' | 'error';
   value: string;
   summary?: string;  // Short 1-2 word summary for queries
 } | null>({

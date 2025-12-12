@@ -524,7 +524,7 @@ function App() {
           console.log(`[Polling] Setting phase to scraping (${status.type})`);
           hasSeenJobRunningRef.current = true;
           setLoadingPhase('scraping');
-          setLoadingStatusData({ type: status.type as 'home_timeline' | 'discovering' | 'scraping', value: status.value });
+          setLoadingStatusData({ type: status.type, value: status.value });
         } else if (status.type === 'complete' && hasSeenJobRunningRef.current) {
           // Only treat 'complete' as real if we've seen the job running first
           // This prevents stale 'idle' status from triggering premature completion

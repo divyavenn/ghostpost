@@ -6,7 +6,7 @@ import writingLottie from '../assets/writing.lottie';
 interface LoadingOverlayProps {
   phase: 'scraping' | 'generating' | null;
   statusData: {
-    type: 'account' | 'query' | 'generating' | 'complete' | 'idle';
+    type: 'account' | 'query' | 'generating' | 'complete' | 'idle' | 'home_timeline' | 'discovering' | 'scraping' | 'error';
     value: string;
     summary?: string;
   } | null;

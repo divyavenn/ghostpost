@@ -82,13 +82,19 @@ function App() {
   const tweetIdsBeforeScrapeRef = useRef<Set<string>>(new Set());
   // Track if engagement monitoring is already in progress (debounce post-triggered refreshes)
   const engagementMonitoringInProgressRef = useRef(false);
+  // Track if we've seen the job actually running (to avoid treating stale 'idle' as 'complete')
+  const hasSeenJobRunningRef = useRef(false);
 
   // Derived state: isLoading can be determined from loadingPhase
   const isLoading = loadingPhase !== null;
 
   // Helper to translate job status to loading overlay format
   const translateJobStatusToLoadingStatus = (jobStatus: { status: string; phase: string; details?: string | null }) => {
-    if (jobStatus.status === 'idle' || jobStatus.status === 'complete') {
+    // Distinguish between idle (job not started/between phases) and complete (job actually finished)
+    if (jobStatus.status === 'idle') {
+      return { type: 'idle', value: '' };
+    }
+    if (jobStatus.status === 'complete') {
       return { type: 'complete', value: '' };
     }
     if (jobStatus.status === 'error') {
@@ -484,6 +490,8 @@ function App() {
     tweetCountBeforeScrapeRef.current = tweets.length;
     // Track tweet IDs before scrape to identify new tweets
     tweetIdsBeforeScrapeRef.current = new Set(tweets.map(t => t.id));
+    // Reset the "has seen running" flag - we need to see the job actually start before treating 'complete' as real
+    hasSeenJobRunningRef.current = false;
 
     // Start polling for scraping status and tweets in the background
     const pollInterval = setInterval(async () => {
@@ -498,17 +506,28 @@ function App() {
         // Update status based on current scraping phase
         if (status.type === 'account') {
           console.log('[Polling] Setting phase to scraping (account)');
+          hasSeenJobRunningRef.current = true;
           setLoadingPhase('scraping');
           setLoadingStatusData({ type: 'account', value: status.value });
         } else if (status.type === 'query') {
           console.log('[Polling] Setting phase to scraping (query)');
+          hasSeenJobRunningRef.current = true;
           setLoadingPhase('scraping');
           setLoadingStatusData({ type: 'query', value: status.value, summary: status.summary });
         } else if (status.type === 'generating') {
           console.log('[Polling] Setting phase to generating');
+          hasSeenJobRunningRef.current = true;
           setLoadingPhase('generating');
           setLoadingStatusData({ type: 'generating', value: status.value });
-        } else if (status.type === 'complete') {
+        } else if (status.type === 'home_timeline' || status.type === 'discovering' || status.type === 'scraping') {
+          // Other running states - mark as running and show generic scraping phase
+          console.log(`[Polling] Setting phase to scraping (${status.type})`);
+          hasSeenJobRunningRef.current = true;
+          setLoadingPhase('scraping');
+          setLoadingStatusData({ type: status.type as 'home_timeline' | 'discovering' | 'scraping', value: status.value });
+        } else if (status.type === 'complete' && hasSeenJobRunningRef.current) {
+          // Only treat 'complete' as real if we've seen the job running first
+          // This prevents stale 'idle' status from triggering premature completion
           console.log('[Polling] Status complete, stopping polling');
           setLoadingStatusData({ type: 'complete', value: '' });
 
@@ -558,54 +577,68 @@ function App() {
 
           setShowNewPostsModal(true);
         } else if (status.type === 'idle') {
-          // If we're in a loading state and status is idle, scraping finished
-          // This handles the case where we missed the 'complete' status
-          console.log('[Polling] Status idle while loading, stopping polling');
+          // Status is idle - only treat as complete if we've seen the job actually running
+          // This prevents early 'idle' status (before job starts) from triggering completion
+          if (hasSeenJobRunningRef.current) {
+            console.log('[Polling] Status idle after job ran, treating as complete');
+            clearInterval(pollInterval);
+            setLoadingPhase(null);
+            setLoadingStatusData(null);
+            await loadUserInfo(username);
+
+            // Load tweets and calculate new posts count
+            const data = await api.getTweetsCache(username);
+            const tweetsWithThreads = data.filter(tweet => {
+              const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
+              return hasThread;
+            });
+            const sorted = tweetsWithThreads.sort((a, b) => {
+              return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+            });
+            // Merge: preserve local edits for existing tweets
+            setTweets(prevTweets => {
+              const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
+              return sorted.map(newTweet => {
+                const existingTweet = prevTweetsMap.get(newTweet.id);
+                if (existingTweet?.edited) {
+                  return existingTweet;
+                }
+                return newTweet;
+              });
+            });
+
+            // Calculate new posts and mark them as unseen before showing modal
+            const newTweetIds = sorted
+              .filter(t => !tweetIdsBeforeScrapeRef.current.has(t.id))
+              .map(t => t.id);
+            const newCount = newTweetIds.length;
+            setNewPostsCount(Math.max(0, newCount));
+
+            // Mark new tweets as unseen so they won't be removed by "clear seen"
+            if (newTweetIds.length > 0) {
+              try {
+                await api.markTweetsUnseen(username, newTweetIds);
+                console.log(`[Polling] Marked ${newTweetIds.length} new tweets as unseen`);
+              } catch (err) {
+                console.error('[Polling] Failed to mark tweets as unseen:', err);
+              }
+            }
+
+            setShowNewPostsModal(true);
+          } else {
+            // Job hasn't started yet, keep polling
+            console.log('[Polling] Status idle, waiting for job to start...');
+          }
+        } else if (status.type === 'complete' && !hasSeenJobRunningRef.current) {
+          // Got 'complete' but never saw running - might be stale, keep polling
+          console.log('[Polling] Status complete but never saw running, waiting...');
+        } else if (status.type === 'error') {
+          // Job errored - stop polling and clear loading state
+          console.error('[Polling] Job errored, stopping polling');
           clearInterval(pollInterval);
           setLoadingPhase(null);
           setLoadingStatusData(null);
-          await loadUserInfo(username);
-
-          // Load tweets and calculate new posts count
-          const data = await api.getTweetsCache(username);
-          const tweetsWithThreads = data.filter(tweet => {
-            const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
-            return hasThread;
-          });
-          const sorted = tweetsWithThreads.sort((a, b) => {
-            return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-          });
-          // Merge: preserve local edits for existing tweets
-          setTweets(prevTweets => {
-            const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
-            return sorted.map(newTweet => {
-              const existingTweet = prevTweetsMap.get(newTweet.id);
-              if (existingTweet?.edited) {
-                return existingTweet;
-              }
-              return newTweet;
-            });
-          });
-
-          // Calculate new posts and mark them as unseen before showing modal
-          const newTweetIds = sorted
-            .filter(t => !tweetIdsBeforeScrapeRef.current.has(t.id))
-            .map(t => t.id);
-          const newCount = newTweetIds.length;
-          setNewPostsCount(Math.max(0, newCount));
-
-          // Mark new tweets as unseen so they won't be removed by "clear seen"
-          if (newTweetIds.length > 0) {
-            try {
-              await api.markTweetsUnseen(username, newTweetIds);
-              console.log(`[Polling] Marked ${newTweetIds.length} new tweets as unseen`);
-            } catch (err) {
-              console.error('[Polling] Failed to mark tweets as unseen:', err);
-            }
-          }
-
-          setShowNewPostsModal(true);
-        } else {
+        } else if (status.type !== 'complete' && status.type !== 'idle') {
           // Log unexpected status types
           console.warn('[Polling] Unexpected status type:', status.type);
         }

@@ -64,7 +64,8 @@ def get_account_info(handle: str) -> dict[str, Any]:
 
     # Premium accounts require a model
     if account_type == "premium":
-        has_model = "model" in user_info and user_info["model"]
+        models = user_info.get("models", [])
+        has_model = len(models) > 0
         if not has_model:
             return {
                 "error": "premium_requires_model",
@@ -80,7 +81,7 @@ def get_account_info(handle: str) -> dict[str, Any]:
         "scrapes_left": scrapes_left,
         "posts_left": posts_left,
         "limits": limits,
-        "model": user_info.get("model"),
+        "models": user_info.get("models", []),
     }
 
 
@@ -271,7 +272,8 @@ def update_account_type(handle: str, account_type: AccountType, model: str | Non
                 "error": "premium_requires_model",
                 "message": "Premium accounts must have a model configured.",
             }
-        user_info["model"] = model
+        # Set the model in the models list (User model expects models: list[str])
+        user_info["models"] = [model]
 
     user_info["account_type"] = account_type
 

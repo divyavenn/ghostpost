@@ -113,17 +113,15 @@ async function handleAuthError(response: Response): Promise<void> {
     }
 
     if (shouldLogout) {
-      // Prevent multiple alerts/redirects
+      // Prevent multiple redirects
       if (isRedirecting) {
         throw new Error('Authentication required');
       }
       isRedirecting = true;
 
-      // Clear stored username (same as logout)
+      // Clear stored username and redirect to login silently
       localStorage.removeItem('username');
-      // Show alert and reload to trigger login page
-      alert('Your session has expired. Please log in again.');
-      window.location.reload();
+      window.location.href = '/login';
       throw new Error('Authentication required');
     }
   }
@@ -290,6 +288,7 @@ export const api = {
   // Tweet cache endpoints
   getTweetsCache: async (username: string): Promise<ReplyData[]> => {
     const response = await fetch(`${API_BASE_URL}/tweets/${username}`);
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to fetch tweets');
     return response.json();
   },
@@ -407,6 +406,7 @@ export const api = {
   // User settings endpoints
   getUserInfo: async (handle: string): Promise<UserInfo> => {
     const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/info`);
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to get user info');
     return response.json();
   },
@@ -425,6 +425,7 @@ export const api = {
 
   getUserSettings: async (handle: string): Promise<UserSettings> => {
     const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/settings`);
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to get user settings');
     return response.json();
   },
@@ -534,6 +535,7 @@ export const api = {
   // Posted tweets endpoints
   getPostedTweets: async (username: string, limit: number = 50, offset: number = 0): Promise<{ username: string; total: number; count: number; limit: number; offset: number; tweets: PostedData[] }> => {
     const response = await fetch(`${API_BASE_URL}/performance/${encodeURIComponent(username)}/posted-tweets?limit=${limit}&offset=${offset}`);
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to get posted tweets');
     return response.json();
   },
@@ -566,6 +568,7 @@ export const api = {
       url += `&status=${encodeURIComponent(status)}`;
     }
     const response = await fetch(url);
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to get comments');
     return response.json();
   },
@@ -577,6 +580,7 @@ export const api = {
   }> => {
     const url = `${API_BASE_URL}/comments/${encodeURIComponent(username)}/grouped?status=${encodeURIComponent(status)}`;
     const response = await fetch(url);
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to get grouped comments');
     return response.json();
   },
@@ -753,6 +757,7 @@ export const api = {
   // Job status endpoints
   getJobsStatus: async (username: string): Promise<AllJobsStatus> => {
     const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(username)}/status`);
+    await handleAuthError(response);
     if (!response.ok) throw new Error('Failed to get jobs status');
     return response.json();
   },

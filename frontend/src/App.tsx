@@ -1,10 +1,10 @@
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
 import { type ReplyData } from './components/ReplyDisplay';
 import { type PostedData } from './components/PostedDisplay';
 import { api, type PostWithComments } from './api/client';
-import { GeneratedTab } from './pages/GeneratedTab';
+import { DiscoveredTab } from './pages/DiscoveredTab';
 import { PostedTab } from './pages/PostedTab';
 import { CommentsTab } from './pages/CommentsTab';
 import { UserSettingsModal } from './components/UserSettingsModal';
@@ -84,9 +84,72 @@ function App() {
   const engagementMonitoringInProgressRef = useRef(false);
   // Track if we've seen the job actually running (to avoid treating stale 'idle' as 'complete')
   const hasSeenJobRunningRef = useRef(false);
+  // Scroll anchoring refs - keeps user's view stable when new tweets are added
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollAnchorRef = useRef<{ tweetId: string; offsetFromTop: number } | null>(null);
+  // Flag to trigger scroll restoration after tweets update
+  const [shouldRestoreScroll, setShouldRestoreScroll] = useState(false);
 
   // Derived state: isLoading can be determined from loadingPhase
   const isLoading = loadingPhase !== null;
+
+  // Capture scroll anchor before tweets update - finds first visible tweet
+  const captureScrollAnchor = useCallback(() => {
+    if (!scrollContainerRef.current || activeTab !== 'discovered') return;
+
+    const container = scrollContainerRef.current;
+    const containerRect = container.getBoundingClientRect();
+
+    // Find all tweet elements
+    const tweetElements = container.querySelectorAll('[data-tweet-id]');
+
+    for (const el of tweetElements) {
+      const rect = el.getBoundingClientRect();
+      // Find first tweet that's at least partially visible
+      if (rect.top < containerRect.bottom && rect.bottom > containerRect.top) {
+        const tweetId = el.getAttribute('data-tweet-id');
+        if (tweetId) {
+          scrollAnchorRef.current = {
+            tweetId,
+            offsetFromTop: rect.top - containerRect.top
+          };
+          return;
+        }
+      }
+    }
+  }, [activeTab]);
+
+  // Restore scroll position after DOM update
+  useLayoutEffect(() => {
+    if (!shouldRestoreScroll || !scrollAnchorRef.current || !scrollContainerRef.current) {
+      return;
+    }
+
+    const { tweetId, offsetFromTop } = scrollAnchorRef.current;
+    const container = scrollContainerRef.current;
+    const anchorElement = container.querySelector(`[data-tweet-id="${tweetId}"]`);
+
+    if (anchorElement) {
+      const containerRect = container.getBoundingClientRect();
+      const anchorRect = anchorElement.getBoundingClientRect();
+      const currentOffset = anchorRect.top - containerRect.top;
+      const scrollAdjustment = currentOffset - offsetFromTop;
+
+      if (Math.abs(scrollAdjustment) > 5) { // Only adjust if meaningful difference
+        container.scrollTop += scrollAdjustment;
+      }
+    }
+
+    scrollAnchorRef.current = null;
+    setShouldRestoreScroll(false);
+  }, [shouldRestoreScroll]);
+
+  // Wrapper for setTweets that preserves scroll position
+  const setTweetsWithScrollAnchor = useCallback((updater: ReplyData[] | ((prev: ReplyData[]) => ReplyData[])) => {
+    captureScrollAnchor();
+    setTweets(updater);
+    setShouldRestoreScroll(true);
+  }, [captureScrollAnchor]);
 
   // Helper to translate job status to loading overlay format
   const translateJobStatusToLoadingStatus = (jobStatus: { status: string; phase: string; details?: string | null }) => {
@@ -547,7 +610,7 @@ function App() {
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
           });
           // Merge: preserve local edits for existing tweets
-          setTweets(prevTweets => {
+          setTweetsWithScrollAnchor(prevTweets => {
             const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
             return sorted.map(newTweet => {
               const existingTweet = prevTweetsMap.get(newTweet.id);
@@ -596,7 +659,8 @@ function App() {
               return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
             });
             // Merge: preserve local edits for existing tweets
-            setTweets(prevTweets => {
+            // Use scroll anchor wrapper to keep user's view stable
+            setTweetsWithScrollAnchor(prevTweets => {
               const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
               return sorted.map(newTweet => {
                 const existingTweet = prevTweetsMap.get(newTweet.id);
@@ -654,7 +718,8 @@ function App() {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
         });
         // Merge: preserve local edits for existing tweets, add new tweets
-        setTweets(prevTweets => {
+        // Use scroll anchor wrapper to keep user's view stable
+        setTweetsWithScrollAnchor(prevTweets => {
           const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
           return sorted.map(newTweet => {
             const existingTweet = prevTweetsMap.get(newTweet.id);
@@ -1178,7 +1243,8 @@ function App() {
                     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
                   });
                   // Merge: preserve local edits for existing tweets
-                  setTweets(prevTweets => {
+                  // Use scroll anchor wrapper to keep user's view stable
+                  setTweetsWithScrollAnchor(prevTweets => {
                     const prevTweetsMap = new Map(prevTweets.map(t => [t.id, t]));
                     return sorted.map(newTweet => {
                       const existingTweet = prevTweetsMap.get(newTweet.id);
@@ -1232,16 +1298,17 @@ function App() {
       <TabNavigation
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        generatedCount={tweets.length}
+        discoveredCount={tweets.length}
         postedCount={userInfo?.lifetime_posts || 0}
         commentsCount={pendingCommentsCount}
       />
 
       {/* Content Area - Show tweets or empty state */}
-      {activeTab === 'generated' && tweets.length === 0 ? (
+      {activeTab === 'discovered' && tweets.length === 0 ? (
         <EmptyState onRefresh={handleScrape} />
       ) : (
         <div
+          ref={scrollContainerRef}
           className="flex-1 overflow-y-auto scrollbar-hide"
           onScroll={(e) => {
             const element = e.currentTarget;
@@ -1253,8 +1320,8 @@ function App() {
           }}
         >
           <div className="flex gap-6 py-10 px-6">
-            {activeTab === 'generated' && userInfo && (
-              <GeneratedTab
+            {activeTab === 'discovered' && userInfo && (
+              <DiscoveredTab
                 tweets={tweets}
                 userProfilePicUrl={userInfo.profile_pic_url}
                 numberOfGenerations={numberOfGenerations}

@@ -33,7 +33,7 @@ export interface ReplyData {
   thread?: string[];
   author_profile_pic_url?: string;
   scraped_from?: {
-    type: 'account' | 'query';
+    type: 'account' | 'query' | 'home_timeline';
     value: string;
     summary?: string;
   };
@@ -717,6 +717,8 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
   const [otherRepliesExpanded, setOtherRepliesExpanded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref to track if user has made any local edits (survives useEffect dependency changes)
+  const hasDirtyEditsRef = useRef(false);
 
   const displayName = tweet.username;
   const handle = tweet.handle;
@@ -726,13 +728,21 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
   const threadMessages = useMemo(() => [...(tweet.thread ?? [])], [tweet.thread]);
 
   useEffect(() => {
+    // Don't reset local edits if:
+    // 1. Tweet is marked as edited in parent state (being saved to backend)
+    // 2. User has made local edits that haven't been saved yet (hasDirtyEditsRef)
+    // This prevents polling from overwriting unsaved changes
+    if (tweet.edited || hasDirtyEditsRef.current) {
+      return;
+    }
+
     const allNewReplies = tweet.generated_replies
       ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
       : (tweet.reply ? [tweet.reply] : []);
     const newReplies = maxReplies ? allNewReplies.slice(0, maxReplies) : allNewReplies;
     setEditedTexts(newReplies);
     setHasUnsavedChanges(newReplies.map(() => false));
-  }, [tweet.id, tweet.reply, tweet.generated_replies, maxReplies]);
+  }, [tweet.id, tweet.reply, tweet.generated_replies, maxReplies, tweet.edited]);
 
   const handleTextChange = (index: number, newText: string) => {
     const newEditedTexts = [...editedTexts];
@@ -744,8 +754,30 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
       : (tweet.reply ? [tweet.reply] : []);
     const originalReplies = maxReplies ? allOriginalReplies.slice(0, maxReplies) : allOriginalReplies;
     const newHasUnsavedChanges = [...hasUnsavedChanges];
-    newHasUnsavedChanges[index] = newText !== originalReplies[index];
+    const hasChanged = newText !== originalReplies[index];
+    newHasUnsavedChanges[index] = hasChanged;
     setHasUnsavedChanges(newHasUnsavedChanges);
+
+    // Update dirty ref based on whether any changes remain unsaved
+    hasDirtyEditsRef.current = newHasUnsavedChanges.some(changed => changed);
+
+    // Auto-save to backend after 1.5 seconds of no typing
+    // This ensures edits persist even if UI re-renders from polling
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    if (hasChanged && onEditReply) {
+      debounceTimerRef.current = setTimeout(() => {
+        onEditReply(newText, index);
+        // Mark as saved locally
+        setHasUnsavedChanges(prev => {
+          const updated = [...prev];
+          updated[index] = false;
+          return updated;
+        });
+        hasDirtyEditsRef.current = false;
+      }, 1500);
+    }
   };
 
   const handleSave = async (index: number) => {
@@ -758,6 +790,11 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
       const newHasUnsavedChanges = [...hasUnsavedChanges];
       newHasUnsavedChanges[index] = false;
       setHasUnsavedChanges(newHasUnsavedChanges);
+
+      // Clear dirty ref if no more unsaved changes remain
+      if (!newHasUnsavedChanges.some(changed => changed)) {
+        hasDirtyEditsRef.current = false;
+      }
     }
   };
 
@@ -855,10 +892,16 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                     {tweet.created_at && <span>· {getRelativeTime(tweet.created_at)}</span>}
                     {tweet.scraped_from && (
                       <Badge>
-                        <i className={`fa-solid ${tweet.scraped_from.type === 'account' ? 'fa-user' : 'fa-magnifying-glass'}`} />
+                        <i className={`fa-solid ${
+                          tweet.scraped_from.type === 'account' ? 'fa-user' :
+                          tweet.scraped_from.type === 'home_timeline' ? 'fa-house' :
+                          'fa-magnifying-glass'
+                        }`} />
                         <span>
                           {tweet.scraped_from.type === 'account'
                             ? `@${tweet.scraped_from.value}`
+                            : tweet.scraped_from.type === 'home_timeline'
+                            ? 'For You'
                             : tweet.scraped_from.summary || tweet.scraped_from.value}
                         </span>
                       </Badge>

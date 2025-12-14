@@ -3,7 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import { ReplyDisplay, type ReplyData } from '../components/ReplyDisplay';
 import { AnimatedListItem } from '../components/AnimatedListItem';
 
-interface GeneratedTabProps {
+interface DiscoveredTabProps {
   tweets: ReplyData[];
   userProfilePicUrl: string;
   numberOfGenerations: number;
@@ -17,7 +17,18 @@ interface GeneratedTabProps {
   onTweetsSeen?: (tweetIds: string[]) => void;
 }
 
-export function GeneratedTab({
+// Get stable column assignment based on tweet ID (not array index)
+// This prevents tweets from jumping between columns when list changes
+function getStableColumn(id: string): 0 | 1 {
+  // Use last digit of ID for simple, stable distribution
+  const lastChar = id.slice(-1);
+  const num = parseInt(lastChar, 10);
+  // If not a number (edge case), use character code
+  const value = isNaN(num) ? lastChar.charCodeAt(0) : num;
+  return (value % 2) as 0 | 1;
+}
+
+export function DiscoveredTab({
   tweets,
   userProfilePicUrl,
   numberOfGenerations,
@@ -29,7 +40,7 @@ export function GeneratedTab({
   onEditReply,
   onRegenerate,
   onTweetsSeen,
-}: GeneratedTabProps) {
+}: DiscoveredTabProps) {
   // Track which tweets have been seen in this session (debounce)
   const seenIdsRef = useRef<Set<string>>(new Set());
   // Batch seen tweets for debounced API call
@@ -99,7 +110,7 @@ export function GeneratedTab({
       {/* Left Column */}
       <div className="flex-1 flex flex-col gap-6">
         <AnimatePresence mode="popLayout">
-          {tweets.filter((_, index) => index % 2 === 0).map((tweet) => (
+          {tweets.filter((tweet) => getStableColumn(tweet.id) === 0).map((tweet) => (
             <AnimatedListItem
               key={tweet.id}
               itemKey={tweet.id}
@@ -126,7 +137,7 @@ export function GeneratedTab({
       {/* Right Column */}
       <div className="flex-1 flex flex-col gap-6">
         <AnimatePresence mode="popLayout">
-          {tweets.filter((_, index) => index % 2 === 1).map((tweet) => (
+          {tweets.filter((tweet) => getStableColumn(tweet.id) === 1).map((tweet) => (
             <AnimatedListItem
               key={tweet.id}
               itemKey={tweet.id}

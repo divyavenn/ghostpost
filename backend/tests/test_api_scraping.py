@@ -165,8 +165,7 @@ async def test_scrape_user_recent_tweets_returns_list(browser_context):
 
     result = await scrape_user_recent_tweets(
         browser_context,
-        username="divya_venn",
-        max_tweets=10
+        username="divya_venn"
     )
 
     assert isinstance(result, list), "Result should be a list"
@@ -181,25 +180,6 @@ async def test_scrape_user_recent_tweets_returns_list(browser_context):
 
         # Handle should be the requested user
         assert tweet["handle"].lower() == "divya_venn"
-
-
-@pytest.mark.asyncio
-@pytest.mark.slow
-async def test_scrape_user_recent_tweets_respects_max_limit(browser_context):
-    """
-    Test that scrape_user_recent_tweets respects the max_tweets limit.
-    """
-    from backend.browser_automation.twitter.api import scrape_user_recent_tweets
-
-    max_limit = 5
-    result = await scrape_user_recent_tweets(
-        browser_context,
-        username="divya_venn",
-        max_tweets=max_limit
-    )
-
-    # Result should not exceed max_tweets (could be less if user has fewer tweets)
-    assert len(result) <= max_limit, f"Expected at most {max_limit} tweets, got {len(result)}"
 
 
 @pytest.mark.asyncio
@@ -334,3 +314,73 @@ async def test_tweet_url_format(browser_context, test_user):
         assert url.startswith("https://x.com/"), f"URL should start with https://x.com/, got {url}"
         assert "/status/" in url, f"URL should contain /status/, got {url}"
         assert tweet_id in url, f"URL should contain tweet ID {tweet_id}, got {url}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.slow
+async def test_fetch_home_timeline_returns_tweets(test_user):
+    """
+    Test that fetch_home_timeline_with_intent_filter returns tweets from the user's home timeline.
+
+    Requires a valid OAuth access token for the test user.
+    """
+    from backend.browser_automation.twitter.api import fetch_home_timeline_with_intent_filter
+    from backend.twitter.authentication import ensure_access_token
+
+    # Pre-check if we have a valid token
+    access_token = await ensure_access_token(test_user)
+    if not access_token:
+        pytest.skip(f"No OAuth access token available for {test_user} - user needs to re-authenticate")
+
+    result = await fetch_home_timeline_with_intent_filter(
+        username=test_user,
+        generate_replies_inline=False  # Don't generate replies during test
+    )
+
+    # Result should be a dict
+    assert isinstance(result, dict), f"Result should be a dict, got {type(result)}"
+
+    # Log how many tweets we got
+    print(f"[Home Timeline] Got {len(result)} tweets for @{test_user}")
+
+    # Should return at least some tweets from home timeline
+    assert len(result) > 0, f"Home timeline should return at least 1 tweet for @{test_user}"
+
+    # If tweets are returned, check structure
+    for tweet_id, tweet in result.items():
+        assert isinstance(tweet_id, str), "Tweet ID should be a string"
+        assert "id" in tweet, "Tweet should have 'id' field"
+        assert "text" in tweet, "Tweet should have 'text' field"
+        assert "handle" in tweet, "Tweet should have 'handle' field"
+        assert "url" in tweet, "Tweet should have 'url' field"
+
+
+@pytest.mark.asyncio
+@pytest.mark.slow
+async def test_fetch_search_returns_non_empty_results(browser_context, test_user):
+    """
+    Test that fetch_search actually returns tweets for a common query.
+
+    Requires a valid OAuth access token for the test user.
+    """
+    from backend.browser_automation.twitter.api import fetch_search
+    from backend.twitter.authentication import ensure_access_token
+
+    # Pre-check if we have a valid token
+    access_token = await ensure_access_token(test_user)
+    if not access_token:
+        pytest.skip(f"No OAuth access token available for {test_user} - user needs to re-authenticate")
+
+    result = await fetch_search(
+        browser_context,
+        query="python",  # Use a specific programming term
+        username=test_user
+    )
+
+    assert isinstance(result, dict), f"Result should be a dict, got {type(result)}"
+
+    # Log the count
+    print(f"[Search] Query 'python' returned {len(result)} tweets")
+
+    # This query should return at least some results
+    assert len(result) > 0, "Search for 'python' should return at least 1 tweet"

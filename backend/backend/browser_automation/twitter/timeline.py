@@ -164,6 +164,12 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
     """
     from backend.browser_automation.twitter.api import collect_from_page as api_collect_from_page
 
+    # Helper to set scraped_from on tweets before writing
+    async def _set_source_and_write(batch, user, source, original_callback):
+        for tweet in batch:
+            tweet["scraped_from"] = source
+        await original_callback(batch, user)
+
     notify(f"🚀 [gather_trending] Starting API scraping for {username}: {len(usernames)} accounts, {len(queries)} queries")
     results = {}
 
@@ -173,9 +179,15 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
             notify(f"📍 Scraping from @{u} via API")
 
             url = f"https://x.com/{u}"
-            tweets = await api_collect_from_page(None, url, handle=u, username=username, write_callback=write_callback)
+            account_source = {"type": "account", "value": u}
+            # Create wrapper callback that sets scraped_from before writing
+            wrapped_callback = (
+                (lambda batch, user, src=account_source: _set_source_and_write(batch, user, src, write_callback))
+                if write_callback else None
+            )
+            tweets = await api_collect_from_page(None, url, handle=u, username=username, write_callback=wrapped_callback)
             for tweet_data in tweets.values():
-                tweet_data["scraped_from"] = {"type": "account", "value": u}
+                tweet_data["scraped_from"] = account_source
             results.update(tweets)
             notify(f"✅ [API] Fetched {len(tweets)} tweets with threads from @{u}")
         except Exception as e:
@@ -189,9 +201,15 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
 
             from urllib.parse import quote_plus
             url = f"https://x.com/search?q={quote_plus(q)}"
-            tweets = await api_collect_from_page(None, url, handle=None, username=username, write_callback=write_callback)
+            query_source = {"type": "query", "value": q, "summary": summary}
+            # Create wrapper callback that sets scraped_from before writing
+            wrapped_callback = (
+                (lambda batch, user, src=query_source: _set_source_and_write(batch, user, src, write_callback))
+                if write_callback else None
+            )
+            tweets = await api_collect_from_page(None, url, handle=None, username=username, write_callback=wrapped_callback)
             for tweet_data in tweets.values():
-                tweet_data["scraped_from"] = {"type": "query", "value": q, "summary": summary}
+                tweet_data["scraped_from"] = query_source
             results.update(tweets)
             notify(f"✅ [API] Fetched {len(tweets)} tweets with threads for query [{q}]")
         except Exception as e:
@@ -393,8 +411,14 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
     Uses find_and_reply_to_new_posts job which fetches full thread context for each tweet.
     Uses asyncio.create_task() for true parallel execution with other background jobs.
     """
+    from backend.twitter.authentication import ensure_access_token
+
     try:
         notify(f"📋 [API] Received scrape request for {username}")
+
+        # Verify OAuth token is valid before starting background job
+        # This lets the frontend know immediately if re-auth is needed
+        await ensure_access_token(username, raise_on_failure=True)
 
         # Check user account type
         user_info = read_user_info(username)

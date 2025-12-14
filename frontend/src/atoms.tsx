@@ -110,9 +110,9 @@ export const showFirstTimeModalState = atom<boolean>({
 });
 
 
-export const activeTabState = atom<'generated' | 'posted' | 'comments'>({
+export const activeTabState = atom<'discovered' | 'posted' | 'comments'>({
   key: 'activeTabState',
-  default: 'generated',
+  default: 'discovered',
 });
 
 /**

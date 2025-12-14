@@ -367,7 +367,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
                         notify(f"⚠️ Error generating replies for cached tweet {tweet_id}: {e}")
 
         # Progressive write callback that generates replies inline before writing
-        async def progressive_write_with_replies(tweets_batch, target_username):
+        async def progressive_write_with_replies(tweets_batch, target_username, scraped_from: dict | None = None):
             """Generate replies for each tweet, then write to cache with replies included."""
             from backend.twitter.generate_replies import generate_replies_for_tweet
 
@@ -428,6 +428,10 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
 
             # Only write tweets that have replies (for premium) or all tweets (for non-premium)
             if tweets_to_write:
+                # Set scraped_from on each tweet before writing
+                if scraped_from:
+                    for tweet in tweets_to_write:
+                        tweet["scraped_from"] = scraped_from
                 await write_to_cache(tweets_to_write, "Progressive tweet scraping", username=target_username)
                 results["tweets_scraped"] += len(tweets_to_write)
                 print(f"   💾 Wrote {len(tweets_to_write)} tweets to cache", flush=True)
@@ -450,13 +454,14 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
 
             try:
                 url = f"https://x.com/{account}"
+                account_source = {"type": "account", "value": account}
                 tweets = await api_collect_from_page(
                     None, url, handle=account, username=username,
-                    write_callback=progressive_write_with_replies,
+                    write_callback=lambda batch, user: progressive_write_with_replies(batch, user, scraped_from=account_source),
                     generate_replies_inline=False  # We handle reply generation in progressive_write_with_replies
                 )
                 for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {"type": "account", "value": account}
+                    tweet_data["scraped_from"] = account_source
                 all_tweets.update(tweets)
             except Exception as e:
                 notify(f"⚠️ Error scraping @{account}: {e}")
@@ -476,13 +481,14 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
 
             try:
                 url = f"https://x.com/search?q={quote_plus(query)}"
+                query_source = {"type": "query", "value": query, "summary": summary}
                 tweets = await api_collect_from_page(
                     None, url, handle=None, username=username,
-                    write_callback=progressive_write_with_replies,
+                    write_callback=lambda batch, user: progressive_write_with_replies(batch, user, scraped_from=query_source),
                     generate_replies_inline=False  # We handle reply generation in progressive_write_with_replies
                 )
                 for tweet_data in tweets.values():
-                    tweet_data["scraped_from"] = {"type": "query", "value": query, "summary": summary}
+                    tweet_data["scraped_from"] = query_source
                 all_tweets.update(tweets)
             except Exception as e:
                 notify(f"⚠️ Error searching [{query}]: {e}")
@@ -499,14 +505,15 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         try:
             from backend.browser_automation.twitter.api import fetch_home_timeline_with_intent_filter
 
+            home_source = {"type": "home_timeline", "value": "following"}
             home_tweets = await fetch_home_timeline_with_intent_filter(
                 username=username,
                 max_tweets=max_tweets,
-                write_callback=progressive_write_with_replies,
+                write_callback=lambda batch, user: progressive_write_with_replies(batch, user, scraped_from=home_source),
                 generate_replies_inline=False  # We handle reply generation in progressive_write_with_replies
             )
             for tweet_data in home_tweets.values():
-                tweet_data["scraped_from"] = {"type": "home_timeline", "value": "following"}
+                tweet_data["scraped_from"] = home_source
             all_tweets.update(home_tweets)
             results["home_timeline_tweets"] = len(home_tweets)
             notify(f"✅ Found {len(home_tweets)} tweets from home timeline that match intent")

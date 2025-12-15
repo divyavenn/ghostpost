@@ -487,7 +487,15 @@ async def populate_thread(raw_tweets: dict) -> tuple[dict, int]:
     skipped_count = 0
 
     for tid, t in raw_tweets.items():
-        thread_data = await get_thread(None, t["url"], root_id=t["id"])
+        # Pass prefetched data to avoid redundant _get_tweet_by_id API call
+        prefetched_data = {
+            "handle": t.get("handle", ""),
+            "conversation_id": t.get("conversation_id", tid),
+            "text": t.get("text", ""),
+            "author_profile_pic_url": t.get("author_profile_pic_url", ""),
+            "media": t.get("media", []),
+        }
+        thread_data = await get_thread(None, t["url"], root_id=t["id"], prefetched_data=prefetched_data)
         t["thread"] = thread_data.get("thread", [])
         t["thread_ids"] = thread_data.get("thread_ids", [])
         t["other_replies"] = thread_data.get("other_replies", [])
@@ -535,19 +543,21 @@ def _convert_web_query_to_api(query: str) -> str:
     return query
 
 
-async def fetch_search(query: str, username: str | None = None) -> tuple[dict, ScrapeStats]:
+async def fetch_search_raw(query: str, username: str | None = None) -> tuple[dict, ScrapeStats]:
     """
-    Search for tweets using Twitter API v2 and populate thread data.
+    Search for tweets using Twitter API v2 WITHOUT thread population.
+
+    Use this when you want to populate threads separately (e.g., for progress tracking).
+    Call populate_thread_for_tweet() on each tweet afterward.
 
     Args:
         query: Search query (supports both web-style and API-style operators)
         username: Username for authentication
 
     Returns:
-        Tuple of (tweets dict, ScrapeStats)
+        Tuple of (raw_tweets dict without thread data, ScrapeStats)
     """
     # Determine source type from query
-    original_query = query
     if query.startswith("from:"):
         source_type = "account"
         source_value = query.split("from:")[1].split()[0]  # Extract handle
@@ -560,7 +570,7 @@ async def fetch_search(query: str, username: str | None = None) -> tuple[dict, S
     access_token = await ensure_access_token(auth_user)
 
     if not access_token:
-        error("No access token available", status_code=401, function_name="fetch_search", critical=False)
+        error("No access token available", status_code=401, function_name="fetch_search_raw", critical=False)
         return {}, stats
 
     # Convert web-style operators to API-style
@@ -598,6 +608,67 @@ async def fetch_search(query: str, username: str | None = None) -> tuple[dict, S
         tweet_dict = _tweet_to_dict(tweet, user_map, includes)
         raw_tweets[tweet_dict["id"]] = tweet_dict
 
+    stats.passed = len(raw_tweets)  # Before thread filtering
+    stats.log_summary()
+
+    return raw_tweets, stats
+
+
+async def populate_thread_for_tweet(tweet: dict) -> dict | None:
+    """
+    Populate thread data for a single tweet.
+
+    Args:
+        tweet: Tweet dict from fetch_search_raw (must have id, url, handle, conversation_id, text, etc.)
+
+    Returns:
+        Tweet dict with thread data populated, or None if thread is empty (should be filtered)
+    """
+    tid = tweet.get("id")
+    prefetched_data = {
+        "handle": tweet.get("handle", ""),
+        "conversation_id": tweet.get("conversation_id", tid),
+        "text": tweet.get("text", ""),
+        "author_profile_pic_url": tweet.get("author_profile_pic_url", ""),
+        "media": tweet.get("media", []),
+    }
+
+    thread_data = await get_thread(None, tweet["url"], root_id=tid, prefetched_data=prefetched_data)
+    tweet["thread"] = thread_data.get("thread", [])
+    tweet["thread_ids"] = thread_data.get("thread_ids", [])
+    tweet["other_replies"] = thread_data.get("other_replies", [])
+
+    # Update author info from thread data if available
+    if thread_data.get("author_profile_pic_url"):
+        tweet["author_profile_pic_url"] = thread_data["author_profile_pic_url"]
+    if thread_data.get("media"):
+        tweet["media"] = thread_data["media"]
+
+    # Skip tweets without thread content
+    if not tweet["thread"] or len(tweet["thread"]) == 0:
+        return None
+
+    # Replace truncated text with full text from thread
+    tweet["text"] = tweet["thread"][0]
+    return tweet
+
+
+async def fetch_search(query: str, username: str | None = None) -> tuple[dict, ScrapeStats]:
+    """
+    Search for tweets using Twitter API v2 and populate thread data.
+
+    NOTE: For granular progress tracking, use fetch_search_raw() + populate_thread_for_tweet() instead.
+
+    Args:
+        query: Search query (supports both web-style and API-style operators)
+        username: Username for authentication
+
+    Returns:
+        Tuple of (tweets dict, ScrapeStats)
+    """
+    # Get raw tweets without thread data
+    raw_tweets, stats = await fetch_search_raw(query, username)
+
     # Populate thread data and filter out empty threads
     tweets, no_thread_count = await populate_thread(raw_tweets)
     stats.filtered_no_thread = no_thread_count
@@ -609,7 +680,7 @@ async def fetch_search(query: str, username: str | None = None) -> tuple[dict, S
     return tweets, stats
 
 
-async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
+async def get_thread(ctx, tweet_url: str, root_id: str | None = None, prefetched_data: dict | None = None) -> dict:
     """
     Get thread context for a tweet using Twitter API.
 
@@ -620,6 +691,9 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
         ctx: Browser context (ignored - kept for interface compatibility)
         tweet_url: URL of the tweet
         root_id: Root tweet ID
+        prefetched_data: Optional dict with tweet data already fetched (from _tweet_to_dict).
+                        If provided, skips the _get_tweet_by_id API call.
+                        Expected keys: handle, conversation_id, text, author_profile_pic_url, media
 
     Returns:
         Dict with thread, other_replies, author_handle, author_profile_pic_url, media
@@ -651,36 +725,46 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
         notify(f"⚠️ get_thread: No access token available for {DEFAULT_AUTH_USER}")
         return empty_result
 
-    # Fetch the root tweet
-    response = await _get_tweet_by_id(access_token, root_id)
+    # Use prefetched data if available, otherwise fetch the tweet
+    if prefetched_data:
+        # We already have the data from the initial search - skip _get_tweet_by_id
+        author_handle = prefetched_data.get("handle", "")
+        conversation_id = prefetched_data.get("conversation_id", root_id)
+        root_text = prefetched_data.get("text", "")
+        author_profile_pic_url = prefetched_data.get("author_profile_pic_url", "")
+        media = prefetched_data.get("media", [])
+    else:
+        # Fetch the root tweet (slow path - makes API call)
+        response = await _get_tweet_by_id(access_token, root_id)
 
-    data = response.get("data")
-    if not data:
-        # Check if there's error info in the response
-        errors = response.get("errors", [])
-        if errors:
-            error_msg = errors[0].get("detail", errors[0].get("message", "Unknown error"))
-            notify(f"⚠️ get_thread: API error for tweet {root_id}: {error_msg}")
-        else:
-            notify(f"⚠️ get_thread: No data returned for tweet {root_id} (may be deleted/private)")
-        return empty_result
+        data = response.get("data")
+        if not data:
+            # Check if there's error info in the response
+            errors = response.get("errors", [])
+            if errors:
+                error_msg = errors[0].get("detail", errors[0].get("message", "Unknown error"))
+                notify(f"⚠️ get_thread: API error for tweet {root_id}: {error_msg}")
+            else:
+                notify(f"⚠️ get_thread: No data returned for tweet {root_id} (may be deleted/private)")
+            return empty_result
 
-    includes = response.get("includes", {})
-    user_map = _build_user_map(includes)
+        includes = response.get("includes", {})
+        user_map = _build_user_map(includes)
 
-    author_id = data.get("author_id", "")
-    author_info = user_map.get(author_id, {})
-    author_handle = author_info.get("handle", "")
-
-    # Get the conversation ID
-    conversation_id = data.get("conversation_id", root_id)
+        author_id = data.get("author_id", "")
+        author_info = user_map.get(author_id, {})
+        author_handle = author_info.get("handle", "")
+        conversation_id = data.get("conversation_id", root_id)
+        root_text = _get_full_text(data)
+        author_profile_pic_url = author_info.get("author_profile_pic_url", "")
+        media = _extract_media_from_includes(root_id, includes, data)
 
     # Build the thread: fetch all tweets by the author in this conversation
     thread_texts = []
     thread_tweet_ids = {root_id}  # Track IDs that are part of the thread chain
 
     # Add root tweet first
-    thread_texts.append(_get_full_text(data))
+    thread_texts.append(root_text)
 
     # Search for author's other tweets in this conversation (thread continuations)
     if author_handle:
@@ -690,7 +774,7 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
         thread_data = thread_response.get("data", [])
 
         # Build a map of tweet_id -> tweet for chain building
-        tweet_map = {root_id: data}
+        tweet_map = {}
         for tweet in thread_data:
             tweet_map[tweet.get("id")] = tweet
 
@@ -748,8 +832,8 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
         "thread_ids": sorted_thread_ids,  # For auto-liking all tweets in thread
         "other_replies": other_replies,
         "author_handle": author_handle,
-        "author_profile_pic_url": author_info.get("author_profile_pic_url", ""),
-        "media": _extract_media_from_includes(root_id, includes, data)
+        "author_profile_pic_url": author_profile_pic_url,
+        "media": media
     }
 
 

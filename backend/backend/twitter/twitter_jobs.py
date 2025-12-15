@@ -440,25 +440,118 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
                     except Exception as e:
                         notify(f"⚠️ Error generating replies for cached tweet {tweet_id}: {e}")
 
-        # Scrape accounts
+        # Scrape accounts and queries with granular progress
         total_sources = len(relevant_accounts) + len(queries) + 1  # +1 for home timeline
         current_source = 0
         all_tweets = {}
 
-        for account in relevant_accounts:
-            current_source += 1
+        # Import the new granular functions
+        from backend.browser_automation.twitter.api import fetch_search_raw, populate_thread_for_tweet
+        from backend.twitter.filtering import check_tweet_matches_intent_initial
+
+        async def scrape_source_with_progress(
+            source_query: str,
+            source_info: dict,
+            phase: str,
+            details: str
+        ) -> dict:
+            """Scrape a source with per-tweet progress updates."""
+            # Phase 1: Fetch raw tweets (1 API call)
             _update_job_status(
                 username, "find_and_reply_to_new_posts", "running",
-                "scraping",
+                phase,
                 progress={"current": current_source, "total": total_sources},
-                details=f"@{account}"
+                details=f"{details} (fetching)"
             )
 
+            raw_tweets, _stats = await fetch_search_raw(source_query, username=username)
+
+            if not raw_tweets:
+                return {}
+
+            # Phase 2: Pre-filter tweets BEFORE fetching thread data (expensive)
+            # Filter order: FREE local checks first, then PAID LLM calls
+            # This minimizes API costs by filtering out obvious skips first
+            pre_filtered = []
+            filtered_own = 0
+            filtered_seen = 0
+            filtered_intent = 0
+
+            for tid, tweet in raw_tweets.items():
+                tweet_handle = tweet.get("handle", "").lower()
+
+                # 1. Skip user's own tweets (FREE - local check)
+                if tweet_handle == username.lower():
+                    filtered_own += 1
+                    continue
+
+                # 2. Skip already seen tweets (FREE - local check)
+                if is_tweet_seen(username, str(tid)):
+                    filtered_seen += 1
+                    continue
+
+                # 3. Check intent filter LAST (PAID - LLM API call)
+                passes_intent = await check_tweet_matches_intent_initial(tweet, username)
+                if not passes_intent:
+                    filtered_intent += 1
+                    continue
+
+                pre_filtered.append((tid, tweet))
+
+            if not pre_filtered:
+                filter_breakdown = []
+                if filtered_own > 0:
+                    filter_breakdown.append(f"own:{filtered_own}")
+                if filtered_seen > 0:
+                    filter_breakdown.append(f"seen:{filtered_seen}")
+                if filtered_intent > 0:
+                    filter_breakdown.append(f"intent:{filtered_intent}")
+                breakdown_str = ", ".join(filter_breakdown) if filter_breakdown else "all filtered"
+                notify(f"📊 {details}: {len(raw_tweets)} found, 0 new ({breakdown_str})")
+                return {}
+
+            # Log filter breakdown
+            filter_breakdown = []
+            if filtered_own > 0:
+                filter_breakdown.append(f"own:{filtered_own}")
+            if filtered_seen > 0:
+                filter_breakdown.append(f"seen:{filtered_seen}")
+            if filtered_intent > 0:
+                filter_breakdown.append(f"intent:{filtered_intent}")
+            breakdown_str = f" | filtered: {', '.join(filter_breakdown)}" if filter_breakdown else ""
+            notify(f"📊 {details}: {len(raw_tweets)} found, {len(pre_filtered)} new{breakdown_str}")
+
+            # Phase 3: Populate threads only for tweets that passed pre-filtering
+            tweets = {}
+            total_tweets = len(pre_filtered)
+
+            for i, (tid, tweet) in enumerate(pre_filtered):
+                # Update progress for each tweet
+                _update_job_status(
+                    username, "find_and_reply_to_new_posts", "running",
+                    phase,
+                    progress={"current": current_source, "total": total_sources},
+                    details=f"{details} ({i+1}/{total_tweets} tweets)"
+                )
+
+                try:
+                    populated = await populate_thread_for_tweet(tweet)
+                    if populated:
+                        tweets[tid] = populated
+                        await process_tweets({tid: populated}, source_info)
+                except Exception as e:
+                    notify(f"⚠️ Error populating thread for tweet {tid}: {e}")
+
+            return tweets
+
+        for account in relevant_accounts:
+            current_source += 1
             try:
                 account_source = {"type": "account", "value": account}
                 account_query = f"from:{account}"
-                tweets, _stats = await api_fetch_search(account_query, username=username)
-                await process_tweets(tweets, account_source)
+                tweets = await scrape_source_with_progress(
+                    account_query, account_source, "scraping", f"@{account}"
+                )
                 all_tweets.update(tweets)
             except Exception as e:
                 notify(f"⚠️ Error scraping @{account}: {e}")
@@ -468,17 +561,11 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         for query in queries:
             current_source += 1
             summary = query_summary_map.get(query, query)
-            _update_job_status(
-                username, "find_and_reply_to_new_posts", "running",
-                "searching",
-                progress={"current": current_source, "total": total_sources},
-                details=summary[:30]
-            )
-
             try:
                 query_source = {"type": "query", "value": query, "summary": summary}
-                tweets, _stats = await api_fetch_search(query, username=username)
-                await process_tweets(tweets, query_source)
+                tweets = await scrape_source_with_progress(
+                    query, query_source, "searching", summary[:30]
+                )
                 all_tweets.update(tweets)
             except Exception as e:
                 notify(f"⚠️ Error searching [{query}]: {e}")

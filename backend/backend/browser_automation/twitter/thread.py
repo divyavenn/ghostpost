@@ -236,8 +236,12 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
             critical=False
         )
 
+    # Convert thread_tweet_ids to sorted list (chronological order)
+    sorted_thread_ids = sorted(thread_tweet_ids, key=lambda x: int(x) if x.isdigit() else 0)
+
     return {
         "thread": thread_results,
+        "thread_ids": sorted_thread_ids,  # For auto-liking all tweets in thread
         "other_replies": top_replies,
         "author_handle": root_author_handle,
         "author_profile_pic_url": root_author_profile_pic,

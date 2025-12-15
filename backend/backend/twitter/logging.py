@@ -193,3 +193,55 @@ def log_scrape_action(username: str, number_of_tweets_written: int, initiated_by
     # Append to JSONL file (each line is a JSON object)
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def log_scrape_stats(
+    username: str,
+    source_type: str,
+    source_value: str,
+    fetched: int,
+    passed: int,
+    filtered_old: int = 0,
+    filtered_impressions: int = 0,
+    filtered_no_thread: int = 0,
+    filtered_intent: int = 0,
+    filtered_seen: int = 0,
+    filtered_replies: int = 0,
+    filtered_retweets: int = 0,
+) -> None:
+    """
+    Log detailed scraping statistics for a single source.
+
+    Args:
+        username: The user running the scrape
+        source_type: "account", "query", or "home_timeline"
+        source_value: The handle, query text, or "following"
+        fetched: Total tweets fetched from API
+        passed: Tweets that passed all filters
+        filtered_*: Count of tweets filtered at each stage
+    """
+    log_path = get_user_log_path(username)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    entry = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "action": "scrape_stats",
+        "source_type": source_type,
+        "source_value": source_value,
+        "fetched": fetched,
+        "passed": passed,
+        "filtered": {
+            "old": filtered_old,
+            "impressions": filtered_impressions,
+            "no_thread": filtered_no_thread,
+            "intent": filtered_intent,
+            "seen": filtered_seen,
+            "replies": filtered_replies,
+            "retweets": filtered_retweets,
+        },
+        "total_filtered": fetched - passed,
+    }
+
+    # Append to JSONL file
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")

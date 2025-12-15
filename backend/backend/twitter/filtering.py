@@ -138,7 +138,7 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
     intent = user_info.get("intent", "")
     if not intent or not intent.strip():
         # No intent set, allow all tweets through
-        print("no intent set")
+        notify("no intent set")
         return True
 
     tweet_text = tweet_data.get("text", "")

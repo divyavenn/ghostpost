@@ -68,6 +68,7 @@ class ScrapedTweet(BaseModel):
     id: str
     text: str
     thread: list[str] = []
+    thread_ids: list[str] = []  # Tweet IDs in the thread (for auto-liking)
     other_replies: list[OtherReply] = []  # Top replies from other users
 
     # retrieval info
@@ -106,6 +107,7 @@ TweetSource = Literal["app_posted", "external"]
 ResurrectionSource = Literal["none", "notification", "search"]
 CommentStatus = Literal["pending", "replied", "skipped"]
 PostType = Literal["original", "reply", "comment_reply"]
+EngagementType = Literal["reply", "quote_tweet"]
 
 
 class PostedTweet(BaseModel):
@@ -217,6 +219,9 @@ class CommentRecord(BaseModel):
     other_replies: list["OtherReply"] = Field(default_factory=list)
     quoted_tweet: "QuotedTweet | None" = None
     media: list["MediaItem"] = Field(default_factory=list)
+
+    # Engagement type: "reply" for regular replies, "quote_tweet" for quote tweets
+    engagement_type: "EngagementType" = "reply"
 
 
 class Token(BaseModel):

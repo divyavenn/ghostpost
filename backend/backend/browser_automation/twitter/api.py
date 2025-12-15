@@ -46,6 +46,74 @@ EXPANSIONS = "author_id,referenced_tweets.id,referenced_tweets.id.author_id,atta
 MEDIA_FIELDS = "type,url,preview_image_url,alt_text"
 
 
+from dataclasses import dataclass, field
+
+
+@dataclass
+class ScrapeStats:
+    """Track filtering stats during scraping for logging."""
+    source_type: str = ""  # "account", "query", "home_timeline"
+    source_value: str = ""  # handle, query text, or "following"
+    username: str = ""  # User running the scrape (for logging to file)
+    fetched: int = 0  # Total tweets from API
+    filtered_old: int = 0  # Filtered due to age
+    filtered_impressions: int = 0  # Filtered due to low impressions
+    filtered_no_thread: int = 0  # Filtered due to no thread content
+    filtered_intent: int = 0  # Filtered due to intent mismatch
+    filtered_seen: int = 0  # Already seen tweets
+    filtered_replies: int = 0  # Filtered because it's a reply
+    filtered_retweets: int = 0  # Filtered because it's a retweet
+    passed: int = 0  # Final count that passed all filters
+
+    def log_summary(self) -> None:
+        """Log a formatted summary of the scrape stats to console and file."""
+        from backend.twitter.logging import log_scrape_stats
+
+        source_display = f"@{self.source_value}" if self.source_type == "account" else self.source_value
+        if self.source_type == "home_timeline":
+            source_display = "Home Timeline"
+
+        # Build filter breakdown
+        filters = []
+        if self.filtered_old > 0:
+            filters.append(f"old:{self.filtered_old}")
+        if self.filtered_impressions > 0:
+            filters.append(f"low_impressions:{self.filtered_impressions}")
+        if self.filtered_replies > 0:
+            filters.append(f"replies:{self.filtered_replies}")
+        if self.filtered_retweets > 0:
+            filters.append(f"retweets:{self.filtered_retweets}")
+        if self.filtered_intent > 0:
+            filters.append(f"intent:{self.filtered_intent}")
+        if self.filtered_no_thread > 0:
+            filters.append(f"no_thread:{self.filtered_no_thread}")
+        if self.filtered_seen > 0:
+            filters.append(f"seen:{self.filtered_seen}")
+
+        filter_str = ", ".join(filters) if filters else "none"
+        total_filtered = self.fetched - self.passed
+
+        # Log to console
+        notify(f"📊 [{self.source_type.upper()}] {source_display}: {self.fetched} fetched → {self.passed} passed | Filtered ({total_filtered}): {filter_str}")
+
+        # Log to file if username is provided
+        if self.username:
+            log_scrape_stats(
+                username=self.username,
+                source_type=self.source_type,
+                source_value=self.source_value,
+                fetched=self.fetched,
+                passed=self.passed,
+                filtered_old=self.filtered_old,
+                filtered_impressions=self.filtered_impressions,
+                filtered_no_thread=self.filtered_no_thread,
+                filtered_intent=self.filtered_intent,
+                filtered_seen=self.filtered_seen,
+                filtered_replies=self.filtered_replies,
+                filtered_retweets=self.filtered_retweets,
+            )
+
+
 def _get_headers(access_token: str) -> dict:
     """Get authorization headers for API requests."""
     return {"Authorization": f"Bearer {access_token}"}
@@ -405,7 +473,7 @@ async def _get_tweet_by_id(access_token: str, tweet_id: str, _retry_count: int =
 # Main API functions
 # ============================================================================
 
-async def populate_thread(raw_tweets: dict) -> dict:
+async def populate_thread(raw_tweets: dict) -> tuple[dict, int]:
     """
     Fetch thread data for each tweet and filter out tweets without thread content.
 
@@ -413,7 +481,7 @@ async def populate_thread(raw_tweets: dict) -> dict:
         raw_tweets: Dict of tweet_id -> tweet_data (without thread data)
 
     Returns:
-        Dict of tweet_id -> tweet_data (with thread data populated, empty threads filtered out)
+        Tuple of (tweets dict, skipped_count)
     """
     tweets = {}
     skipped_count = 0
@@ -421,6 +489,7 @@ async def populate_thread(raw_tweets: dict) -> dict:
     for tid, t in raw_tweets.items():
         thread_data = await get_thread(None, t["url"], root_id=t["id"])
         t["thread"] = thread_data.get("thread", [])
+        t["thread_ids"] = thread_data.get("thread_ids", [])
         t["other_replies"] = thread_data.get("other_replies", [])
 
         # Update author info from thread data if available
@@ -431,7 +500,6 @@ async def populate_thread(raw_tweets: dict) -> dict:
 
         # Skip tweets without thread content
         if not t["thread"] or len(t["thread"]) == 0:
-            notify(f"⚠️ Skipping tweet {tid}: no thread content")
             skipped_count += 1
             continue
 
@@ -439,10 +507,7 @@ async def populate_thread(raw_tweets: dict) -> dict:
         t["text"] = t["thread"][0]
         tweets[tid] = t
 
-    if skipped_count > 0:
-        notify(f"[API] Skipped {skipped_count} tweets without thread content")
-
-    return tweets
+    return tweets, skipped_count
 
 
 def _convert_web_query_to_api(query: str) -> str:
@@ -470,7 +535,7 @@ def _convert_web_query_to_api(query: str) -> str:
     return query
 
 
-async def fetch_search(query: str, username: str | None = None) -> dict:
+async def fetch_search(query: str, username: str | None = None) -> tuple[dict, ScrapeStats]:
     """
     Search for tweets using Twitter API v2 and populate thread data.
 
@@ -479,14 +544,24 @@ async def fetch_search(query: str, username: str | None = None) -> dict:
         username: Username for authentication
 
     Returns:
-        Dict of tweet_id -> tweet_data (with thread data populated)
+        Tuple of (tweets dict, ScrapeStats)
     """
+    # Determine source type from query
+    original_query = query
+    if query.startswith("from:"):
+        source_type = "account"
+        source_value = query.split("from:")[1].split()[0]  # Extract handle
+    else:
+        source_type = "query"
+        source_value = query
+
     auth_user = username or DEFAULT_AUTH_USER
+    stats = ScrapeStats(source_type=source_type, source_value=source_value, username=auth_user)
     access_token = await ensure_access_token(auth_user)
 
     if not access_token:
         error("No access token available", status_code=401, function_name="fetch_search", critical=False)
-        return {}
+        return {}, stats
 
     # Convert web-style operators to API-style
     query = _convert_web_query_to_api(query)
@@ -497,8 +572,6 @@ async def fetch_search(query: str, username: str | None = None) -> dict:
     if "-is:reply" not in query:
         query = f"{query} -is:reply"
 
-    notify(f"[API] Searching tweets with query: {query}")
-
     raw_tweets = {}
     response = await _search_tweets(access_token, query, max_results=100)
 
@@ -506,25 +579,34 @@ async def fetch_search(query: str, username: str | None = None) -> dict:
     includes = response.get("includes", {})
     user_map = _build_user_map(includes)
 
+    stats.fetched = len(data)
+
     for tweet in data:
         created_at = tweet.get("created_at", "")
         if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
+            stats.filtered_old += 1
             continue
 
         # Filter by minimum impressions for discovery
         metrics = tweet.get("public_metrics", {})
         impressions = metrics.get("impression_count", 0)
+
         if impressions < MIN_IMPRESSIONS_FOR_DISCOVERY:
+            stats.filtered_impressions += 1
             continue
 
         tweet_dict = _tweet_to_dict(tweet, user_map, includes)
         raw_tweets[tweet_dict["id"]] = tweet_dict
 
     # Populate thread data and filter out empty threads
-    tweets = await populate_thread(raw_tweets)
+    tweets, no_thread_count = await populate_thread(raw_tweets)
+    stats.filtered_no_thread = no_thread_count
+    stats.passed = len(tweets)
 
-    notify(f"[API] Found {len(tweets)} tweets with thread data for query")
-    return tweets
+    # Log the summary
+    stats.log_summary()
+
+    return tweets, stats
 
 
 async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
@@ -658,8 +740,12 @@ async def get_thread(ctx, tweet_url: str, root_id: str | None = None) -> dict:
             "likes": reply.get("public_metrics", {}).get("like_count", 0)
         })
 
+    # Convert thread_tweet_ids to sorted list (chronological order)
+    sorted_thread_ids = sorted(thread_tweet_ids, key=lambda x: int(x))
+
     return {
         "thread": thread_texts,
+        "thread_ids": sorted_thread_ids,  # For auto-liking all tweets in thread
         "other_replies": other_replies,
         "author_handle": author_handle,
         "author_profile_pic_url": author_info.get("author_profile_pic_url", ""),
@@ -917,7 +1003,7 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
     # Search for user's tweets (including replies)
     query = f"from:{username}"
 
-    print(f"[API] Fetching recent tweets from @{username} with query: {query}")
+    notify(f"[API] Fetching recent tweets from @{username} with query: {query}")
 
     tweets = []
     next_token = None
@@ -935,7 +1021,7 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
         meta = response.get("meta", {})
         user_map = _build_user_map(includes)
 
-        print(f"[API] Page {page}: Got {len(data)} tweets, meta: {meta}")
+        notify(f"[API] Page {page}: Got {len(data)} tweets, meta: {meta}")
 
         for tweet in data:
             tweet_dict = _tweet_to_dict(tweet, user_map, includes)
@@ -947,10 +1033,10 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
         # Check for more pages
         next_token = meta.get("next_token")
         if not next_token or not data:
-            print(f"[API] Stopping pagination: next_token={next_token}, data_len={len(data)}")
+            notify(f"[API] Stopping pagination: next_token={next_token}, data_len={len(data)}")
             break
 
-    print(f"[API] Fetched {len(tweets)} total tweets from @{username}")
+    notify(f"[API] Fetched {len(tweets)} total tweets from @{username}")
     return tweets
 
 
@@ -1125,7 +1211,7 @@ async def _fetch_home_timeline_raw(
 async def fetch_home_timeline_with_intent_filter(
     username: str,
     max_tweets: int = 50
-) -> dict:
+) -> tuple[dict, ScrapeStats]:
     """
     Fetch tweets from the user's home timeline and filter by intent.
 
@@ -1137,25 +1223,25 @@ async def fetch_home_timeline_with_intent_filter(
         max_tweets: Maximum tweets to fetch and filter
 
     Returns:
-        Dict of tweet_id -> tweet_data for tweets that passed intent filter (with thread data)
+        Tuple of (tweets dict, ScrapeStats)
     """
     from backend.twitter.filtering import check_tweet_matches_intent_initial
     from backend.utlils.utils import is_tweet_seen
+
+    stats = ScrapeStats(source_type="home_timeline", source_value="following", username=username)
 
     # Get access token for the user
     access_token = await ensure_access_token(username)
 
     if not access_token:
         error("No access token available for home timeline", status_code=401, function_name="fetch_home_timeline_with_intent_filter", critical=False)
-        return {}
+        return {}, stats
 
     # Get user's Twitter ID
     user_id = await _get_authenticated_user_id(access_token)
     if not user_id:
         error("Could not get user ID for home timeline", status_code=400, function_name="fetch_home_timeline_with_intent_filter", critical=False)
-        return {}
-
-    notify(f"[API] Fetching home timeline for @{username} (user_id: {user_id})")
+        return {}, stats
 
     # Fetch timeline
     response = await _fetch_home_timeline_raw(access_token, user_id, max_results=min(max_tweets, 100))
@@ -1164,41 +1250,43 @@ async def fetch_home_timeline_with_intent_filter(
     includes = response.get("includes", {})
     user_map = _build_user_map(includes)
 
-    notify(f"[API] Got {len(data)} tweets from home timeline")
+    stats.fetched = len(data)
 
     # Process tweets and filter by intent
     tweets = {}
-    passed_filter = 0
-    failed_filter = 0
-    skipped_seen = 0
 
     for tweet in data:
         tweet_id = tweet.get("id")
 
         # Skip already seen tweets
         if tweet_id and is_tweet_seen(username, str(tweet_id)):
-            skipped_seen += 1
+            stats.filtered_seen += 1
             continue
 
         # Skip old tweets
         created_at = tweet.get("created_at", "")
         if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
+            stats.filtered_old += 1
             continue
 
         # Skip replies (we want original posts only)
         if _get_in_reply_to(tweet):
+            stats.filtered_replies += 1
             continue
 
         # Skip retweets
         referenced = tweet.get("referenced_tweets", [])
         is_retweet = any(ref.get("type") == "retweeted" for ref in referenced)
         if is_retweet:
+            stats.filtered_retweets += 1
             continue
 
         # Filter by minimum impressions for discovery (home timeline = FYP)
         metrics = tweet.get("public_metrics", {})
         impressions = metrics.get("impression_count", 0)
+
         if impressions < MIN_IMPRESSIONS_FOR_DISCOVERY:
+            stats.filtered_impressions += 1
             continue
 
         tweet_dict = _tweet_to_dict(tweet, user_map, includes)
@@ -1207,14 +1295,13 @@ async def fetch_home_timeline_with_intent_filter(
         passes_intent = await check_tweet_matches_intent_initial(tweet_dict, username)
 
         if not passes_intent:
-            failed_filter += 1
+            stats.filtered_intent += 1
             continue
-
-        passed_filter += 1
 
         # Get thread data
         thread_data = await get_thread(None, tweet_dict["url"], root_id=tweet_dict["id"])
         tweet_dict["thread"] = thread_data.get("thread", [])
+        tweet_dict["thread_ids"] = thread_data.get("thread_ids", [])
         tweet_dict["other_replies"] = thread_data.get("other_replies", [])
 
         if thread_data.get("author_profile_pic_url"):
@@ -1224,7 +1311,7 @@ async def fetch_home_timeline_with_intent_filter(
 
         # Skip tweets without thread content
         if not tweet_dict["thread"] or len(tweet_dict["thread"]) == 0:
-            notify(f"⚠️ Skipping home timeline tweet {tweet_dict['id']}: no thread content")
+            stats.filtered_no_thread += 1
             continue
 
         # Replace truncated text with full text from thread
@@ -1235,6 +1322,9 @@ async def fetch_home_timeline_with_intent_filter(
 
         tweets[tweet_dict["id"]] = tweet_dict
 
-    notify(f"[API] Home timeline: {passed_filter} passed intent filter, {failed_filter} filtered out, {skipped_seen} already seen")
+    stats.passed = len(tweets)
 
-    return tweets
+    # Log the summary
+    stats.log_summary()
+
+    return tweets, stats

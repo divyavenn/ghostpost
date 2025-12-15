@@ -42,6 +42,11 @@ export interface ReplyData {
     url: string;
     alt_text?: string;
   }>;
+  parent_media?: Array<{
+    type: 'photo';
+    url: string;
+    alt_text?: string;
+  }>;
   quoted_tweet?: {
     text: string;
     author_name: string;
@@ -906,10 +911,11 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                         </span>
                       </Badge>
                     )}
-                    {tweet.media && tweet.media.length > 0 && (
+                    {/* Show parent media badge - prefer parent_media, fallback to media for backward compatibility */}
+                    {((tweet.parent_media && tweet.parent_media.length > 0) || (tweet.media && tweet.media.length > 0 && !tweet.parent_media)) && (
                       <MediaBadge>
                         <i className="fa-solid fa-image" />
-                        <span>{tweet.media.length} image{tweet.media.length > 1 ? 's' : ''}</span>
+                        <span>{(tweet.parent_media || tweet.media)!.length} image{(tweet.parent_media || tweet.media)!.length > 1 ? 's' : ''}</span>
                       </MediaBadge>
                     )}
                   </MetaInfo>
@@ -952,20 +958,25 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                   </QuotedTweetLink>
                 )}
 
-                {index === 0 && tweet.media && tweet.media.length > 0 && (
-                  <MediaGrid $count={tweet.media.length}>
-                    {tweet.media.map((media, mediaIndex) => (
-                      <MediaImage
-                        key={mediaIndex}
-                        src={media.url}
-                        alt={media.alt_text || `Image ${mediaIndex + 1}`}
-                        $count={tweet.media?.length ?? 0}
-                        $index={mediaIndex}
-                        loading="lazy"
-                      />
-                    ))}
-                  </MediaGrid>
-                )}
+                {/* Show parent media at the end of the thread (last message) */}
+                {index === threadMessages.length - 1 && (() => {
+                  // Use parent_media if available, fallback to media for backward compatibility
+                  const parentMediaToShow = tweet.parent_media || tweet.media;
+                  return parentMediaToShow && parentMediaToShow.length > 0 && (
+                    <MediaGrid $count={parentMediaToShow.length}>
+                      {parentMediaToShow.map((mediaItem, mediaIndex) => (
+                        <MediaImage
+                          key={mediaIndex}
+                          src={mediaItem.url}
+                          alt={mediaItem.alt_text || `Image ${mediaIndex + 1}`}
+                          $count={parentMediaToShow.length}
+                          $index={mediaIndex}
+                          loading="lazy"
+                        />
+                      ))}
+                    </MediaGrid>
+                  );
+                })()}
 
                 {index < threadMessages.length - 1 && (
                   <ThreadDivider aria-hidden="true" />
@@ -1061,6 +1072,21 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                       </div>
                     )
                   ))}
+                  {/* Show reply's own media at the end of the reply section (readOnly mode) */}
+                  {tweet.media && tweet.media.length > 0 && tweet.parent_media && (
+                    <MediaGrid $count={tweet.media.length}>
+                      {tweet.media.map((mediaItem, mediaIndex) => (
+                        <MediaImage
+                          key={mediaIndex}
+                          src={mediaItem.url}
+                          alt={mediaItem.alt_text || `Image ${mediaIndex + 1}`}
+                          $count={tweet.media?.length ?? 0}
+                          $index={mediaIndex}
+                          loading="lazy"
+                        />
+                      ))}
+                    </MediaGrid>
+                  )}
                 </RepliesContainer>
               </ReplySection>
             </>

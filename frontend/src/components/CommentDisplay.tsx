@@ -255,6 +255,23 @@ const Handle = styled.span`
   font-size: 0.75rem;
 `;
 
+const QuoteTweetBadge = styled.span`
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  white-space: nowrap;
+
+  i {
+    font-size: 0.5rem;
+  }
+`;
+
 const CommentLink = styled.a`
   color: #525252;
   font-size: 0.875rem;
@@ -448,10 +465,99 @@ const RegeneratingState = styled.div`
   padding: 0.5rem 0;
 `;
 
+const ThreadContextSection = styled.div`
+  margin-top: 0.5rem;
+  border-top: 1px solid #262626;
+  padding-top: 0.5rem;
+`;
+
+const ThreadContextToggle = styled.button`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: #737373;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 0.25rem 0;
+  transition: color 0.2s;
+
+  &:hover {
+    color: #a3a3a3;
+  }
+
+  i {
+    font-size: 0.625rem;
+  }
+`;
+
+const ThreadContextList = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  background: #111;
+  border-radius: 0.5rem;
+`;
+
+const ThreadContextItem = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+`;
+
+const ThreadContextHeader = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+`;
+
+const ThreadContextAvatar = styled.img`
+  height: 1.25rem;
+  width: 1.25rem;
+  border-radius: 9999px;
+`;
+
+const ThreadContextName = styled.span`
+  font-weight: 500;
+  color: #a3a3a3;
+`;
+
+const ThreadContextHandle = styled.span`
+  color: #525252;
+`;
+
+const ThreadContextText = styled.p`
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: #a3a3a3;
+  margin: 0;
+  white-space: pre-wrap;
+`;
+
+const ThreadContextMediaGrid = styled.div`
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  border-radius: 0.375rem;
+  overflow: hidden;
+`;
+
+const ThreadContextMediaImage = styled.img`
+  max-width: 100%;
+  max-height: 6rem;
+  object-fit: cover;
+  border-radius: 0.375rem;
+`;
+
 interface CommentItemProps {
   comment: CommentWithContext;
   maxReplies: number;
   myProfilePicUrl?: string;
+  originalPostId: string;  // The user's original post ID to exclude from thread context
   onPublish: (text: string, replyIndex: number) => void;
   onSkip: () => void;
   onEditReply?: (newReply: string, replyIndex: number) => void;
@@ -465,6 +571,7 @@ function CommentItem({
   comment,
   maxReplies,
   myProfilePicUrl,
+  originalPostId,
   onPublish,
   onSkip,
   onEditReply,
@@ -476,9 +583,21 @@ function CommentItem({
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [isTextExpanded, setIsTextExpanded] = useState(false);
+  const [isThreadContextExpanded, setIsThreadContextExpanded] = useState(false);
 
   // Rough heuristic: if text is longer than ~150 chars, it's likely truncatable
   const isTextTruncatable = comment.text.length > 150;
+
+  // Filter thread context to exclude:
+  // 1. The original post (already shown in PostSection)
+  // 2. The current comment (shown below the thread context)
+  // This shows only intermediate parents between the original post and this comment
+  const filteredThreadContext = (comment.thread_context || []).filter(
+    ctx => ctx.id !== originalPostId && ctx.id !== comment.id
+  );
+
+  // Check if there's thread context to show (parent tweets in the conversation)
+  const hasThreadContext = filteredThreadContext.length > 0;
 
   const generatedReplies = comment.generated_replies || [];
   const displayedReplies = generatedReplies.slice(0, maxReplies);
@@ -513,6 +632,56 @@ function CommentItem({
 
   return (
     <CommentCard $isDeleting={isDeleting} $isPosting={isPosting}>
+      {/* Thread context section - shows parent tweets between original post and this comment */}
+      {hasThreadContext && (
+        <ThreadContextSection style={{ borderTop: 'none', marginTop: 0, paddingTop: 0, marginBottom: '0.75rem' }}>
+          <ThreadContextToggle onClick={() => setIsThreadContextExpanded(!isThreadContextExpanded)}>
+            <i className={`fa-solid fa-chevron-${isThreadContextExpanded ? 'up' : 'down'}`} />
+            <span>{isThreadContextExpanded ? 'Hide' : 'Show'} conversation ({filteredThreadContext.length})</span>
+          </ThreadContextToggle>
+          {isThreadContextExpanded && (
+            <ThreadContextList>
+              {filteredThreadContext.map((ctx, idx) => (
+                <ThreadContextItem key={ctx.id || idx}>
+                  <ThreadContextHeader>
+                    <ThreadContextAvatar
+                      src={ctx.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
+                      alt={ctx.username}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png';
+                      }}
+                    />
+                    <ThreadContextName>{ctx.username}</ThreadContextName>
+                    <ThreadContextHandle>@{ctx.handle}</ThreadContextHandle>
+                    {ctx.is_user && <span style={{ color: '#0ea5e9', fontSize: '0.625rem' }}>• You</span>}
+                  </ThreadContextHeader>
+                  {ctx.deleted ? (
+                    <ThreadContextText style={{ fontStyle: 'italic', color: '#525252' }}>
+                      This tweet was deleted
+                    </ThreadContextText>
+                  ) : (
+                    <ThreadContextText>{ctx.text}</ThreadContextText>
+                  )}
+                  {/* Show media for this tweet in thread context */}
+                  {ctx.media && ctx.media.length > 0 && (
+                    <ThreadContextMediaGrid>
+                      {ctx.media.map((mediaItem, mediaIdx) => (
+                        <ThreadContextMediaImage
+                          key={mediaIdx}
+                          src={mediaItem.url}
+                          alt={mediaItem.alt_text || `Image ${mediaIdx + 1}`}
+                          loading="lazy"
+                        />
+                      ))}
+                    </ThreadContextMediaGrid>
+                  )}
+                </ThreadContextItem>
+              ))}
+            </ThreadContextList>
+          )}
+        </ThreadContextSection>
+      )}
+
       <CommentHeader>
         <SmallAvatar
           src={comment.author_profile_pic_url || 'https://abs.twimg.com/sticky/default_profile_images/default_profile_400x400.png'}
@@ -525,6 +694,12 @@ function CommentItem({
           <Username>{comment.username}</Username>
           <Handle>@{comment.handle}</Handle>
         </AuthorInfo>
+        {comment.engagement_type === 'quote_tweet' && (
+          <QuoteTweetBadge title="This user quoted your tweet">
+            <i className="fa-solid fa-quote-left" />
+            Quoted
+          </QuoteTweetBadge>
+        )}
         {comment.url && (
           <CommentLink href={comment.url} target="_blank" rel="noopener noreferrer" title="View on X">
             <i className="fa-solid fa-arrow-up-right-from-square" />
@@ -774,6 +949,7 @@ export function CommentDisplay({
               comment={comment}
               maxReplies={maxReplies}
               myProfilePicUrl={myProfilePicUrl}
+              originalPostId={post.id}
               onPublish={(text, replyIndex) => onPublishReply(comment.id, text, replyIndex)}
               onSkip={() => onSkipComment(comment.id)}
               onEditReply={onEditReply ? (newReply, replyIndex) => onEditReply(comment.id, newReply, replyIndex) : undefined}

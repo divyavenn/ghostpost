@@ -18,15 +18,12 @@ interface DiscoveredTabProps {
   resetSeenKey?: number;  // Increment to clear seen tracking (after purge)
 }
 
-// Get stable column assignment based on tweet ID (not array index)
-// This prevents tweets from jumping between columns when list changes
-function getStableColumn(id: string): 0 | 1 {
-  // Use last digit of ID for simple, stable distribution
-  const lastChar = id.slice(-1);
-  const num = parseInt(lastChar, 10);
-  // If not a number (edge case), use character code
-  const value = isNaN(num) ? lastChar.charCodeAt(0) : num;
-  return (value % 2) as 0 | 1;
+// Distribute tweets evenly between columns based on array index
+// This ensures balanced columns after any filtering/purging
+function getColumnByIndex(tweets: ReplyData[], tweetId: string): 0 | 1 {
+  const index = tweets.findIndex(t => t.id === tweetId);
+  // Alternate: even indices go to column 0, odd to column 1
+  return (index % 2) as 0 | 1;
 }
 
 export function DiscoveredTab({
@@ -62,7 +59,7 @@ export function DiscoveredTab({
   const flushSeenTweets = useCallback(() => {
     if (pendingSeenIdsRef.current.size > 0 && onTweetsSeen) {
       const ids = Array.from(pendingSeenIdsRef.current);
-      console.log(`[DiscoveredTab] Flushing ${ids.length} seen tweets to parent:`, ids);
+      //console.log(`[DiscoveredTab] Flushing ${ids.length} seen tweets to parent:`, ids);
       pendingSeenIdsRef.current.clear();
       onTweetsSeen(ids);
     }
@@ -71,10 +68,10 @@ export function DiscoveredTab({
   // Add tweet to pending seen list with debounce
   const markAsSeen = useCallback((tweetId: string) => {
     if (seenIdsRef.current.has(tweetId)) {
-      console.log(`[DiscoveredTab] Tweet ${tweetId} already in seenIdsRef, skipping`);
+      //console.log(`[DiscoveredTab] Tweet ${tweetId} already in seenIdsRef, skipping`);
       return;
     }
-    console.log(`[DiscoveredTab] Marking tweet ${tweetId} as seen`);
+    //console.log(`[DiscoveredTab] Marking tweet ${tweetId} as seen`);
     seenIdsRef.current.add(tweetId);
     pendingSeenIdsRef.current.add(tweetId);
 
@@ -132,7 +129,7 @@ export function DiscoveredTab({
       {/* Left Column */}
       <div className="flex-1 flex flex-col gap-6">
         <AnimatePresence mode="popLayout">
-          {tweets.filter((tweet) => getStableColumn(tweet.id) === 0).map((tweet) => (
+          {tweets.filter((tweet) => getColumnByIndex(tweets, tweet.id) === 0).map((tweet) => (
             <AnimatedListItem
               key={tweet.id}
               itemKey={tweet.id}
@@ -159,7 +156,7 @@ export function DiscoveredTab({
       {/* Right Column */}
       <div className="flex-1 flex flex-col gap-6">
         <AnimatePresence mode="popLayout">
-          {tweets.filter((tweet) => getStableColumn(tweet.id) === 1).map((tweet) => (
+          {tweets.filter((tweet) => getColumnByIndex(tweets, tweet.id) === 1).map((tweet) => (
             <AnimatedListItem
               key={tweet.id}
               itemKey={tweet.id}

@@ -90,7 +90,7 @@ async def generate_queries_from_intent(intent: str, username: str) -> list[tuple
             return []
 
         message = result.get("message", "").strip()
-        print(message)
+        notify(message)
 
         # Try to extract JSON array from response
         # Handle cases where LLM adds markdown code blocks

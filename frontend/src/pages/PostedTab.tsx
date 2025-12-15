@@ -94,6 +94,7 @@ interface ThreadCardProps {
   userProfilePicUrl: string;
   userHandle: string;
   userUsername: string;
+  deletingTweetIds: Set<string>;
   onDelete: (tweetId: string) => void;
   onViewTweet: (tweetId: string) => void;
 }
@@ -103,6 +104,7 @@ function ThreadCard({
   userProfilePicUrl,
   userHandle,
   userUsername,
+  deletingTweetIds,
   onDelete,
   onViewTweet,
 }: ThreadCardProps) {
@@ -180,9 +182,12 @@ function ThreadCard({
             onClick={() => onDelete(firstTweet.id)}
             onMouseEnter={() => setDeleteHoveredId(firstTweet.id)}
             onMouseLeave={() => setDeleteHoveredId(null)}
-            className="relative flex items-center gap-2 rounded-full transition-colors h-10 w-10 justify-center hover:bg-neutral-800"
+            disabled={deletingTweetIds.has(firstTweet.id)}
+            className={`relative flex items-center gap-2 rounded-full transition-colors h-10 w-10 justify-center ${
+              deletingTweetIds.has(firstTweet.id) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-neutral-800'
+            }`}
             aria-label="Delete tweet from Twitter"
-            title="Delete tweet from Twitter"
+            title={deletingTweetIds.has(firstTweet.id) ? "Deleting..." : "Delete tweet from Twitter"}
           >
             {deleteHoveredId === firstTweet.id ? (
               <div className="w-8 h-8 flex items-center justify-center">
@@ -419,7 +424,7 @@ export function PostedTab({
   userProfilePicUrl,
   userHandle,
   userUsername,
-  deletingTweetIds: _deletingTweetIds, // Animation handled by framer-motion
+  deletingTweetIds,
   isLoadingMore,
   onDelete,
   onViewTweet,
@@ -457,6 +462,7 @@ export function PostedTab({
                     userProfilePicUrl={userProfilePicUrl}
                     userHandle={userHandle}
                     userUsername={userUsername}
+                    deletingTweetIds={deletingTweetIds}
                     onDelete={onDelete}
                     onViewTweet={onViewTweet}
                   />

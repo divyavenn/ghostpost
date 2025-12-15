@@ -168,13 +168,11 @@ async def gather_trending(usernames, queries, username=None, query_summary_map=N
     # Scrape user timelines via API using from:handle query
     for u in usernames:
         try:
-            notify(f"📍 Scraping from @{u} via API")
             account_source = {"type": "account", "value": u}
-            tweets = await fetch_search(f"from:{u}", username=username)
+            tweets, _stats = await fetch_search(f"from:{u}", username=username)
             for tweet_data in tweets.values():
                 tweet_data["scraped_from"] = account_source
             results.update(tweets)
-            notify(f"✅ [API] Fetched {len(tweets)} tweets with threads from @{u}")
         except Exception as e:
             notify(f"❌ [API] Error fetching @{u}: {e}")
 
@@ -182,13 +180,11 @@ async def gather_trending(usernames, queries, username=None, query_summary_map=N
     for q in queries:
         try:
             summary = query_summary_map.get(q, q) if query_summary_map else q
-            notify(f"📍 Scraping query [{q}] via API")
             query_source = {"type": "query", "value": q, "summary": summary}
-            tweets = await fetch_search(q, username=username)
+            tweets, _stats = await fetch_search(q, username=username)
             for tweet_data in tweets.values():
                 tweet_data["scraped_from"] = query_source
             results.update(tweets)
-            notify(f"✅ [API] Fetched {len(tweets)} tweets with threads for query [{q}]")
         except Exception as e:
             notify(f"❌ [API] Error searching [{q}]: {e}")
 
@@ -394,7 +390,6 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
         return {"message": message, "status": "scraping_started", "background_task": "find_and_reply_to_new_posts", "account_type": account_type}
     except Exception as e:
         notify(f"❌ [API] Error scheduling job for {username}: {str(e)}")
-        print(str(e))
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error starting job: {str(e)}") from e
 
 

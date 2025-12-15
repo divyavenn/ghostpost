@@ -141,8 +141,7 @@ def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], 
                 missing_fields.append(f"{field}: {msg}")
             error_detail = "; ".join(missing_fields)
             notify(f"⚠️ Tweet {tweet_id} validation failed: {error_detail}")
-            print(f"⚠️ Tweet {tweet_id} validation failed. Missing/invalid: {error_detail}", flush=True)
-            print(f"   Tweet data keys: {list(tweet.keys())}", flush=True)
+            notify(f"   Tweet data keys: {list(tweet.keys())}")
             return None
     else:
         validated_tweet = tweet

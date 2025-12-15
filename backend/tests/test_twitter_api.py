@@ -36,8 +36,7 @@ async def test_account_scraping(username, test_account):
 
     # Scrape account
     account_query = f"from:{test_account}"
-    tweets = await fetch_search(
-        ctx=None,
+    tweets, _stats = await fetch_search(
         query=account_query,
         username=username
     )
@@ -66,8 +65,7 @@ async def test_query_search_with_web_operators(username):
 
     # Query with web-style operators (should be converted to API style)
     query = "AI agents -filter:replies -filter:links lang:en"
-    tweets = await fetch_search(
-        ctx=None,
+    tweets, _stats = await fetch_search(
         query=query,
         username=username
     )
@@ -95,8 +93,7 @@ async def test_query_search_with_api_operators(username):
 
     # Query with API-style operators
     query = "startup funding -is:reply -has:links lang:en"
-    tweets = await fetch_search(
-        ctx=None,
+    tweets, _stats = await fetch_search(
         query=query,
         username=username
     )
@@ -116,11 +113,10 @@ async def test_home_timeline(username):
     access_token = await ensure_access_token(username)
     assert access_token, "No access token available"
 
-    # Fetch home timeline with intent filter (but generate_replies_inline=False to be quick)
-    tweets = await fetch_home_timeline_with_intent_filter(
+    # Fetch home timeline with intent filter
+    tweets, _stats = await fetch_home_timeline_with_intent_filter(
         username=username,
-        max_tweets=20,
-        generate_replies_inline=False
+        max_tweets=20
     )
 
     # Test passes if we got any tweets (even 0 is fine if intent filter is strict)
@@ -158,3 +154,87 @@ async def test_operator_conversion():
         print(f"  [OK] '{web_query}' -> '{result}'")
 
     print(f"\n[PASS] All {len(test_cases)} operator conversions correct")
+
+
+@pytest.mark.asyncio
+async def test_scrape_stats_are_logged_to_file(username):
+    """Test that scrape stats are written to the log file correctly.
+
+    This test:
+    1. Runs a scrape for a single query
+    2. Reads the last line of the log file
+    3. Verifies all scrape stats info is present
+    """
+    import json
+    from backend.browser_automation.twitter.api import fetch_search, ScrapeStats
+    from backend.twitter.logging import get_user_log_path
+    from backend.twitter.authentication import ensure_access_token
+
+    # Ensure we have auth
+    access_token = await ensure_access_token(username)
+    assert access_token, "No access token available"
+
+    # Run a scrape - this should log stats to file
+    test_query = "from:paulg"
+    tweets, stats = await fetch_search(
+        query=test_query,
+        username=username
+    )
+
+    # Verify we got stats back
+    assert isinstance(stats, ScrapeStats), "Should return ScrapeStats"
+    assert stats.source_type == "account", f"Expected source_type='account', got '{stats.source_type}'"
+    assert stats.source_value == "paulg", f"Expected source_value='paulg', got '{stats.source_value}'"
+
+    # Read the log file and get the last scrape_stats entry
+    log_path = get_user_log_path(username)
+    assert log_path.exists(), f"Log file should exist at {log_path}"
+
+    # Find the last scrape_stats entry in the log file
+    last_scrape_stats = None
+    with open(log_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                try:
+                    entry = json.loads(line)
+                    if entry.get("action") == "scrape_stats":
+                        last_scrape_stats = entry
+                except json.JSONDecodeError:
+                    continue
+
+    assert last_scrape_stats is not None, "Should have a scrape_stats entry in log file"
+
+    # Verify all required fields are present
+    assert "timestamp" in last_scrape_stats, "Log should have timestamp"
+    assert "action" in last_scrape_stats, "Log should have action"
+    assert last_scrape_stats["action"] == "scrape_stats", "Action should be 'scrape_stats'"
+    assert "source_type" in last_scrape_stats, "Log should have source_type"
+    assert "source_value" in last_scrape_stats, "Log should have source_value"
+    assert "fetched" in last_scrape_stats, "Log should have fetched count"
+    assert "passed" in last_scrape_stats, "Log should have passed count"
+    assert "filtered" in last_scrape_stats, "Log should have filtered dict"
+    assert "total_filtered" in last_scrape_stats, "Log should have total_filtered"
+
+    # Verify the filtered breakdown
+    filtered = last_scrape_stats["filtered"]
+    assert "old" in filtered, "filtered should have 'old'"
+    assert "impressions" in filtered, "filtered should have 'impressions'"
+    assert "no_thread" in filtered, "filtered should have 'no_thread'"
+    assert "intent" in filtered, "filtered should have 'intent'"
+    assert "seen" in filtered, "filtered should have 'seen'"
+    assert "replies" in filtered, "filtered should have 'replies'"
+    assert "retweets" in filtered, "filtered should have 'retweets'"
+
+    # Verify the counts match what stats returned
+    assert last_scrape_stats["source_type"] == stats.source_type
+    assert last_scrape_stats["source_value"] == stats.source_value
+    assert last_scrape_stats["fetched"] == stats.fetched
+    assert last_scrape_stats["passed"] == stats.passed
+
+    print(f"\n[PASS] Scrape stats logged correctly:")
+    print(f"  source_type: {last_scrape_stats['source_type']}")
+    print(f"  source_value: {last_scrape_stats['source_value']}")
+    print(f"  fetched: {last_scrape_stats['fetched']}")
+    print(f"  passed: {last_scrape_stats['passed']}")
+    print(f"  total_filtered: {last_scrape_stats['total_filtered']}")

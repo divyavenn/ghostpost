@@ -49,8 +49,8 @@ function App() {
   // Local state (component-specific)
   const [tweets, setTweets] = useState<ReplyData[]>([]);
   const [currentTweetIndex, setCurrentTweetIndex] = useState(0);
-  const [deletingTweetIds, setDeletingTweetIds] = useState<Set<string>>(new Set());
-  const [postingTweetIds, setPostingTweetIds] = useState<Set<string>>(new Set());
+  const [deletingTweetIds, _setDeletingTweetIds] = useState<Set<string>>(new Set());
+  const [postingTweetIds, _setPostingTweetIds] = useState<Set<string>>(new Set());
   const [regeneratingTweetIds, setRegeneratingTweetIds] = useState<Set<string>>(new Set());
   const [postedTweets, setPostedTweets] = useState<PostedData[]>([]);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
@@ -61,8 +61,8 @@ function App() {
   const [postsWithComments, setPostsWithComments] = useState<PostWithComments[]>([]);
   const [pendingCommentsCount, setPendingCommentsCount] = useState(0);
   const [isLoadingComments, setIsLoadingComments] = useState(false);
-  const [postingCommentIds, setPostingCommentIds] = useState<Set<string>>(new Set());
-  const [skippingCommentIds, setSkippingCommentIds] = useState<Set<string>>(new Set());
+  const [postingCommentIds, _setPostingCommentIds] = useState<Set<string>>(new Set());
+  const [skippingCommentIds, _setSkippingCommentIds] = useState<Set<string>>(new Set());
   const [regeneratingCommentIds, setRegeneratingCommentIds] = useState<Set<string>>(new Set());
   const [numberOfGenerations, setNumberOfGenerations] = useState<number>(1);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
@@ -347,29 +347,16 @@ function App() {
   const handlePublishCommentReply = async (commentId: string, text: string, replyIndex: number = 0): Promise<void> => {
     if (!username) return;
 
-    setPostingCommentIds(prev => new Set(prev).add(commentId));
-
-    // Wait for animation delay then execute
-    await new Promise(resolve => setTimeout(resolve, 400));
+    // Optimistically remove comment from UI
+    setPostsWithComments(prev => prev.map(post => ({
+      ...post,
+      comments: post.comments.filter(c => c.id !== commentId),
+      total_pending: post.total_pending - 1
+    })).filter(post => post.comments.length > 0));
+    setPendingCommentsCount(prev => Math.max(0, prev - 1));
 
     try {
       await api.postCommentReply(username, commentId, text, replyIndex);
-
-      // Remove comment from grouped state
-      setPostsWithComments(prev => prev.map(post => ({
-        ...post,
-        comments: post.comments.filter(c => c.id !== commentId),
-        total_pending: post.total_pending - 1
-      })).filter(post => post.comments.length > 0)); // Remove empty posts
-
-      setPostingCommentIds(prev => {
-        const next = new Set(prev);
-        next.delete(commentId);
-        return next;
-      });
-
-      // Update pending count
-      setPendingCommentsCount(prev => Math.max(0, prev - 1));
 
       // Reload user info to update post count
       await loadUserInfo(username);
@@ -380,57 +367,36 @@ function App() {
         api.startEngagementMonitoring(username)
           .catch(err => console.error('Background engagement monitoring failed:', err))
           .finally(() => {
-            // Reset after a delay to allow the job to complete before allowing another trigger
             setTimeout(() => {
               engagementMonitoringInProgressRef.current = false;
-            }, 30000); // 30 second debounce
+            }, 30000);
           });
       }
     } catch (error) {
       console.error('Failed to post comment reply:', error);
-      setPostingCommentIds(prev => {
-        const next = new Set(prev);
-        next.delete(commentId);
-        return next;
-      });
-      throw error; // Re-throw so caller knows it failed
+      alert(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}. Reloading...`);
+      window.location.reload();
     }
   };
 
   const handleSkipComment = async (commentId: string) => {
     if (!username) return;
 
-    setSkippingCommentIds(prev => new Set(prev).add(commentId));
+    // Optimistically remove comment from UI
+    setPostsWithComments(prev => prev.map(post => ({
+      ...post,
+      comments: post.comments.filter(c => c.id !== commentId),
+      total_pending: post.total_pending - 1
+    })).filter(post => post.comments.length > 0));
+    setPendingCommentsCount(prev => Math.max(0, prev - 1));
 
-    setTimeout(async () => {
-      try {
-        await api.skipComment(username, commentId);
-
-        // Remove comment from grouped state
-        setPostsWithComments(prev => prev.map(post => ({
-          ...post,
-          comments: post.comments.filter(c => c.id !== commentId),
-          total_pending: post.total_pending - 1
-        })).filter(post => post.comments.length > 0)); // Remove empty posts
-
-        setSkippingCommentIds(prev => {
-          const next = new Set(prev);
-          next.delete(commentId);
-          return next;
-        });
-
-        // Update pending count
-        setPendingCommentsCount(prev => Math.max(0, prev - 1));
-      } catch (error) {
-        console.error('Failed to skip comment:', error);
-        alert('Failed to skip comment. Please try again.');
-        setSkippingCommentIds(prev => {
-          const next = new Set(prev);
-          next.delete(commentId);
-          return next;
-        });
-      }
-    }, 300);
+    try {
+      await api.skipComment(username, commentId);
+    } catch (error) {
+      console.error('Failed to skip comment:', error);
+      alert(`Failed to skip comment: ${error instanceof Error ? error.message : 'Unknown error'}. Reloading...`);
+      window.location.reload();
+    }
   };
 
   const handleRegenerateCommentReply = async (commentId: string) => {
@@ -907,62 +873,43 @@ function App() {
   const handlePublishInternal = async (tweetId: string, text: string, replyIndex: number = 0) => {
     if (!username) return;
 
-    // Mark as posting to trigger animation
-    setPostingTweetIds(prev => new Set(prev).add(tweetId));
+    const tweet = tweets.find(t => t.id === tweetId);
+    if (!tweet) return;
 
-    // Wait for animation to complete
-    setTimeout(async () => {
-      const tweet = tweets.find(t => t.id === tweetId);
-      if (!tweet) return;
+    // Optimistically remove from UI immediately
+    const updatedTweets = tweets.filter(t => t.id !== tweetId);
+    setTweets(updatedTweets);
 
-      try {
-        await api.postReply(username, text, tweet.id, tweet.cache_id, replyIndex);
+    // Adjust index if needed
+    if (currentTweetIndex >= updatedTweets.length) {
+      setCurrentTweetIndex(Math.max(0, updatedTweets.length - 1));
+    }
 
-        // Remove tweet from cache backend without logging (since we already logged the post)
-        await api.deleteTweet(username, tweet.id, false);
+    try {
+      await api.postReply(username, text, tweet.id, tweet.cache_id, replyIndex);
 
-        // Reload user info to update lifetime_posts counter
-        await loadUserInfo(username);
+      // Remove tweet from cache backend without logging (since we already logged the post)
+      await api.deleteTweet(username, tweet.id, false);
 
-        // Trigger engagement monitoring in background (debounced - skip if already in progress)
-        if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
-          engagementMonitoringInProgressRef.current = true;
-          api.startEngagementMonitoring(username)
-            .catch(err => console.error('Background engagement monitoring failed:', err))
-            .finally(() => {
-              // Reset after a delay to allow the job to complete before allowing another trigger
-              setTimeout(() => {
-                engagementMonitoringInProgressRef.current = false;
-              }, 30000); // 30 second debounce
-            });
-        }
+      // Reload user info to update lifetime_posts counter
+      await loadUserInfo(username);
 
-        // Remove from local state
-        const updatedTweets = tweets.filter(t => t.id !== tweetId);
-        setTweets(updatedTweets);
-
-        // Remove from posting set
-        setPostingTweetIds(prev => {
-          const next = new Set(prev);
-          next.delete(tweetId);
-          return next;
-        });
-
-        // Adjust index if needed
-        if (currentTweetIndex >= updatedTweets.length) {
-          setCurrentTweetIndex(Math.max(0, updatedTweets.length - 1));
-        }
-      } catch (error) {
-        console.error('Failed to post reply:', error);
-        alert('Failed to post reply. Please try again.');
-        // Remove from posting set on error
-        setPostingTweetIds(prev => {
-          const next = new Set(prev);
-          next.delete(tweetId);
-          return next;
-        });
+      // Trigger engagement monitoring in background (debounced - skip if already in progress)
+      if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
+        engagementMonitoringInProgressRef.current = true;
+        api.startEngagementMonitoring(username)
+          .catch(err => console.error('Background engagement monitoring failed:', err))
+          .finally(() => {
+            setTimeout(() => {
+              engagementMonitoringInProgressRef.current = false;
+            }, 30000);
+          });
       }
-    }, 400); // Match animation duration
+    } catch (error) {
+      console.error('Failed to post reply:', error);
+      alert(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}. Reloading...`);
+      window.location.reload();
+    }
   };
 
   // Wrapper for publishing with trial limit check
@@ -1002,40 +949,22 @@ function App() {
   const handleDelete = async (tweetId: string) => {
     if (!username) return;
 
-    // Mark as deleting to trigger animation
-    setDeletingTweetIds(prev => new Set(prev).add(tweetId));
+    // Optimistically remove from UI immediately
+    const updatedTweets = tweets.filter(t => t.id !== tweetId);
+    setTweets(updatedTweets);
 
-    // Wait for animation to complete
-    setTimeout(async () => {
-      try {
-        await api.deleteTweet(username, tweetId);
+    // Adjust index if needed
+    if (currentTweetIndex >= updatedTweets.length) {
+      setCurrentTweetIndex(Math.max(0, updatedTweets.length - 1));
+    }
 
-        // Remove from local state
-        const updatedTweets = tweets.filter(t => t.id !== tweetId);
-        setTweets(updatedTweets);
-
-        // Remove from deleting set
-        setDeletingTweetIds(prev => {
-          const next = new Set(prev);
-          next.delete(tweetId);
-          return next;
-        });
-
-        // Adjust index if needed
-        if (currentTweetIndex >= updatedTweets.length) {
-          setCurrentTweetIndex(Math.max(0, updatedTweets.length - 1));
-        }
-      } catch (error) {
-        console.error('Failed to delete tweet:', error);
-        alert('Failed to delete tweet. Please try again.');
-        // Remove from deleting set on error
-        setDeletingTweetIds(prev => {
-          const next = new Set(prev);
-          next.delete(tweetId);
-          return next;
-        });
-      }
-    }, 300); // Match animation duration
+    try {
+      await api.deleteTweet(username, tweetId);
+    } catch (error) {
+      console.error('Failed to delete tweet:', error);
+      alert(`Failed to delete tweet: ${error instanceof Error ? error.message : 'Unknown error'}. Reloading...`);
+      window.location.reload();
+    }
   };
 
   const handleDeletePosted = async (postedTweetId: string) => {
@@ -1044,37 +973,19 @@ function App() {
       return;
     }
 
-    // Mark as deleting for animation
-    setDeletingTweetIds(prev => new Set(prev).add(postedTweetId));
+    // Optimistically remove from UI immediately
+    setPostedTweets(prev => prev.filter(t => t.id !== postedTweetId));
 
-    setTimeout(async () => {
-      try {
-        await api.deletePostedTweet(username, postedTweetId);
-
-        // Remove from postedTweets state
-        setPostedTweets(prev => prev.filter(t => t.id !== postedTweetId));
-
-        // Clear deleting state
-        setDeletingTweetIds(prev => {
-          const next = new Set(prev);
-          next.delete(postedTweetId);
-          return next;
-        });
-
-        // Reload user info to update posted count
-        await loadUserInfo(username);
-      } catch (error) {
-        console.error('Failed to delete posted tweet:', error);
-        alert(`Failed to delete tweet: ${error instanceof Error ? error.message : 'Unknown error'}`);
-
-        // Clear deleting state on error
-        setDeletingTweetIds(prev => {
-          const next = new Set(prev);
-          next.delete(postedTweetId);
-          return next;
-        });
-      }
-    }, 300);
+    try {
+      await api.deletePostedTweet(username, postedTweetId);
+      // Reload user info to update posted count
+      await loadUserInfo(username);
+    } catch (error) {
+      console.error('Failed to delete posted tweet:', error);
+      alert(`Failed to delete tweet: ${error instanceof Error ? error.message : 'Unknown error'}. Reloading...`);
+      // Reload page to revert UI state
+      window.location.reload();
+    }
   };
 
   // Handler for viewing a posted tweet - refresh metrics
@@ -1329,6 +1240,7 @@ function App() {
           <div className="flex gap-6 py-10 px-6">
             {activeTab === 'discovered' && userInfo && (
               <DiscoveredTab
+                key={`discovered-${resetSeenKey}`}
                 tweets={tweets}
                 userProfilePicUrl={userInfo.profile_pic_url}
                 numberOfGenerations={numberOfGenerations}

@@ -762,6 +762,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
     for tid, t in tweets.items():
         thread_data = await get_thread(ctx, t["url"], root_id=t["id"])
         t["thread"] = thread_data.get("thread", [])
+        t["thread_ids"] = thread_data.get("thread_ids", [])
         t["other_replies"] = thread_data.get("other_replies", [])
 
         # Replace the truncated text with the full text from the thread (first element)

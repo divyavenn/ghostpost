@@ -5,6 +5,7 @@ Provides dynamic terminal progress bars that update in place for live viewing,
 while preserving completed states in log history.
 """
 
+import os
 from datetime import datetime
 
 try:
@@ -12,6 +13,9 @@ try:
 except ImportError:
     from datetime import timezone
     UTC = timezone.utc
+
+# Check DEBUG_LOGS env variable once at module load
+DEBUG_LOGS = os.getenv("DEBUG_LOGS", "").lower() in ("true", "1", "yes")
 
 
 # Track last printed phase to know when to finalize a line
@@ -38,6 +42,8 @@ def get_trigger_icon(triggered_by: str) -> str:
 
 def print_job_start(job_name: str, username: str, triggered_by: str = "user") -> None:
     """Print a job start message."""
+    if not DEBUG_LOGS:
+        return
     trigger_icon = get_trigger_icon(triggered_by)
     timestamp = datetime.now(UTC).strftime("%H:%M:%S")
     display_name = get_job_display_name(job_name)
@@ -52,6 +58,8 @@ def print_job_complete(
     duration_seconds: int
 ) -> None:
     """Print a job completion message."""
+    if not DEBUG_LOGS:
+        return
     trigger_icon = get_trigger_icon(triggered_by)
     timestamp = datetime.now(UTC).strftime("%H:%M:%S")
     display_name = get_job_display_name(job_name)
@@ -60,6 +68,8 @@ def print_job_complete(
 
 def print_job_error(job_name: str, username: str, triggered_by: str, error_msg: str) -> None:
     """Print a job error message."""
+    if not DEBUG_LOGS:
+        return
     trigger_icon = get_trigger_icon(triggered_by)
     timestamp = datetime.now(UTC).strftime("%H:%M:%S")
     display_name = get_job_display_name(job_name)
@@ -113,6 +123,10 @@ def print_progress_bar(
     # Check if phase changed - if so, finalize the previous line first
     cache_key = f"{username}:{job_name}"
     last_phase = _last_phase.get(cache_key)
+
+    if not DEBUG_LOGS:
+        return
+
     if last_phase and last_phase != phase:
         print()  # Newline to preserve the previous phase's final state
 

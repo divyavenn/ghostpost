@@ -185,7 +185,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
     try:
         playwright, browser, context = await get_authenticated_context(username)
         existing_ids = get_user_tweet_ids(username)
-        print(f"[DEBUG] Existing tweet IDs in cache: {len(existing_ids)}")
+        notify(f"[DEBUG] Existing tweet IDs in cache: {len(existing_ids)}")
 
         # Scrape user's recent tweets
         recent_tweets = await scrape_user_recent_tweets(context, user_handle, max_tweets)
@@ -395,7 +395,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 notify(f"⚠️ Error processing discovered tweet {tweet_id}: {e}")
                 results["errors"].append(f"Process {tweet_id}: {e}")
 
-        print(f"[DEBUG] Summary: {len(recent_tweets)} fetched, {skipped_existing} already tracked, {skipped_no_id} no ID, {results['discovered_tweets']} discovered")
+        notify(f"[DEBUG] Summary: {len(recent_tweets)} fetched, {skipped_existing} already tracked, {skipped_no_id} no ID, {results['discovered_tweets']} discovered")
         notify(f"✅ [discover_recently_posted] Complete: {results['discovered_tweets']} tweets, {results['new_comments']} comments, {results['new_quote_tweets']} QTs")
 
     except Exception as e:

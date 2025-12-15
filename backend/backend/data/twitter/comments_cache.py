@@ -418,13 +418,18 @@ def get_thread_context(tweet_id: str, username: str) -> list[dict[str, Any]]:
     for ancestor_id in tweet.get("parent_chain", []):
         ancestor = posted_tweets.get(ancestor_id) or comments.get(ancestor_id)
         if ancestor and isinstance(ancestor, dict):
+            # Get media - check both 'media' (tweet's own) and 'parent_media' (parent's media)
+            # For thread context display, we show the tweet's own media
+            ancestor_media = ancestor.get("media", [])
             chain.append({
                 "id": ancestor_id,
                 "text": ancestor.get("text", ""),
                 "handle": ancestor.get("handle", ancestor.get("responding_to", "")),
                 "username": ancestor.get("username", ""),
                 "author_profile_pic_url": ancestor.get("author_profile_pic_url", ancestor.get("replying_to_pfp", "")),
-                "is_user": ancestor_id in user_tweet_ids
+                "is_user": ancestor_id in user_tweet_ids,
+                "followers": ancestor.get("followers", 0),
+                "media": ancestor_media if ancestor_media else []
             })
         else:
             # Ancestor was deleted or not tracked
@@ -435,17 +440,22 @@ def get_thread_context(tweet_id: str, username: str) -> list[dict[str, Any]]:
                 "username": "",
                 "author_profile_pic_url": "",
                 "is_user": False,
-                "deleted": True
+                "deleted": True,
+                "media": []
             })
 
     # Add current tweet
+    # Get media for current tweet
+    current_media = tweet.get("media", [])
     chain.append({
         "id": tweet_id,
         "text": tweet.get("text", ""),
         "handle": tweet.get("handle", tweet.get("responding_to", "")),
         "username": tweet.get("username", ""),
         "author_profile_pic_url": tweet.get("author_profile_pic_url", tweet.get("replying_to_pfp", "")),
-        "is_user": tweet_id in user_tweet_ids
+        "is_user": tweet_id in user_tweet_ids,
+        "followers": tweet.get("followers", 0),
+        "media": current_media if current_media else []
     })
 
     return chain

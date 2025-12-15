@@ -457,7 +457,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
             try:
                 account_source = {"type": "account", "value": account}
                 account_query = f"from:{account}"
-                tweets = await api_fetch_search(account_query, username=username)
+                tweets, _stats = await api_fetch_search(account_query, username=username)
                 await process_tweets(tweets, account_source)
                 all_tweets.update(tweets)
             except Exception as e:
@@ -477,7 +477,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
 
             try:
                 query_source = {"type": "query", "value": query, "summary": summary}
-                tweets = await api_fetch_search(query, username=username)
+                tweets, _stats = await api_fetch_search(query, username=username)
                 await process_tweets(tweets, query_source)
                 all_tweets.update(tweets)
             except Exception as e:
@@ -497,14 +497,13 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
             from backend.browser_automation.twitter.api import fetch_home_timeline_with_intent_filter
 
             home_source = {"type": "home_timeline", "value": "following"}
-            home_tweets = await fetch_home_timeline_with_intent_filter(
+            home_tweets, _stats = await fetch_home_timeline_with_intent_filter(
                 username=username,
                 max_tweets=max_tweets
             )
             await process_tweets(home_tweets, home_source)
             all_tweets.update(home_tweets)
             results["home_timeline_tweets"] = len(home_tweets)
-            notify(f"✅ Found {len(home_tweets)} tweets from home timeline that match intent")
         except Exception as e:
             notify(f"⚠️ Error fetching home timeline: {e}")
             results["errors"].append(f"Home timeline: {e}")

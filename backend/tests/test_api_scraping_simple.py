@@ -57,8 +57,7 @@ async def test_api_scraping():
     print(f"Query: {account_query}", flush=True)
 
     try:
-        tweets = await fetch_search(
-            ctx=None,
+        tweets, _stats = await fetch_search(
             query=account_query,
             username=username
         )
@@ -90,8 +89,7 @@ async def test_api_scraping():
     print(f"Query: {test_query}", flush=True)
 
     try:
-        tweets = await fetch_search(
-            ctx=None,
+        tweets, _stats = await fetch_search(
             query=test_query,
             username=username
         )

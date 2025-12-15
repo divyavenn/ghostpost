@@ -237,7 +237,7 @@ def add_posted_tweet(
     response_to_thread: list[str] | None = None,
     in_reply_to_id: str | None = None,
     created_at: str | None = None,
-    media: list[dict] | None = None,
+    parent_media: list[dict] | None = None,
     post_type: PostType = "reply"
 ) -> dict[str, Any]:
     """
@@ -253,7 +253,7 @@ def add_posted_tweet(
         response_to_thread: List of strings representing the original thread
         in_reply_to_id: The tweet ID this is replying to (for parent_chain)
         created_at: ISO timestamp of when tweet was created (defaults to now)
-        media: List of media attachments [{type: "photo", url: "...", alt_text: "..."}]
+        parent_media: Media from the parent tweet being replied to (not the reply itself)
         post_type: Type of post - "original", "reply", or "comment_reply"
 
     Returns:
@@ -267,8 +267,11 @@ def add_posted_tweet(
     if response_to_thread is None:
         response_to_thread = []
 
-    if media is None:
-        media = []
+    if parent_media is None:
+        parent_media = []
+
+    # Reply's own media (empty for now - we don't support attaching media to replies yet)
+    media: list[dict] = []
 
     # Read existing caches
     tweets_map = read_posted_tweets_cache(username)
@@ -296,7 +299,8 @@ def add_posted_tweet(
         "created_at": created_at,
         "url": f"https://x.com/{username}/status/{posted_tweet_id}",
         "last_metrics_update": created_at,
-        "media": media,
+        "media": media,  # Reply's own media (empty for now)
+        "parent_media": parent_media,  # Media from the parent tweet being replied to
         "parent_chain": parent_chain,
         "response_to_thread": response_to_thread,
         "responding_to": responding_to_handle,

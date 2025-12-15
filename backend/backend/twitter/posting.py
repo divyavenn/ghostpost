@@ -22,6 +22,65 @@ async def _get_access_token_for_user(username: str) -> str:
 router = APIRouter(prefix="/post", tags=["post"])
 
 
+async def like_tweet(username: str, tweet_id: str) -> bool:
+    """Like a tweet via Twitter API.
+
+    Args:
+        username: User's handle
+        tweet_id: ID of the tweet to like
+
+    Returns:
+        True if like succeeded or tweet was already liked, False otherwise
+    """
+    from backend.twitter.rate_limiter import TWITTER_POST, call_api
+
+    access_token = await _get_access_token_for_user(username)
+
+    # First get the user's Twitter ID
+    user_url = "https://api.x.com/2/users/me"
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    user_response = await call_api(
+        method="GET",
+        url=user_url,
+        bucket=TWITTER_POST,
+        headers=headers,
+        username=username
+    )
+
+    if not user_response.success:
+        error("Failed to get user ID for liking tweet", status_code=user_response.status_code or 500,
+              exception_text=user_response.error_message, function_name="like_tweet", username=username, critical=False)
+        return False
+
+    user_id = user_response.data.get("data", {}).get("id")
+    if not user_id:
+        error("No user ID returned from Twitter API", status_code=500, function_name="like_tweet", username=username, critical=False)
+        return False
+
+    # Like the tweet
+    like_url = f"https://api.x.com/2/users/{user_id}/likes"
+    headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+
+    response = await call_api(
+        method="POST",
+        url=like_url,
+        bucket=TWITTER_POST,
+        headers=headers,
+        json_data={"tweet_id": tweet_id},
+        username=username
+    )
+
+    # 200 = success, 400 might mean already liked
+    if response.success or response.status_code == 400:
+        return True
+
+    # Log but don't fail - liking is not critical
+    error("Failed to like tweet", status_code=response.status_code or 500,
+          exception_text=response.error_message, function_name="like_tweet", username=username, critical=False)
+    return False
+
+
 class Tweet(BaseModel):
     text: str
     cache_id: str | None = None
@@ -174,7 +233,7 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                              replying_to_pfp=replying_to_pfp,
                              response_to_thread=response_to_thread,
                              in_reply_to_id=in_reply_to_id,
-                             media=media,
+                             parent_media=media,
                              post_type=post_type)
         except Exception as e:
             error("Failed to add to posted_tweets cache", status_code=500, exception_text=str(e), function_name="post", username=username)
@@ -245,8 +304,40 @@ async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
         except Exception:
             pass  # Default to "reply" on any error
 
+    # Get thread_ids for auto-liking all tweets in thread
+    thread_ids_to_like = []
+    if payload.cache_id and post_type == "reply":
+        try:
+            cache_path = get_user_tweet_cache(username)
+            if cache_path.exists():
+                with open(cache_path, encoding="utf-8") as f:
+                    cached_tweets = json.load(f)
+                for tweet in cached_tweets:
+                    if tweet.get("cache_id") == payload.cache_id:
+                        thread_ids_to_like = tweet.get("thread_ids", [])
+                        break
+        except Exception:
+            pass  # Fall back to just liking the reply target
+
     try:
-        return await post(username, data, cache_id=payload.cache_id, reply_index=payload.reply_index, post_type=post_type)
+        result = await post(username, data, cache_id=payload.cache_id, reply_index=payload.reply_index, post_type=post_type)
+
+        # Auto-like all tweets in the thread (only for replies to others, not thread continuations)
+        if post_type == "reply":
+            # Like all tweets in thread, or just the reply target if no thread_ids
+            tweets_to_like = thread_ids_to_like if thread_ids_to_like else [payload.tweet_id]
+            liked_count = 0
+            for tweet_id in tweets_to_like:
+                try:
+                    await like_tweet(username, tweet_id)
+                    liked_count += 1
+                except Exception as e:
+                    error(f"Auto-like failed for tweet {tweet_id}", status_code=500, exception_text=str(e),
+                          function_name="post_reply", username=username, critical=False)
+            if liked_count > 0:
+                notify(f"❤️ Auto-liked {liked_count} tweet(s) in thread for @{username}")
+
+        return result
     except HTTPException as e:
         # Handle deleted tweet - remove from cache and return informative response
         if e.status_code == status.HTTP_410_GONE and e.detail == "TWEET_DELETED":

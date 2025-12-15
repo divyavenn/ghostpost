@@ -16,15 +16,16 @@ async def test_fetch_search_from_user_returns_tweets(browser_context, test_user)
 
     Tests fetching tweets from divya_venn account.
     """
-    from backend.browser_automation.twitter.api import fetch_search
+    from backend.browser_automation.twitter.api import fetch_search, ScrapeStats
 
-    result = await fetch_search(
+    result, stats = await fetch_search(
         query="from:divya_venn",
         username=test_user
     )
 
     # Result should be a dict (could be empty if no recent tweets meet criteria)
     assert isinstance(result, dict), "Result should be a dict"
+    assert isinstance(stats, ScrapeStats), "Stats should be a ScrapeStats"
 
     # If tweets are returned, check structure
     for tweet_id, tweet in result.items():
@@ -48,7 +49,7 @@ async def test_fetch_search_structure(browser_context, test_user):
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="from:elikitten1",  # Use a different account that may have more activity
         username=test_user
     )
@@ -81,7 +82,7 @@ async def test_fetch_search_query_returns_tweets(browser_context, test_user):
     from backend.browser_automation.twitter.api import fetch_search
 
     # Search for tweets about AI/ML (common topic with many results)
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="artificial intelligence",
         username=test_user
     )
@@ -104,8 +105,7 @@ async def test_fetch_search_excludes_retweets_and_replies(browser_context, test_
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
-        browser_context,
+    result, _stats = await fetch_search(
         query="technology",
         username=test_user
     )
@@ -187,7 +187,7 @@ async def test_fetch_search_from_user_with_thread(browser_context, test_user):
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="from:divya_venn",
         username=test_user
     )
@@ -208,7 +208,7 @@ async def test_fetch_search_with_thread(browser_context, test_user):
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="python",
         username=test_user
     )
@@ -226,7 +226,7 @@ async def test_engagement_score_calculation(browser_context, test_user):
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="from:divya_venn",
         username=test_user
     )
@@ -251,7 +251,7 @@ async def test_api_returns_empty_on_invalid_handle(browser_context, test_user):
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="from:this_handle_definitely_does_not_exist_12345678",
         username=test_user
     )
@@ -269,7 +269,7 @@ async def test_media_extraction_in_tweets(browser_context, test_user):
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="from:divya_venn",
         username=test_user
     )
@@ -292,7 +292,7 @@ async def test_tweet_url_format(browser_context, test_user):
     """
     from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_search(
+    result, _stats = await fetch_search(
         query="from:divya_venn",
         username=test_user
     )
@@ -313,7 +313,7 @@ async def test_fetch_home_timeline_returns_tweets(test_user):
 
     Requires a valid OAuth access token for the test user.
     """
-    from backend.browser_automation.twitter.api import fetch_home_timeline_with_intent_filter
+    from backend.browser_automation.twitter.api import fetch_home_timeline_with_intent_filter, ScrapeStats
     from backend.twitter.authentication import ensure_access_token
 
     # Pre-check if we have a valid token
@@ -321,13 +321,14 @@ async def test_fetch_home_timeline_returns_tweets(test_user):
     if not access_token:
         pytest.skip(f"No OAuth access token available for {test_user} - user needs to re-authenticate")
 
-    result = await fetch_home_timeline_with_intent_filter(
+    result, stats = await fetch_home_timeline_with_intent_filter(
         username=test_user,
-        generate_replies_inline=False  # Don't generate replies during test
+        max_tweets=20
     )
 
     # Result should be a dict
     assert isinstance(result, dict), f"Result should be a dict, got {type(result)}"
+    assert isinstance(stats, ScrapeStats), f"Stats should be a ScrapeStats, got {type(stats)}"
 
     # Log how many tweets we got
     print(f"[Home Timeline] Got {len(result)} tweets for @{test_user}")
@@ -360,8 +361,7 @@ async def test_fetch_search_returns_non_empty_results(browser_context, test_user
     if not access_token:
         pytest.skip(f"No OAuth access token available for {test_user} - user needs to re-authenticate")
 
-    result = await fetch_search(
-        browser_context,
+    result, _stats = await fetch_search(
         query="python",  # Use a specific programming term
         username=test_user
     )

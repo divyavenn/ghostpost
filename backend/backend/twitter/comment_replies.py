@@ -130,13 +130,33 @@ Your reply should feel natural and make {commenter} feel heard.
 """
 
 
-def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str, list[str]]:
+def _format_followers(count: int) -> str:
+    """Format follower count for display (e.g., 25000 -> '25k')."""
+    if count >= 1000000:
+        val = count / 1000000
+        return f"{val:.1f}m".replace('.0m', 'm') if val != int(val) else f"{int(val)}m"
+    elif count >= 1000:
+        val = count / 1000
+        # Remove trailing .0 for clean numbers like 25k instead of 25.0k
+        if val == int(val):
+            return f"{int(val)}k"
+        return f"{val:.1f}k"
+    return str(count)
+
+
+def build_comment_prompt(comment: dict, thread_context: list[dict], user_handle: str | None = None) -> tuple[str, list[str]]:
     """
     Build a prompt for generating a reply to a comment.
+
+    Format shows the conversation as a natural thread:
+    - Original post at the top
+    - Each reply shows who wrote it and their follower count
+    - Reply text naturally includes @mentions showing who they're responding to
 
     Args:
         comment: The comment to reply to
         thread_context: List of dicts representing the thread from root to comment
+        user_handle: The user's Twitter handle (so LLM knows when user is addressed directly)
 
     Returns:
         Tuple of (text_prompt, image_urls)
@@ -144,41 +164,61 @@ def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str
     text_prompt = ""
     image_urls = []
 
-    # Add thread context (from root to immediate parent)
-    text_prompt += "[CONVERSATION CONTEXT]\n\n"
+    # Tell the LLM who they are
+    if user_handle:
+        text_prompt += f"You are @{user_handle}. This is a discussion under something you posted. "
+        text_prompt += "Each reply is in response to the one directly above it and the person who wrote it.\n\n"
+
+    # Build the conversation thread
+    # thread_context is ordered: [original_post, reply1, reply2, ..., current_comment]
+    # We show all except the last one (the comment we're replying to) in the thread section
 
     for i, ctx in enumerate(thread_context[:-1]):  # Exclude the comment itself
         is_user = ctx.get("is_user", False)
         handle = ctx.get("handle", "Unknown")
-        text = ctx.get("text", "<deleted>")
+        username = ctx.get("username", handle)
+        text = ctx.get("text", "")
+        followers = ctx.get("followers", 0)
 
         if ctx.get("deleted"):
-            text_prompt += f"[Tweet #{i+1} - DELETED]\n\n"
+            text_prompt += "[deleted tweet]\n\n---\n\n"
             continue
 
-        role = "YOU" if is_user else f"@{handle}"
-        text_prompt += f"[{role}]:\n{text}\n\n"
+        if i == 0 and is_user:
+            # This is the user's original post
+            text_prompt += "Original post:\n"
+            text_prompt += f"{text}\n"
+        else:
+            # This is a reply in the thread
+            follower_str = f" ({_format_followers(followers)} followers)" if followers > 0 else ""
+            text_prompt += f"{handle}{follower_str}:\n\n"
+            text_prompt += f"{text}\n"
 
-    # Add the comment we're replying to
+        # Add media from this context tweet if present
+        ctx_media = ctx.get("media", [])
+        ctx_images = [item.get("url") for item in ctx_media if item.get("type") == "photo"]
+        if ctx_images:
+            image_urls.extend(ctx_images)
+            text_prompt += f"\n[includes {len(ctx_images)} image(s)]\n"
+
+        text_prompt += "\n---\n\n"
+
+    # Add the comment we're replying to (the last item, or from the comment dict itself)
     comment_handle = comment.get("handle", "Unknown")
     comment_username = comment.get("username", comment_handle)
     comment_text = comment.get("text", "")
+    comment_followers = comment.get("followers", 0)
 
-    text_prompt += "---\n\n"
-    text_prompt += f"[COMMENT from @{comment_handle} ({comment_username})]:\n"
+    follower_str = f" ({_format_followers(comment_followers)} followers)" if comment_followers > 0 else ""
+    text_prompt += f"{comment_handle}{follower_str}:\n\n"
     text_prompt += f"{comment_text}\n"
-
-    # Add comment engagement stats for context
-    followers = comment.get("followers", 0)
-    if followers > 1000:
-        text_prompt += f"\n[This person has {followers:,} followers]\n"
 
     # Add media from comment if present
     media = comment.get("media", [])
     comment_images = [item.get("url") for item in media if item.get("type") == "photo"]
     if comment_images:
         image_urls.extend(comment_images)
-        text_prompt += f"\n[Comment includes {len(comment_images)} image(s)]\n"
+        text_prompt += f"\n[includes {len(comment_images)} image(s)]\n"
 
     # Add quoted tweet from comment if present
     quoted_tweet = comment.get("quoted_tweet")
@@ -186,14 +226,14 @@ def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str
         qt_text = quoted_tweet.get("text", "")
         qt_handle = quoted_tweet.get("author_handle", "unknown")
         qt_name = quoted_tweet.get("author_name", qt_handle)
-        text_prompt += f"\n[Comment quotes @{qt_handle} ({qt_name})]:\n\"{qt_text}\"\n"
+        text_prompt += f"\n[quotes @{qt_handle} ({qt_name})]:\n\"{qt_text}\"\n"
 
         # Add quoted tweet images to context
         qt_media = quoted_tweet.get("media", [])
         qt_images = [item.get("url") for item in qt_media if item.get("type") == "photo"]
         if qt_images:
             image_urls.extend(qt_images)
-            text_prompt += f"[Quoted tweet includes {len(qt_images)} image(s)]\n"
+            text_prompt += f"[quoted tweet includes {len(qt_images)} image(s)]\n"
 
     # Add other replies context if available
     other_replies = comment.get("other_replies", [])
@@ -257,7 +297,11 @@ async def generate_replies_for_comment(
     # Extract commenter handle for personalization
     commenter_handle = comment.get("handle") or comment.get("username")
 
-    text_prompt, image_urls = build_comment_prompt(comment, thread_context)
+    # Get user's handle so LLM knows when user is addressed directly
+    user_info = read_user_info(username)
+    user_handle = user_info.get("handle") if user_info else username
+
+    text_prompt, image_urls = build_comment_prompt(comment, thread_context, user_handle=user_handle)
 
     # Add examples context to the prompt (prioritizes replies to same commenter)
     examples_context = build_comment_reply_examples_context(username, target_account=commenter_handle)

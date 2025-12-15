@@ -49,6 +49,7 @@ export interface CommentData {
   }>;
   media?: MediaItem[];
   quoted_tweet?: QuotedTweet | null;
+  engagement_type?: 'reply' | 'quote_tweet'; // "reply" for regular replies, "quote_tweet" for quote tweets
 }
 
 export interface ThreadContext {
@@ -59,6 +60,7 @@ export interface ThreadContext {
   author_profile_pic_url: string;
   is_user: boolean;
   deleted?: boolean;
+  media?: MediaItem[];
 }
 
 // Post data for grouped comments view

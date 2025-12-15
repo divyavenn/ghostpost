@@ -324,6 +324,16 @@ async def post_comment_reply(
             }
         )
 
+        # Auto-like the comment we're replying to
+        try:
+            from backend.twitter.posting import like_tweet
+            await like_tweet(username, comment_id)
+            notify(f"❤️ Auto-liked comment {comment_id} for @{username}")
+        except Exception as e:
+            # Log but don't fail - liking is not critical
+            error("Auto-like failed for comment reply", status_code=500, exception_text=str(e),
+                  function_name="post_comment_reply", username=username, critical=False)
+
         # Delete comment from cache (cache is only for un-responded comments)
         # (Examples are now sourced from posted_tweets_cache with post_type="comment_reply", sorted by score)
         delete_comment(username, comment_id)

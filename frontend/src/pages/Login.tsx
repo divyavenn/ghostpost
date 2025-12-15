@@ -1,8 +1,5 @@
 import { useState } from 'react';
 import styled from 'styled-components';
-import { useNavigate } from 'react-router-dom';
-import { useSetRecoilState } from 'recoil';
-import { usernameState } from '../atoms';
 import { LoginLoading } from '../components/LoginLoading';
 import { Background } from '../components/Background';
 import { TextTree } from '../components/TextTree';
@@ -92,8 +89,6 @@ const TextContainer = styled.div`
 
 // --- Main Component ---
 export function Login() {
-  const navigate = useNavigate();
-  const setUsername = useSetRecoilState(usernameState);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -102,13 +97,6 @@ export function Login() {
     try {
       setError(null);
       setIsLoggingIn(true);
-
-      const loginTab = window.open('/login-loading', '_blank');
-      if (!loginTab) {
-        setError('Please allow popups to continue with login');
-        setIsLoggingIn(false);
-        return;
-      }
 
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
       const frontendUrl = window.location.origin;
@@ -121,56 +109,11 @@ export function Login() {
 
       if (!response.ok) throw new Error('Failed to get login URL');
 
-      const { login_url, session_id } = await response.json();
+      const { login_url } = await response.json();
 
-      let messageSent = false;
-      const sendLoginUrl = () => {
-        if (messageSent) return;
-        messageSent = true;
-        loginTab.postMessage({ type: 'LOGIN_URL', url: login_url }, window.location.origin);
-      };
-
-      const handleReadyMessage = (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
-        if (event.data.type === 'LOGIN_PAGE_READY') {
-          window.removeEventListener('message', handleReadyMessage);
-          sendLoginUrl();
-        }
-      };
-
-      window.addEventListener('message', handleReadyMessage);
-
-      setTimeout(() => {
-        window.removeEventListener('message', handleReadyMessage);
-        sendLoginUrl();
-      }, 1000);
-
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusResponse = await fetch(`${apiBaseUrl}/auth/twitter/cookie-status/${session_id}`);
-          if (!statusResponse.ok) return;
-
-          const status = await statusResponse.json();
-
-          if ((status.status === 'success' || status.status === 'complete') && status.username) {
-            clearInterval(pollInterval);
-            try { loginTab.close(); } catch (e) { console.warn(e); }
-            window.focus();
-            setUsername(status.username);
-            setIsLoggingIn(false);
-            navigate('/', { replace: true });
-          } else if (status.status === 'extension_required') {
-            clearInterval(pollInterval);
-            try { loginTab.close(); } catch (e) { console.warn(e); }
-            setIsLoggingIn(false);
-            setError('Browser Extension Required');
-          }
-        } catch (error) {
-          console.error('Polling error:', error);
-        }
-      }, 2000);
-
-      setTimeout(() => clearInterval(pollInterval), 300000);
+      // Navigate to Twitter OAuth in the same tab
+      // After OAuth, Twitter redirects to our callback, which redirects to /login-success
+      window.location.href = login_url;
     } catch (error) {
       console.error('Login failed:', error);
       setError(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

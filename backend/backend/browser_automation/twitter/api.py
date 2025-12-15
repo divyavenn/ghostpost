@@ -557,13 +557,27 @@ async def fetch_search_raw(query: str, username: str | None = None) -> tuple[dic
     Returns:
         Tuple of (raw_tweets dict without thread data, ScrapeStats)
     """
-    # Determine source type from query
+    # Determine source type from query (before conversion for logging)
+    original_query = query
     if query.startswith("from:"):
         source_type = "account"
         source_value = query.split("from:")[1].split()[0]  # Extract handle
     else:
         source_type = "query"
         source_value = query
+
+    # Convert web-style operators to API-style BEFORE making request
+    query = _convert_web_query_to_api(query)
+
+    # Ensure query excludes retweets and replies
+    if "-is:retweet" not in query:
+        query = f"{query} -is:retweet"
+    if "-is:reply" not in query:
+        query = f"{query} -is:reply"
+
+    # Log the converted query for debugging
+    if query != original_query:
+        notify(f"🔄 Query converted: {original_query[:50]}... → {query[:50]}...")
 
     auth_user = username or DEFAULT_AUTH_USER
     stats = ScrapeStats(source_type=source_type, source_value=source_value, username=auth_user)
@@ -572,15 +586,6 @@ async def fetch_search_raw(query: str, username: str | None = None) -> tuple[dic
     if not access_token:
         error("No access token available", status_code=401, function_name="fetch_search_raw", critical=False)
         return {}, stats
-
-    # Convert web-style operators to API-style
-    query = _convert_web_query_to_api(query)
-
-    # Ensure query excludes retweets and replies
-    if "-is:retweet" not in query:
-        query = f"{query} -is:retweet"
-    if "-is:reply" not in query:
-        query = f"{query} -is:reply"
 
     raw_tweets = {}
     response = await _search_tweets(access_token, query, max_results=100)

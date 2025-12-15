@@ -73,6 +73,8 @@ function App() {
     onAction: () => void;
   } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Key to trigger resetting "seen" tracking in DiscoveredTab (incremented on purge)
+  const [resetSeenKey, setResetSeenKey] = useState(0);
   const postedTweetsOffsetRef = useRef(0);
   // Track tweet IDs that have been marked as seen in this session (to debounce API calls)
   const seenTweetIdsRef = useRef<Set<string>>(new Set());
@@ -1119,6 +1121,11 @@ function App() {
       const result = await api.purgeSeenTweets(username);
       console.log(`Purged ${result.removed_count} seen tweets`);
 
+      // Clear the seen tracking ref so remaining tweets can be re-marked when scrolled
+      seenTweetIdsRef.current.clear();
+      // Increment key to trigger DiscoveredTab to clear its local seen tracking
+      setResetSeenKey(k => k + 1);
+
       // Reload tweets to reflect purged state
       await loadTweets(username);
     } catch (error) {
@@ -1333,6 +1340,7 @@ function App() {
                 onEditReply={handleEditReply}
                 onRegenerate={handleRegenerate}
                 onTweetsSeen={handleMarkTweetsSeen}
+                resetSeenKey={resetSeenKey}
               />
             )}
 

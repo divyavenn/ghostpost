@@ -156,13 +156,26 @@ export interface TwitterStatus {
   expires_at: string | null;
 }
 
+// Query can be either a plain string or [query, summary] tuple
+export type QueryItem = string | [string, string];
+
 export interface UserSettings {
-  queries: string[];
+  queries: QueryItem[];
   relevant_accounts: Record<string, boolean>; // {handle: validated}
   max_tweets_retrieve: number;
   number_of_generations: number;
   models?: string[]; // Read-only, managed via dedicated endpoint
   intent?: string; // User's intent for filtering and query generation
+}
+
+// Helper to extract query string and summary from QueryItem
+export function parseQueryItem(item: QueryItem): { query: string; summary: string } {
+  if (Array.isArray(item)) {
+    return { query: item[0], summary: item[1] };
+  }
+  // For plain strings, generate a summary from first 2 words
+  const words = item.split(' ').filter(w => !w.startsWith('-') && !w.startsWith('('));
+  return { query: item, summary: words.slice(0, 2).join(' ') || 'Query' };
 }
 
 export interface UserInfo {

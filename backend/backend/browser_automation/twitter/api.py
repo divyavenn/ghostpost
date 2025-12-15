@@ -38,6 +38,9 @@ from backend.twitter.rate_limiter import EndpointType, TWITTER_HOME_TIMELINE, tw
 # Default tweet fields to request
 # note_tweet contains full text for tweets > 280 characters
 TWEET_FIELDS = "id,text,created_at,public_metrics,conversation_id,in_reply_to_user_id,referenced_tweets,author_id,note_tweet"
+
+# Engagement thresholds for discovery (FYP/queries, not user timelines)
+MIN_IMPRESSIONS_FOR_DISCOVERY = 2000
 USER_FIELDS = "id,name,username,profile_image_url,public_metrics"
 EXPANSIONS = "author_id,referenced_tweets.id,referenced_tweets.id.author_id,attachments.media_keys"
 MEDIA_FIELDS = "type,url,preview_image_url,alt_text"
@@ -399,85 +402,94 @@ async def _get_tweet_by_id(access_token: str, tweet_id: str, _retry_count: int =
 
 
 # ============================================================================
-# Main API functions - same interface as scraping functions
+# Main API functions
 # ============================================================================
 
-async def fetch_user_tweets(ctx, handle: str, username: str | None = None, write_callback=None, **kwargs) -> dict:
+async def populate_thread(raw_tweets: dict) -> dict:
     """
-    Fetch tweets from a user's timeline using search API with from: operator.
-
-    Same interface as timeline.fetch_user_tweets but uses API instead of scraping.
+    Fetch thread data for each tweet and filter out tweets without thread content.
 
     Args:
-        ctx: Browser context (ignored - kept for interface compatibility)
-        handle: Twitter handle to fetch tweets from
-        username: Username for cache operations and authentication
-        write_callback: Async callback for progressive writes
-        **kwargs: Additional arguments (ignored)
+        raw_tweets: Dict of tweet_id -> tweet_data (without thread data)
 
     Returns:
-        Dict of tweet_id -> tweet_data
+        Dict of tweet_id -> tweet_data (with thread data populated, empty threads filtered out)
     """
-    # Get access token for the user making the request (or fall back to default)
-    auth_user = username or DEFAULT_AUTH_USER
-    access_token = await ensure_access_token(auth_user)
-
-    if not access_token:
-        error("No access token available", status_code=401, function_name="fetch_user_tweets", critical=False)
-        return {}
-
-    # Build query: from:handle -is:retweet -is:reply (to get original posts only)
-    query = f"from:{handle} -is:retweet -is:reply"
-
-    notify(f"[API] Fetching tweets from @{handle} using search API")
-
     tweets = {}
-    response = await _search_tweets(access_token, query, max_results=100)
+    skipped_count = 0
 
-    data = response.get("data", [])
-    includes = response.get("includes", {})
-    user_map = _build_user_map(includes)
+    for tid, t in raw_tweets.items():
+        thread_data = await get_thread(None, t["url"], root_id=t["id"])
+        t["thread"] = thread_data.get("thread", [])
+        t["other_replies"] = thread_data.get("other_replies", [])
 
-    for tweet in data:
-        # Filter by age
-        created_at = tweet.get("created_at", "")
-        if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
+        # Update author info from thread data if available
+        if thread_data.get("author_profile_pic_url"):
+            t["author_profile_pic_url"] = thread_data["author_profile_pic_url"]
+        if thread_data.get("media"):
+            t["media"] = thread_data["media"]
+
+        # Skip tweets without thread content
+        if not t["thread"] or len(t["thread"]) == 0:
+            notify(f"⚠️ Skipping tweet {tid}: no thread content")
+            skipped_count += 1
             continue
 
-        tweet_dict = _tweet_to_dict(tweet, user_map, includes)
-        tweets[tweet_dict["id"]] = tweet_dict
+        # Replace truncated text with full text from thread
+        t["text"] = t["thread"][0]
+        tweets[tid] = t
 
-    # Progressive write if callback provided
-    if write_callback and username and tweets:
-        await write_callback(list(tweets.values()), username)
+    if skipped_count > 0:
+        notify(f"[API] Skipped {skipped_count} tweets without thread content")
 
-    notify(f"[API] Fetched {len(tweets)} tweets from @{handle}")
     return tweets
 
 
-async def fetch_search(ctx, query: str, username: str | None = None, write_callback=None, **kwargs) -> dict:
+def _convert_web_query_to_api(query: str) -> str:
     """
-    Search for tweets using Twitter API v2.
+    Convert Twitter web search operators to API v2 operators.
 
-    Same interface as timeline.fetch_search but uses API instead of scraping.
+    Web search (twitter.com) uses different operators than the API v2.
+
+    Web -> API conversions:
+    - -filter:replies -> -is:reply
+    - -filter:links -> -has:links
+    - -filter:retweets -> -is:retweet
+    - lang:en -> lang:en (same)
+    """
+    conversions = [
+        ("-filter:replies", "-is:reply"),
+        ("-filter:retweets", "-is:retweet"),
+        ("-filter:links", "-has:links"),
+        ("filter:links", "has:links"),
+    ]
+
+    for web_op, api_op in conversions:
+        query = query.replace(web_op, api_op)
+
+    return query
+
+
+async def fetch_search(query: str, username: str | None = None) -> dict:
+    """
+    Search for tweets using Twitter API v2 and populate thread data.
 
     Args:
-        ctx: Browser context (ignored - kept for interface compatibility)
-        query: Search query
-        username: Username for cache operations and authentication
-        write_callback: Async callback for progressive writes
-        **kwargs: Additional arguments (ignored)
+        query: Search query (supports both web-style and API-style operators)
+        username: Username for authentication
 
     Returns:
-        Dict of tweet_id -> tweet_data
+        Dict of tweet_id -> tweet_data (with thread data populated)
     """
-    # Get access token for the user making the request (or fall back to default)
     auth_user = username or DEFAULT_AUTH_USER
     access_token = await ensure_access_token(auth_user)
 
     if not access_token:
         error("No access token available", status_code=401, function_name="fetch_search", critical=False)
         return {}
+
+    # Convert web-style operators to API-style
+    query = _convert_web_query_to_api(query)
 
     # Ensure query excludes retweets and replies
     if "-is:retweet" not in query:
@@ -487,7 +499,7 @@ async def fetch_search(ctx, query: str, username: str | None = None, write_callb
 
     notify(f"[API] Searching tweets with query: {query}")
 
-    tweets = {}
+    raw_tweets = {}
     response = await _search_tweets(access_token, query, max_results=100)
 
     data = response.get("data", [])
@@ -495,19 +507,23 @@ async def fetch_search(ctx, query: str, username: str | None = None, write_callb
     user_map = _build_user_map(includes)
 
     for tweet in data:
-        # Filter by age
         created_at = tweet.get("created_at", "")
         if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
             continue
 
+        # Filter by minimum impressions for discovery
+        metrics = tweet.get("public_metrics", {})
+        impressions = metrics.get("impression_count", 0)
+        if impressions < MIN_IMPRESSIONS_FOR_DISCOVERY:
+            continue
+
         tweet_dict = _tweet_to_dict(tweet, user_map, includes)
-        tweets[tweet_dict["id"]] = tweet_dict
+        raw_tweets[tweet_dict["id"]] = tweet_dict
 
-    # Progressive write if callback provided
-    if write_callback and username and tweets:
-        await write_callback(list(tweets.values()), username)
+    # Populate thread data and filter out empty threads
+    tweets = await populate_thread(raw_tweets)
 
-    notify(f"[API] Found {len(tweets)} tweets for query")
+    notify(f"[API] Found {len(tweets)} tweets with thread data for query")
     return tweets
 
 
@@ -1000,92 +1016,6 @@ async def _generate_reply_for_tweet_background(tweet: dict, username: str):
         notify(f"⚠️ [Parallel] Error generating replies for tweet {tweet_id}: {e}")
 
 
-async def collect_from_page(ctx, url: str, handle: str | None, *, username=None, write_callback=None, generate_replies_inline=True):
-    """
-    Collect tweets from a URL using Twitter API.
-
-    Same interface as tools.collect_from_page but uses API.
-    This function determines whether it's a user timeline or search based on URL.
-
-    Args:
-        ctx: Browser context (ignored - kept for interface compatibility)
-        url: URL to scrape (user profile or search results)
-        handle: Twitter handle (if scraping user timeline)
-        username: Username for cache operations
-        write_callback: Async callback for progressive writes
-        generate_replies_inline: If True, start generating replies for each tweet
-                                  immediately after it's written to cache (parallel with scraping)
-
-    Returns:
-        Dict of tweet_id -> tweet_data
-    """
-    if handle:
-        # User timeline - DON'T pass write_callback here, we write after thread data is fetched
-        tweets = await fetch_user_tweets(ctx, handle, username=username, write_callback=None)
-    else:
-        # Search - extract query from URL
-        from urllib.parse import parse_qs, urlparse
-        parsed = urlparse(url)
-        query_params = parse_qs(parsed.query)
-        query = query_params.get("q", [""])[0]
-
-        if query:
-            # DON'T pass write_callback here, we write after thread data is fetched
-            tweets = await fetch_search(ctx, query, username=username, write_callback=None)
-        else:
-            tweets = {}
-
-    # Collect thread data for each tweet, THEN write to cache with complete data
-    # Only keep tweets that have valid thread content
-    tweets_with_threads = {}
-    skipped_count = 0
-    generation_tasks = []  # Track background reply generation tasks
-
-    for tid, t in tweets.items():
-        thread_data = await get_thread(ctx, t["url"], root_id=t["id"])
-        t["thread"] = thread_data.get("thread", [])
-        t["other_replies"] = thread_data.get("other_replies", [])
-
-        # Update author info from thread data if available
-        if thread_data.get("author_profile_pic_url"):
-            t["author_profile_pic_url"] = thread_data["author_profile_pic_url"]
-        if thread_data.get("media"):
-            t["media"] = thread_data["media"]
-
-        # Skip tweets without thread content - don't write to cache or seen_tweets
-        if not t["thread"] or len(t["thread"]) == 0:
-            notify(f"⚠️ Skipping tweet {tid}: no thread content (won't be added to seen)")
-            skipped_count += 1
-            continue
-
-        # Replace truncated text with full text from thread
-        t["text"] = t["thread"][0]
-
-        # Only write tweets with valid thread data to cache
-        if write_callback and username:
-            print(f"🔧 [collect_from_page] Calling write_callback for tweet {tid}", flush=True)
-            await write_callback([t], username)
-            print(f"🔧 [collect_from_page] write_callback returned for tweet {tid}", flush=True)
-
-            # Start generating replies in the background (parallel with scraping)
-            if generate_replies_inline:
-                task = asyncio.create_task(_generate_reply_for_tweet_background(t, username))
-                generation_tasks.append(task)
-
-        tweets_with_threads[tid] = t
-
-    if skipped_count > 0:
-        notify(f"⚠️ Skipped {skipped_count} tweets due to empty thread content")
-
-    # Note: generation_tasks run in the background - we don't wait for them
-    # This allows scraping to continue while replies are generated in parallel
-    # The final generate_replies() call will catch any tweets that need regeneration
-    if generation_tasks:
-        notify(f"🚀 Started {len(generation_tasks)} parallel reply generation task(s) in background")
-
-    return tweets_with_threads
-
-
 async def _get_authenticated_user_id(access_token: str, _retry_count: int = 0) -> str | None:
     """
     Get the authenticated user's Twitter ID from their access token.
@@ -1194,24 +1124,20 @@ async def _fetch_home_timeline_raw(
 
 async def fetch_home_timeline_with_intent_filter(
     username: str,
-    max_tweets: int = 50,
-    write_callback=None,
-    generate_replies_inline: bool = True
+    max_tweets: int = 50
 ) -> dict:
     """
     Fetch tweets from the user's home timeline and filter by intent.
 
     This fetches the "Following" tab (reverse chronological timeline) and
-    filters tweets through the user's intent filter before adding to cache.
+    filters tweets through the user's intent filter.
 
     Args:
-        username: Username for authentication and cache operations
+        username: Username for authentication
         max_tweets: Maximum tweets to fetch and filter
-        write_callback: Async callback for progressive writes
-        generate_replies_inline: If True, generate replies for matching tweets
 
     Returns:
-        Dict of tweet_id -> tweet_data for tweets that passed intent filter
+        Dict of tweet_id -> tweet_data for tweets that passed intent filter (with thread data)
     """
     from backend.twitter.filtering import check_tweet_matches_intent_initial
     from backend.utlils.utils import is_tweet_seen
@@ -1245,7 +1171,6 @@ async def fetch_home_timeline_with_intent_filter(
     passed_filter = 0
     failed_filter = 0
     skipped_seen = 0
-    generation_tasks = []
 
     for tweet in data:
         tweet_id = tweet.get("id")
@@ -1268,6 +1193,12 @@ async def fetch_home_timeline_with_intent_filter(
         referenced = tweet.get("referenced_tweets", [])
         is_retweet = any(ref.get("type") == "retweeted" for ref in referenced)
         if is_retweet:
+            continue
+
+        # Filter by minimum impressions for discovery (home timeline = FYP)
+        metrics = tweet.get("public_metrics", {})
+        impressions = metrics.get("impression_count", 0)
+        if impressions < MIN_IMPRESSIONS_FOR_DISCOVERY:
             continue
 
         tweet_dict = _tweet_to_dict(tweet, user_map, includes)
@@ -1302,20 +1233,8 @@ async def fetch_home_timeline_with_intent_filter(
         # Mark where this tweet came from
         tweet_dict["scraped_from"] = {"type": "home_timeline", "value": "following"}
 
-        # Write to cache
-        if write_callback:
-            await write_callback([tweet_dict], username)
-
-            # Start generating replies in the background
-            if generate_replies_inline:
-                task = asyncio.create_task(_generate_reply_for_tweet_background(tweet_dict, username))
-                generation_tasks.append(task)
-
         tweets[tweet_dict["id"]] = tweet_dict
 
     notify(f"[API] Home timeline: {passed_filter} passed intent filter, {failed_filter} filtered out, {skipped_seen} already seen")
-
-    if generation_tasks:
-        notify(f"🚀 Started {len(generation_tasks)} parallel reply generation task(s) for home timeline tweets")
 
     return tweets

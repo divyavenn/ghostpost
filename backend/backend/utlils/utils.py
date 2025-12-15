@@ -26,6 +26,33 @@ CACHE_DIR.mkdir(parents=True, exist_ok=True)
 DEBUG_LOGS = os.getenv("DEBUG_LOGS", "").lower() in ("true", "1", "yes")
 
 
+# =============================================================================
+# Custom Authentication Exceptions
+# =============================================================================
+# These exceptions are raised by auth functions and caught by the scheduler
+# to gracefully stop background jobs for users who need to re-authenticate.
+
+class AuthenticationError(Exception):
+    """Base class for authentication errors that should stop background jobs."""
+    pass
+
+
+class BrowserSessionExpired(AuthenticationError):
+    """
+    Raised when browser session cookies are invalid or missing.
+    User needs to re-login via the browser flow.
+    """
+    pass
+
+
+class OAuthTokenExpired(AuthenticationError):
+    """
+    Raised when OAuth refresh token is invalid, missing, or refresh failed.
+    User needs to re-authenticate via OAuth flow.
+    """
+    pass
+
+
 def notify(msg: str):
     """Print message to console only if DEBUG_LOGS is enabled."""
     if DEBUG_LOGS:
@@ -66,55 +93,9 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
         print(f"⚠️ Failed to log error to errors.jsonl: {e}")
 
     if critical:
+        from backend.utlils.email import message_devs
         message_devs(f"❌ Critical error in {function_name} for user {username}: {msg}. timestamp: {timestamp}")
         raise RuntimeError(f"❌ {msg}")
-
-
-def message_devs(text: str, subject: str = "URGENT: Ghostpost Issue") -> bool:
-    """
-    Send an urgent email notification to developers.
-
-    Args:
-        text: The message content to send
-        subject: Email subject line (default: "URGENT: Ghostpost Issue")
-
-    Returns:
-        True if email was sent successfully, False otherwise
-    """
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-
-    from backend.config import DEV_EMAIL, SMTP_HOST, SMTP_PASSWORD, SMTP_PORT, SMTP_USER
-
-    # Check if email is configured
-    if not SMTP_USER or not SMTP_PASSWORD:
-        notify("⚠️ Email not configured (missing SMTP_USER or SMTP_PASSWORD)")
-        return False
-    if not DEV_EMAIL:
-        notify("⚠️ Developer email not configured (missing DEV_EMAIL)")
-        return False
-    try:
-        # Create message
-        msg = MIMEMultipart()
-        msg['From'] = SMTP_USER
-        msg['To'] = DEV_EMAIL
-        msg['Subject'] = subject
-
-        # Add body
-        msg.attach(MIMEText(text, 'plain'))
-
-        # Connect to SMTP server and send
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.starttls()  # Enable TLS encryption
-            server.login(SMTP_USER, SMTP_PASSWORD)
-            server.send_message(msg)
-
-        notify(f"📧 Alert sent to developers: {DEV_EMAIL}")
-        return True
-    except Exception as e:
-        notify(f"⚠️ Failed to send developer alert: {e}")
-        return False
 
 
 def cookie_still_valid(state: dict[str, Any]) -> bool:
@@ -522,6 +503,26 @@ def store_token(username: str, refresh_token: str, access_token: str | None = No
 
     atomic_file_update(path, tokens, ".json.tmp")
     notify(f"💾 Stored OAuth tokens for {username}")
+
+
+def invalidate_user_token(username: str):
+    """
+    Invalidate a user's OAuth token by clearing all token data.
+    This prevents repeated refresh attempts until the user re-authenticates.
+
+    Args:
+        username: The username whose token should be invalidated
+    """
+    tokens = read_tokens()
+    if username in tokens:
+        # Clear everything so read_user_token returns None and ensure_access_token exits early
+        tokens[username] = {
+            "refresh_token": None,
+            "access_token": None,
+            "expires_at": 0
+        }
+        atomic_file_update(TOKEN_FILE, tokens, ".json.tmp")
+        notify(f"🔒 Invalidated OAuth token for {username} - re-authentication required")
 
 
 def _cache_key(username: str | None) -> str:

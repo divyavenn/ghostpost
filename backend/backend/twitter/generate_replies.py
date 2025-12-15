@@ -76,98 +76,43 @@ def build_reply_examples_context(username: str, target_account: str | None = Non
     if not same_account_examples and not other_examples:
         return ""
 
-    context = ""
+    # Use clear boundaries so the model doesn't confuse examples with the actual tweet
+    context = "\n\n========== EXAMPLES OF YOUR PAST REPLIES (for reference only) ==========\n"
 
     # Section 1: Replies to this specific user
     if same_account_examples:
-        context += f"\n\n[HOW YOU RESPOND TO @{target_account}]\n"
+        context += f"\nPast replies to @{target_account}:\n"
         for i, example in enumerate(same_account_examples, 1):
-            context += f"\n--- Example {i} ---\n{example}\n"
+            context += f"\nExample {i}:\n{example}\n"
 
     # Section 2: Top-performing replies to other people
     if other_examples:
-        context += "\n\n[TOP-PERFORMING REPLIES TO OTHER PEOPLE]\n"
+        context += "\nTop-performing replies to other people:\n"
         for i, example in enumerate(other_examples, 1):
-            context += f"\n--- Example {i} ---\n{example}\n"
+            context += f"\nExample {i}:\n{example}\n"
 
-    context += "\n[END EXAMPLES]\n"
+    context += "\n========== END EXAMPLES ==========\n"
+    context += "\n========== NOW WRITE A REPLY TO THIS TWEET ==========\n"
 
     return context
 
 
-def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count: int = 0, prompt_type: str = "REPLY"):
-    """Print the full prompt to console for debugging (only if DEBUG_LOGS is enabled)."""
-    from backend.utlils.utils import DEBUG_LOGS
-    if not DEBUG_LOGS:
-        return
-
-    print(f"\n{'='*80}")
-    print(f"🤖 {prompt_type} GENERATION PROMPT | Model: {model}")
-    print(f"{'='*80}")
-    print(f"\n📋 SYSTEM PROMPT:\n{'-'*40}")
-    print(system_prompt)
-    print(f"\n📝 USER PROMPT:\n{'-'*40}")
-    print(user_prompt)
-    if image_count > 0:
-        print(f"\n🖼️  IMAGES: {image_count} attached")
-    print(f"\n{'='*80}\n")
-
-
 async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", target_handle: str | None = None, prompt_variant: str = "toned_down", username: str = "unknown") -> dict:
-    from backend.twitter.rate_limiter import LLM_OBELISK, call_api
-
-    url = "https://obelisk.dread.technology/api/chat/completions"
-
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
-
-    # Build user message content
-    if image_urls and len(image_urls) > 0:
-        # Multimodal message with images
-        user_content = [{"type": "text", "text": prompt}]
-
-        # Add each image
-        for img_url in image_urls:
-            user_content.append({"type": "image_url", "image_url": {"url": img_url}})
-    else:
-        # Text-only message
-        user_content = prompt
+    """Generate a tweet reply using the unified LLM caller."""
+    from backend.utlils.llm import ask_llm
 
     # Build system prompt personalized with target handle using specified variant
     prompt_builder = get_prompt_builder(prompt_variant)
     system_prompt = prompt_builder(target_handle)
 
-    # Print the full prompt to console
-    _print_prompt(system_prompt, prompt, model, len(image_urls) if image_urls else 0, "TWEET REPLY")
-
-    payload = {"model": model, "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_content}]}
-
-    # Use rate limiter with retry
-    response = await call_api(
-        method="POST",
-        url=url,
-        bucket=LLM_OBELISK,
-        headers=headers,
-        json_data=payload,
-        username=username
+    return await ask_llm(
+        system_prompt=system_prompt,
+        user_prompt=prompt,
+        model=model,
+        image_urls=image_urls,
+        username=username,
+        prompt_type="TWEET REPLY"
     )
-
-    if not response.success:
-        error(f"❌ Error communicating with Obelisk API: {response.error_message}", status_code=response.status_code or 500, function_name='ask_model', username=username, critical=False)
-        return {"error": response.error_message}
-
-    data = response.data
-
-    # Extract message content
-    try:
-        message = data["choices"][0]["message"]["content"]
-        if not message:
-            notify(f"⚠️ API returned empty message content. Full response: {data}")
-            return {"error": "API returned empty message content", "raw": data}
-    except (KeyError, IndexError) as e:
-        notify(f"⚠️ Unexpected API response structure: {e}. Full response: {data}")
-        return {"error": f"Unexpected API response: {e}", "raw": data}
-
-    return {"message": message}
 
 
 def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], bool, str | None] | None:
@@ -189,7 +134,9 @@ def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], 
             # Build detailed error message showing which fields are missing
             missing_fields = []
             for err in e.errors():
-                field = err.get('loc', ['unknown'])[0]
+                # Show full path for nested fields (e.g., scraped_from.type)
+                loc = err.get('loc', ['unknown'])
+                field = '.'.join(str(x) for x in loc)
                 msg = err.get('msg', 'unknown error')
                 missing_fields.append(f"{field}: {msg}")
             error_detail = "; ".join(missing_fields)

@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
-import { api, type UserSettings } from '../api/client';
+import { api, type UserSettings, type QueryItem, parseQueryItem } from '../api/client';
 import { AnimatedText } from './WordStyles';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
+import xLottie from '../assets/x.lottie';
 
 interface UserSettingsModalProps {
   isOpen: boolean;
@@ -13,41 +15,6 @@ interface UserSettingsModalProps {
   };
   onLogout: () => void;
   isFirstTimeSetup?: boolean;
-}
-
-interface EditableTextProps {
-  text: string;
-  onSave: (newText: string) => void;
-}
-
-function EditableText({ text, onSave }: EditableTextProps) {
-  const [value, setValue] = useState(text);
-
-  // Sync internal state when prop changes (e.g., when new queries are generated from intent)
-  useEffect(() => {
-    setValue(text);
-  }, [text]);
-
-  const handleSave = () => {
-    if (value.trim() && value !== text) {
-      onSave(value);
-    }
-  };
-
-  return (
-    <input
-      type="text"
-      value={value}
-      onChange={(e) => setValue(e.target.value)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') handleSave();
-        else if (e.key === 'Escape') setValue(text);
-      }}
-      onBlur={handleSave}
-      style={{ width: `${Math.max(value.length * 6.8, 60)}px` }}
-      className="bg-transparent text-white text-sm outline-none cursor-text"
-    />
-  );
 }
 
 interface BubbleProps {
@@ -67,6 +34,139 @@ function SectionTitle({text} : {text: string}) {
     <label className="block text-white font-mono text-[18px] mb-3">
       {text}
     </label>
+  );
+}
+
+interface QueryBubbleProps {
+  item: QueryItem;
+  onSave: (newQuery: string, newSummary: string) => void;
+  onRemove: () => void;
+}
+
+function QueryBubble({ item, onSave, onRemove }: QueryBubbleProps) {
+  const { query, summary } = parseQueryItem(item);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [editedQuery, setEditedQuery] = useState(query);
+  const [editedSummary, setEditedSummary] = useState(summary);
+  const [isDeleteHovered, setIsDeleteHovered] = useState(false);
+
+  // Sync state when item changes
+  useEffect(() => {
+    const parsed = parseQueryItem(item);
+    setEditedQuery(parsed.query);
+    setEditedSummary(parsed.summary);
+  }, [item]);
+
+  const handleSave = () => {
+    if (editedQuery.trim() && (editedQuery !== query || editedSummary !== summary)) {
+      onSave(editedQuery.trim(), editedSummary.trim() || summary);
+    }
+    setIsExpanded(false);
+  };
+
+  const twitterSearchUrl = `https://twitter.com/search?q=${encodeURIComponent(query)}&f=live`;
+
+  return (
+    <div className={`flex flex-col gap-2 px-3 py-2 rounded-xl transition bg-neutral-800 ${isExpanded ? 'w-full' : ''}`}>
+      {/* Collapsed view: summary + icons */}
+      <div className="flex items-center gap-2">
+        {isExpanded ? (
+          <input
+            type="text"
+            value={editedSummary}
+            onChange={(e) => setEditedSummary(e.target.value)}
+            placeholder="Summary"
+            className="bg-neutral-700 text-white text-sm px-2 py-1 rounded outline-none w-24"
+          />
+        ) : (
+          <span className="text-white text-sm">{summary}</span>
+        )}
+
+        {/* Link icon - opens Twitter search */}
+        <a
+          href={twitterSearchUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-neutral-400 hover:text-sky-400 transition"
+          title="View on Twitter"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+        </a>
+
+        {/* Toggle expand/collapse */}
+        <button
+          onClick={() => setIsExpanded(!isExpanded)}
+          className="text-neutral-400 hover:text-white transition"
+          title={isExpanded ? "Collapse" : "Edit query"}
+        >
+          {isExpanded ? (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="18 15 12 9 6 15" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+          )}
+        </button>
+
+        {/* Animated delete button */}
+        <button
+          onClick={onRemove}
+          onMouseEnter={() => setIsDeleteHovered(true)}
+          onMouseLeave={() => setIsDeleteHovered(false)}
+          className="relative flex items-center justify-center w-6 h-6 rounded-full hover:bg-neutral-700 transition"
+          title="Remove query"
+        >
+          {isDeleteHovered ? (
+            <div className="w-5 h-5 flex items-center justify-center">
+              <DotLottieReact
+                src={xLottie}
+                loop
+                autoplay
+              />
+            </div>
+          ) : (
+            <span className="text-neutral-400 text-sm">x</span>
+          )}
+        </button>
+      </div>
+
+      {/* Expanded view: edit query */}
+      {isExpanded && (
+        <div className="flex flex-col gap-2">
+          <textarea
+            value={editedQuery}
+            onChange={(e) => setEditedQuery(e.target.value)}
+            className="w-full bg-neutral-700 text-white text-sm px-3 py-2 rounded outline-none resize-none min-h-[60px]"
+            placeholder="Twitter search query"
+          />
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={() => {
+                setEditedQuery(query);
+                setEditedSummary(summary);
+                setIsExpanded(false);
+              }}
+              className="text-neutral-400 hover:text-white text-xs px-2 py-1"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSave}
+              className="bg-sky-500 hover:bg-sky-600 text-white text-xs px-3 py-1 rounded"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -166,11 +266,19 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
 
   const handleAddQuery = () => {
     if (!newQuery.trim()) return;
-    if (settings.queries.includes(newQuery.trim())) {
+
+    // Check if query already exists
+    const exists = settings.queries.some(q => {
+      const queryStr = Array.isArray(q) ? q[0] : q;
+      return queryStr === newQuery.trim();
+    });
+
+    if (exists) {
       setNewQuery('');
       return;
     }
 
+    // Add as plain string (user can edit to add summary later)
     setSettings(prev => ({
       ...prev,
       queries: [...prev.queries, newQuery.trim()],
@@ -178,9 +286,10 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     setNewQuery('');
   };
 
-  const handleRemoveQuery = async (query: string) => {
+  const handleRemoveQuery = async (item: QueryItem) => {
+    const queryStr = Array.isArray(item) ? item[0] : item;
     try {
-      const result = await api.removeQuery(username, query);
+      const result = await api.removeQuery(username, queryStr);
       setSettings(result.settings);
     } catch (error) {
       console.error('Failed to remove query:', error);
@@ -188,15 +297,23 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     }
   };
 
-  const handleEditQuery = async (oldQuery: string, newQuery: string) => {
-    if (!newQuery.trim() || newQuery === oldQuery) {
+  const handleEditQuery = async (oldItem: QueryItem, newQuery: string, newSummary: string) => {
+    const oldQueryStr = Array.isArray(oldItem) ? oldItem[0] : oldItem;
+
+    if (!newQuery.trim()) {
       return;
     }
 
     try {
-      // Remove old query and add new one
-      await api.removeQuery(username, oldQuery);
-      const newQueries = [...settings.queries.filter(q => q !== oldQuery), newQuery.trim()];
+      // Remove old query and add new one as [query, summary] tuple
+      await api.removeQuery(username, oldQueryStr);
+      const newQueries: QueryItem[] = [
+        ...settings.queries.filter(q => {
+          const qStr = Array.isArray(q) ? q[0] : q;
+          return qStr !== oldQueryStr;
+        }),
+        [newQuery.trim(), newSummary.trim()] as [string, string]
+      ];
       const result = await api.updateUserSettings(username, { queries: newQueries });
       setSettings(result.settings);
     } catch (error) {
@@ -413,29 +530,23 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
 
             {/* Topics */}
             <div>
-              <SectionTitle text="Topics & Keywords" />
+              <SectionTitle text="Search Queries" />
               <input
                 type="text"
                 value={newQuery}
                 onChange={(e) => setNewQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddQuery()}
-                placeholder="Add topics or keywords to engage with"
+                placeholder="Add a search query"
                 className="w-full bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition mb-4"
               />
               <div className="flex flex-wrap gap-2">
-                {settings.queries.map((query, index) => (
-                  <Bubble key={index}>
-                    <EditableText
-                      text={query}
-                      onSave={(newText) => handleEditQuery(query, newText)}
-                    />
-                    <button
-                      onClick={() => handleRemoveQuery(query)}
-                      className="text-neutral-400 hover:text-white transition"
-                    >
-                      ×
-                    </button>
-                  </Bubble>
+                {settings.queries.map((item, index) => (
+                  <QueryBubble
+                    key={index}
+                    item={item}
+                    onSave={(newQuery, newSummary) => handleEditQuery(item, newQuery, newSummary)}
+                    onRemove={() => handleRemoveQuery(item)}
+                  />
                 ))}
               </div>
             </div>

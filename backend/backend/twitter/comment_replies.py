@@ -210,76 +210,21 @@ def build_comment_prompt(comment: dict, thread_context: list[dict]) -> tuple[str
     return text_prompt, image_urls
 
 
-def _print_prompt(system_prompt: str, user_prompt: str, model: str, image_count: int = 0, prompt_type: str = "REPLY"):
-    """Print the full prompt to console for debugging (only if DEBUG_LOGS is enabled)."""
-    from backend.utlils.utils import DEBUG_LOGS
-    if not DEBUG_LOGS:
-        return
-
-    print(f"\n{'='*80}")
-    print(f"🤖 {prompt_type} GENERATION PROMPT | Model: {model}")
-    print(f"{'='*80}")
-    print(f"\n📋 SYSTEM PROMPT:\n{'-'*40}")
-    print(system_prompt)
-    print(f"\n📝 USER PROMPT:\n{'-'*40}")
-    print(user_prompt)
-    if image_count > 0:
-        print(f"\n🖼️  IMAGES: {image_count} attached")
-    print(f"\n{'='*80}\n")
-
-
 async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", commenter_handle: str | None = None, prompt_variant: str = "default", username: str = "unknown") -> dict:
-    """Call the Obelisk API to generate a comment reply."""
-    from backend.twitter.rate_limiter import LLM_OBELISK, call_api
-
-    url = "https://obelisk.dread.technology/api/chat/completions"
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
-
-    # Build user message content
-    if image_urls and len(image_urls) > 0:
-        user_content = [{"type": "text", "text": prompt}]
-        for img_url in image_urls:
-            user_content.append({"type": "image_url", "image_url": {"url": img_url}})
-    else:
-        user_content = prompt
+    """Generate a comment reply using the unified LLM caller."""
+    from backend.utlils.llm import ask_llm
 
     # Build system prompt personalized with commenter handle
-    # TODO: Add variant selection when more variants are available
     system_prompt = build_comment_reply_system_prompt(commenter_handle)
 
-    # Print the full prompt to console
-    _print_prompt(system_prompt, prompt, model, len(image_urls) if image_urls else 0, "COMMENT REPLY")
-
-    payload = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_content}
-        ]
-    }
-
-    # Use rate limiter with retry
-    response = await call_api(
-        method="POST",
-        url=url,
-        bucket=LLM_OBELISK,
-        headers=headers,
-        json_data=payload,
-        username=username
+    return await ask_llm(
+        system_prompt=system_prompt,
+        user_prompt=prompt,
+        model=model,
+        image_urls=image_urls,
+        username=username,
+        prompt_type="COMMENT REPLY"
     )
-
-    if not response.success:
-        error(f"Error communicating with Obelisk API: {response.error_message}", status_code=response.status_code or 500, function_name='ask_model_for_comment', username=username, critical=False)
-        return {"error": response.error_message}
-
-    data = response.data
-
-    try:
-        message = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError):
-        return {"error": "Unexpected API response", "raw": data}
-
-    return {"message": message}
 
 
 async def generate_replies_for_comment(

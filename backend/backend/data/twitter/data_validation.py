@@ -59,7 +59,7 @@ class User(BaseModel):
 
 
 class Source(BaseModel):
-    type: Literal["account", "query"]
+    type: Literal["account", "query", "home_timeline"]
     value: str
     summary: str | None = None  # Short 1-2 word summary for queries
 
@@ -259,7 +259,8 @@ class RelevantAccountModel(BaseModel):
 
 
 class UpdateSettingsRequest(BaseModel):
-    queries: list[str] | None = None
+    # Queries can be plain strings or [query, summary] tuples
+    queries: list[str | list[str]] | None = None
     relevant_accounts: dict[str, bool] | None = None
     max_tweets_retrieve: int | None = None
     number_of_generations: int | None = None

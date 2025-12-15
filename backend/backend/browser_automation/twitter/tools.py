@@ -171,6 +171,7 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
     tweets = {}
     page = await ctx.new_page()
     min_likes = 5
+    min_impressions_for_discovery = 2000  # Only applied to FYP/query scrapes, not user timelines
     pending = set()
     max_scrolls = 5
 
@@ -650,6 +651,13 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                     # optional: re-enable filters once debugged
                     if (not is_original_post(legacy)) or (int(legacy.get("favorite_count", 0)) < min_likes):
                         continue
+
+                    # For FYP/query scrapes (not user timelines), require minimum impressions
+                    if not handle:
+                        views_data = node.get("views") or {}
+                        tweet_impressions = int(views_data.get("count", 0))
+                        if tweet_impressions < min_impressions_for_discovery:
+                            continue
 
                     # Filter tweets with videos, GIFs, URLs, or quoted tweets containing them
                     # (Photos are OK - VLM can process them)

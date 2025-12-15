@@ -147,45 +147,30 @@ async def fetch_search(ctx, query: str, username=None, write_callback=None, **kw
 
 
 # -------- Orchestration --------
-async def gather_trending(usernames, queries, username=None, write_callback=None, use_browserbase=False, query_summary_map=None):
+async def gather_trending(usernames, queries, username=None, query_summary_map=None):
     """
     Gather trending tweets using Twitter API v2, including full thread content.
 
     Args:
         usernames: List of Twitter handles to scrape
         queries: List of search queries
-        username: Username for cache writes and API authentication
-        write_callback: Async function to call for incremental writes
-        use_browserbase: Ignored - kept for backwards compatibility
+        username: Username for API authentication
         query_summary_map: Map of query -> summary for display
 
     Returns:
         dict: Scraped tweets with thread content
     """
-    from backend.browser_automation.twitter.api import collect_from_page as api_collect_from_page
-
-    # Helper to set scraped_from on tweets before writing
-    async def _set_source_and_write(batch, user, source, original_callback):
-        for tweet in batch:
-            tweet["scraped_from"] = source
-        await original_callback(batch, user)
+    from backend.browser_automation.twitter.api import fetch_search
 
     notify(f"🚀 [gather_trending] Starting API scraping for {username}: {len(usernames)} accounts, {len(queries)} queries")
     results = {}
 
-    # Scrape user timelines via API (collect_from_page includes thread fetching)
+    # Scrape user timelines via API using from:handle query
     for u in usernames:
         try:
             notify(f"📍 Scraping from @{u} via API")
-
-            url = f"https://x.com/{u}"
             account_source = {"type": "account", "value": u}
-            # Create wrapper callback that sets scraped_from before writing
-            wrapped_callback = (
-                (lambda batch, user, src=account_source: _set_source_and_write(batch, user, src, write_callback))
-                if write_callback else None
-            )
-            tweets = await api_collect_from_page(None, url, handle=u, username=username, write_callback=wrapped_callback)
+            tweets = await fetch_search(f"from:{u}", username=username)
             for tweet_data in tweets.values():
                 tweet_data["scraped_from"] = account_source
             results.update(tweets)
@@ -193,21 +178,13 @@ async def gather_trending(usernames, queries, username=None, write_callback=None
         except Exception as e:
             notify(f"❌ [API] Error fetching @{u}: {e}")
 
-    # Scrape queries via API (collect_from_page includes thread fetching)
+    # Scrape queries via API
     for q in queries:
         try:
             summary = query_summary_map.get(q, q) if query_summary_map else q
             notify(f"📍 Scraping query [{q}] via API")
-
-            from urllib.parse import quote_plus
-            url = f"https://x.com/search?q={quote_plus(q)}"
             query_source = {"type": "query", "value": q, "summary": summary}
-            # Create wrapper callback that sets scraped_from before writing
-            wrapped_callback = (
-                (lambda batch, user, src=query_source: _set_source_and_write(batch, user, src, write_callback))
-                if write_callback else None
-            )
-            tweets = await api_collect_from_page(None, url, handle=None, username=username, write_callback=wrapped_callback)
+            tweets = await fetch_search(q, username=username)
             for tweet_data in tweets.values():
                 tweet_data["scraped_from"] = query_source
             results.update(tweets)
@@ -271,37 +248,13 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     await cleanup_old_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
     # Clean up old seen_tweets entries
-    from backend.utlils.utils import cleanup_seen_tweets
+    from backend.utlils.utils import cleanup_seen_tweets, is_tweet_seen
     cleanup_seen_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
-    # Define progressive write callback for incremental updates
-    async def progressive_write(tweets_batch, target_username):
-        """Write tweets incrementally as they're discovered, filtering out already-seen tweets"""
-        from backend.utlils.utils import is_tweet_seen
-
-        # Filter out tweets that were already seen
-        filtered_batch = []
-        for tweet in tweets_batch:
-            tweet_id = tweet.get("id") or tweet.get("tweet_id")
-            if tweet_id and not is_tweet_seen(target_username, str(tweet_id)):
-                filtered_batch.append(tweet)
-
-        if filtered_batch:
-            await write_to_cache(filtered_batch, "Progressive tweet scraping", username=target_username)
-
-    sorted_items = []
-    # Check if we should use Browserbase for all scraping
-    use_browserbase = should_use_browserbase_for_scraping()
-    if use_browserbase:
-        notify("🌐 Environment configured to use Browserbase for all scraping")
-    else:
-        notify("💻 Using local scraping with Browserbase fallback on bot detection")
-
-    # Gather tweets with progressive writing enabled
-    trending = await gather_trending(relevant_accounts, queries, username=username, write_callback=progressive_write, use_browserbase=use_browserbase, query_summary_map=query_summary_map)
+    # Gather tweets (includes thread data)
+    trending = await gather_trending(relevant_accounts, queries, username=username, query_summary_map=query_summary_map)
 
     # Filter out tweets that were already seen
-    from backend.utlils.utils import is_tweet_seen
     original_count = len(trending)
     filtered_trending = {}
     filtered_out_count = 0
@@ -320,8 +273,8 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     if max_tweets:
         sorted_items = sorted_items[:max_tweets]
 
-    # Final write with sorting/filtering applied
-    await write_to_cache(sorted_items, "Final sorted tweets", username=username)
+    # Write to cache
+    await write_to_cache(sorted_items, "Scraped tweets", username=username)
     return sorted_items
 
 

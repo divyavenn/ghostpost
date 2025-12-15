@@ -8,7 +8,8 @@ from backend.billing.stripe_service import (
     get_subscription_status,
     handle_webhook,
 )
-from backend.utlils.utils import message_devs, notify
+from backend.utlils.email import message_devs
+from backend.utlils.utils import notify
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 

@@ -327,13 +327,13 @@ async def twitter_callback(
     notify(f"✅ OAuth tokens obtained for @{twitter_handle}")
     store_token(twitter_handle, refresh_token, access_token, expires_in)
 
-    # Update session for cookie extension
+    # Mark login as complete - OAuth is sufficient, browser cookies are optional
     if session_id and session_id in _cookie_sessions:
         _cookie_sessions[session_id]["oauth_complete"] = True
         _cookie_sessions[session_id]["username"] = twitter_handle
-        _cookie_sessions[session_id]["status"] = "awaiting_cookies"
+        _cookie_sessions[session_id]["status"] = "complete"  # Login complete with OAuth
         _cookie_sessions[session_id]["oauth_complete_time"] = datetime.datetime.now(datetime.UTC).isoformat()
-        notify(f"⏳ Session {session_id} awaiting browser cookies for @{twitter_handle}")
+        notify(f"✅ Login complete for @{twitter_handle} (browser cookies optional)")
 
     notify(f"🔗 Redirecting to: {frontend_url}/login-success?username={twitter_handle}")
     return redirect_success(twitter_handle)
@@ -399,41 +399,25 @@ async def get_login_url(payload: LoginUrlRequest | None = None) -> dict:
 @router.get("/twitter/cookie-status/{session_id}")
 async def check_cookie_status(session_id: str) -> dict:
     """
-    Check if cookies have been imported for this session.
+    Check login status for this session.
     Frontend polls this endpoint after opening login tab.
 
-    If session is in "awaiting_cookies" state for more than 60 seconds,
-    returns "extension_required" status to prompt user to install extension.
+    Login is complete after OAuth - browser cookies are optional.
     """
-    import datetime
-
     session = _cookie_sessions.get(session_id)
 
     if not session:
         return {"status": "not_found"}
 
-    # Check if session is waiting too long for cookies (extension not installed)
     status = session.get("status", "pending")
-    if status == "awaiting_cookies":
-        # Session has completed OAuth and is waiting for extension
-        oauth_complete_time = session.get("oauth_complete_time")
-        if oauth_complete_time:
-            # Parse ISO format timestamp
-            completed_at = datetime.datetime.fromisoformat(oauth_complete_time)
-            now = datetime.datetime.now(datetime.UTC)
-            elapsed_seconds = (now - completed_at).total_seconds()
+    has_browser_session = session.get("browser_cookies_imported", False)
 
-            # If waiting more than 60 seconds, likely extension is not installed
-            if elapsed_seconds > 60:
-                return {
-                    "status": "extension_required",
-                    "username": session.get("username"),
-                    "verified": False,
-                    "elapsed_seconds": int(elapsed_seconds),
-                    "message": "Browser extension not detected. Please install the GhostPoster extension to continue."
-                }
-
-    return {"status": status, "username": session.get("username"), "verified": session.get("verified", False)}
+    return {
+        "status": status,
+        "username": session.get("username"),
+        "verified": session.get("verified", False),
+        "has_browser_session": has_browser_session  # Optional - for scraping features
+    }
 
 
 class CookieData(BaseModel):
@@ -614,22 +598,21 @@ async def import_cookies(payload: CookieImport) -> dict:
             notify("🔍 No active sessions in memory")
 
         for session_id, session_data in _cookie_sessions.items():
-            is_waiting = session_data.get("status") in ["pending", "awaiting_cookies"]
+            # Match sessions that are pending, complete (OAuth done), or awaiting cookies
+            can_add_cookies = session_data.get("status") in ["pending", "awaiting_cookies", "complete"]
             expected_user = session_data.get("username")  # Set during OAuth callback
             is_correct_user = expected_user == username
 
-            notify(f"   Session {session_id[:8]}...: waiting={is_waiting}, expected_user={expected_user}, match={is_correct_user}")
+            notify(f"   Session {session_id[:8]}...: can_add={can_add_cookies}, expected_user={expected_user}, match={is_correct_user}")
 
-            if is_waiting and is_correct_user:
-                _cookie_sessions[session_id] = {
-                    "status": "success" if verified else "error",
-                    "username": username,
-                    "verified": verified,
-                    "imported_at": __import__('datetime').datetime.now().isoformat(),
-                    "error": verification_error if not verified else None
-                }
+            if can_add_cookies and is_correct_user:
+                _cookie_sessions[session_id]["browser_cookies_imported"] = True
+                _cookie_sessions[session_id]["verified"] = verified
+                _cookie_sessions[session_id]["cookies_imported_at"] = __import__('datetime').datetime.now().isoformat()
+                if not verified:
+                    _cookie_sessions[session_id]["cookie_verification_error"] = verification_error
                 sessions_updated += 1
-                notify(f"📢 ✅ Updated session {session_id[:8]}... → success for @{username}")
+                notify(f"📢 ✅ Added browser cookies to session {session_id[:8]}... for @{username}")
 
         if sessions_updated > 0:
             notify(f"✅ Updated {sessions_updated} session(s) for @{username}")
@@ -646,18 +629,15 @@ async def import_cookies(payload: CookieImport) -> dict:
         # Still update sessions even if verification failed
         # But ONLY for the correct username (security)
         for session_id, session_data in _cookie_sessions.items():
-            is_waiting = session_data.get("status") in ["pending", "awaiting_cookies"]
+            can_add_cookies = session_data.get("status") in ["pending", "awaiting_cookies", "complete"]
             expected_user = session_data.get("username")
             is_correct_user = expected_user == username
 
-            if is_waiting and is_correct_user:
-                _cookie_sessions[session_id] = {
-                    "status": "error",
-                    "username": username,
-                    "verified": False,
-                    "imported_at": __import__('datetime').datetime.now().isoformat(),
-                    "error": verification_error
-                }
+            if can_add_cookies and is_correct_user:
+                _cookie_sessions[session_id]["browser_cookies_imported"] = False
+                _cookie_sessions[session_id]["verified"] = False
+                _cookie_sessions[session_id]["cookies_imported_at"] = __import__('datetime').datetime.now().isoformat()
+                _cookie_sessions[session_id]["cookie_verification_error"] = verification_error
 
     return {
         "success": True,

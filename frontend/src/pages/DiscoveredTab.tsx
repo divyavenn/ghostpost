@@ -15,6 +15,7 @@ interface DiscoveredTabProps {
   onEditReply: (tweetId: string, newReply: string, replyIndex: number) => void;
   onRegenerate: (tweetId: string) => void;
   onTweetsSeen?: (tweetIds: string[]) => void;
+  resetSeenKey?: number;  // Increment to clear seen tracking (after purge)
 }
 
 // Get stable column assignment based on tweet ID (not array index)
@@ -40,6 +41,7 @@ export function DiscoveredTab({
   onEditReply,
   onRegenerate,
   onTweetsSeen,
+  resetSeenKey,
 }: DiscoveredTabProps) {
   // Track which tweets have been seen in this session (debounce)
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -47,10 +49,20 @@ export function DiscoveredTab({
   const pendingSeenIdsRef = useRef<Set<string>>(new Set());
   const flushTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Clear seen tracking when resetSeenKey changes (after purge)
+  useEffect(() => {
+    if (resetSeenKey !== undefined && resetSeenKey > 0) {
+      seenIdsRef.current.clear();
+      pendingSeenIdsRef.current.clear();
+      console.log('Cleared seen tracking refs after purge');
+    }
+  }, [resetSeenKey]);
+
   // Flush pending seen tweets to parent
   const flushSeenTweets = useCallback(() => {
     if (pendingSeenIdsRef.current.size > 0 && onTweetsSeen) {
       const ids = Array.from(pendingSeenIdsRef.current);
+      console.log(`[DiscoveredTab] Flushing ${ids.length} seen tweets to parent:`, ids);
       pendingSeenIdsRef.current.clear();
       onTweetsSeen(ids);
     }
@@ -58,7 +70,11 @@ export function DiscoveredTab({
 
   // Add tweet to pending seen list with debounce
   const markAsSeen = useCallback((tweetId: string) => {
-    if (seenIdsRef.current.has(tweetId)) return;
+    if (seenIdsRef.current.has(tweetId)) {
+      console.log(`[DiscoveredTab] Tweet ${tweetId} already in seenIdsRef, skipping`);
+      return;
+    }
+    console.log(`[DiscoveredTab] Marking tweet ${tweetId} as seen`);
     seenIdsRef.current.add(tweetId);
     pendingSeenIdsRef.current.add(tweetId);
 
@@ -76,8 +92,9 @@ export function DiscoveredTab({
     const observer = new IntersectionObserver(
       (entries) => {
         entries.forEach((entry) => {
+          const tweetId = entry.target.getAttribute('data-tweet-id');
+          console.log(`[IntersectionObserver] Tweet ${tweetId}: isIntersecting=${entry.isIntersecting}, ratio=${entry.intersectionRatio.toFixed(2)}`);
           if (entry.isIntersecting) {
-            const tweetId = entry.target.getAttribute('data-tweet-id');
             if (tweetId) {
               markAsSeen(tweetId);
             }
@@ -87,15 +104,20 @@ export function DiscoveredTab({
       {
         root: null,
         rootMargin: '0px',
-        threshold: 0.5, // Tweet is "seen" when 50% visible
+        threshold: 0.1, // Tweet is "seen" when 10% visible (lowered for reliability)
       }
     );
 
-    // Observe all tweet elements
-    const tweetElements = document.querySelectorAll('[data-tweet-id]');
-    tweetElements.forEach((el) => observer.observe(el));
+    // Defer DOM query until after React has painted using requestAnimationFrame
+    // This ensures all tweet elements are in the DOM before we try to observe them
+    const rafId = requestAnimationFrame(() => {
+      const tweetElements = document.querySelectorAll('[data-tweet-id]');
+      console.log(`[DiscoveredTab] Observing ${tweetElements.length} tweet elements`);
+      tweetElements.forEach((el) => observer.observe(el));
+    });
 
     return () => {
+      cancelAnimationFrame(rafId);
       observer.disconnect();
       // Flush any remaining seen tweets on unmount
       if (flushTimeoutRef.current) {

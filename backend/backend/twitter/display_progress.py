@@ -22,6 +22,7 @@ JOB_DISPLAY_NAMES = {
     "find_and_reply_to_new_posts": "Finding new posts",
     "find_user_activity": "Finding user activity",
     "find_and_reply_to_engagement": "Monitoring engagement",
+    "analyze": "Analyzing activity, making models smarter",
 }
 
 

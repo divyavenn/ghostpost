@@ -5,7 +5,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from backend.config import OBELISK_KEY
-from backend.twitter.filtering import ask_llm
+from backend.utlils.llm import ask_llm
 from backend.utlils.utils import error, notify, read_user_info, write_user_info
 
 
@@ -77,7 +77,19 @@ async def generate_queries_from_intent(intent: str, username: str) -> list[tuple
     try:
         notify(f"🤖 [Intent→Queries] Generating queries for {username}...")
 
-        message = ask_llm(system_prompt, prompt).strip()
+        result = await ask_llm(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model="chatgpt-4o",
+            username=username,
+            prompt_type="INTENT→QUERIES"
+        )
+
+        if "error" in result:
+            error(f"LLM call failed: {result['error']}", status_code=500, function_name="generate_queries_from_intent", username=username, critical=False)
+            return []
+
+        message = result.get("message", "").strip()
         print(message)
 
         # Try to extract JSON array from response

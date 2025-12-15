@@ -10,17 +10,16 @@ import pytest
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_fetch_user_tweets_returns_tweets(browser_context, test_user):
+async def test_fetch_search_from_user_returns_tweets(browser_context, test_user):
     """
-    Test that fetch_user_tweets returns tweets from a user's timeline.
+    Test that fetch_search with from:handle returns tweets from a user's timeline.
 
     Tests fetching tweets from divya_venn account.
     """
-    from backend.browser_automation.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_user_tweets(
-        browser_context,
-        handle="divya_venn",
+    result = await fetch_search(
+        query="from:divya_venn",
         username=test_user
     )
 
@@ -43,15 +42,14 @@ async def test_fetch_user_tweets_returns_tweets(browser_context, test_user):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_fetch_user_tweets_structure(browser_context, test_user):
+async def test_fetch_search_structure(browser_context, test_user):
     """
-    Test that fetch_user_tweets returns tweets with complete structure.
+    Test that fetch_search returns tweets with complete structure.
     """
-    from backend.browser_automation.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_user_tweets(
-        browser_context,
-        handle="elikitten1",  # Use a different account that may have more activity
+    result = await fetch_search(
+        query="from:elikitten1",  # Use a different account that may have more activity
         username=test_user
     )
 
@@ -76,7 +74,7 @@ async def test_fetch_user_tweets_structure(browser_context, test_user):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_fetch_search_returns_tweets(browser_context, test_user):
+async def test_fetch_search_query_returns_tweets(browser_context, test_user):
     """
     Test that fetch_search returns tweets matching a query.
     """
@@ -84,7 +82,6 @@ async def test_fetch_search_returns_tweets(browser_context, test_user):
 
     # Search for tweets about AI/ML (common topic with many results)
     result = await fetch_search(
-        browser_context,
         query="artificial intelligence",
         username=test_user
     )
@@ -184,16 +181,14 @@ async def test_scrape_user_recent_tweets_returns_list(browser_context):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_collect_from_page_user_timeline(browser_context, test_user):
+async def test_fetch_search_from_user_with_thread(browser_context, test_user):
     """
-    Test that collect_from_page works for user timeline URLs.
+    Test that fetch_search with from:handle returns tweets with thread data.
     """
-    from backend.browser_automation.twitter.api import collect_from_page
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await collect_from_page(
-        browser_context,
-        url="https://x.com/divya_venn",
-        handle="divya_venn",
+    result = await fetch_search(
+        query="from:divya_venn",
         username=test_user
     )
 
@@ -207,16 +202,14 @@ async def test_collect_from_page_user_timeline(browser_context, test_user):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_collect_from_page_search(browser_context, test_user):
+async def test_fetch_search_with_thread(browser_context, test_user):
     """
-    Test that collect_from_page works for search URLs.
+    Test that fetch_search returns tweets with thread data.
     """
-    from backend.browser_automation.twitter.api import collect_from_page
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await collect_from_page(
-        browser_context,
-        url="https://x.com/search?q=python",
-        handle=None,
+    result = await fetch_search(
+        query="python",
         username=test_user
     )
 
@@ -231,11 +224,10 @@ async def test_engagement_score_calculation(browser_context, test_user):
 
     Score formula: likes + 2*retweets + 3*quotes + replies
     """
-    from backend.browser_automation.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_user_tweets(
-        browser_context,
-        handle="divya_venn",
+    result = await fetch_search(
+        query="from:divya_venn",
         username=test_user
     )
 
@@ -255,13 +247,12 @@ async def test_engagement_score_calculation(browser_context, test_user):
 @pytest.mark.slow
 async def test_api_returns_empty_on_invalid_handle(browser_context, test_user):
     """
-    Test that fetch_user_tweets returns empty dict for invalid handle.
+    Test that fetch_search returns empty dict for invalid handle.
     """
-    from backend.browser_automation.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_user_tweets(
-        browser_context,
-        handle="this_handle_definitely_does_not_exist_12345678",
+    result = await fetch_search(
+        query="from:this_handle_definitely_does_not_exist_12345678",
         username=test_user
     )
 
@@ -272,15 +263,14 @@ async def test_api_returns_empty_on_invalid_handle(browser_context, test_user):
 
 @pytest.mark.asyncio
 @pytest.mark.slow
-async def test_media_extraction_in_user_tweets(browser_context, test_user):
+async def test_media_extraction_in_tweets(browser_context, test_user):
     """
-    Test that media (images) are correctly extracted from user tweets.
+    Test that media (images) are correctly extracted from tweets.
     """
-    from backend.browser_automation.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_user_tweets(
-        browser_context,
-        handle="divya_venn",
+    result = await fetch_search(
+        query="from:divya_venn",
         username=test_user
     )
 
@@ -300,11 +290,10 @@ async def test_tweet_url_format(browser_context, test_user):
     """
     Test that tweet URLs are correctly formatted.
     """
-    from backend.browser_automation.twitter.api import fetch_user_tweets
+    from backend.browser_automation.twitter.api import fetch_search
 
-    result = await fetch_user_tweets(
-        browser_context,
-        handle="divya_venn",
+    result = await fetch_search(
+        query="from:divya_venn",
         username=test_user
     )
 

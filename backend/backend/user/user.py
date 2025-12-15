@@ -107,23 +107,15 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     if not user_info:
         return None
 
-    # Handle queries - can be list of strings (legacy) or list of [query, summary] pairs (new format)
-    stored_queries = user_info.get("queries", [])
-    queries_for_display = []
-
-    for q in stored_queries:
-        if isinstance(q, list) and len(q) == 2:
-            # New format: [query, summary] - return full query for settings modal
-            queries_for_display.append(q[0])  # Full query
-        elif isinstance(q, str):
-            # Legacy format: just the query string
-            queries_for_display.append(q)
+    # Return queries as-is - can be list of strings (legacy) or list of [query, summary] pairs (new format)
+    # Frontend handles both formats
+    queries = user_info.get("queries", [])
 
     # relevant_accounts is a dict: {handle: validated}
     relevant_accounts = user_info.get("relevant_accounts", {})
 
     return {
-        "queries": queries_for_display,  # Return full queries for settings modal
+        "queries": queries,  # Return queries with summaries intact
         "relevant_accounts": relevant_accounts,
         "max_tweets_retrieve": user_info.get("max_tweets_retrieve", 30),
         "number_of_generations": user_info.get("number_of_generations", 1),
@@ -133,7 +125,7 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
 
 
 def write_user_settings(handle: str,
-                        queries: list[str] | None = None,
+                        queries: list | None = None,  # Can be list of strings or [query, summary] pairs
                         relevant_accounts: dict[str, bool] | None = None,
                         max_tweets_retrieve: int | None = None,
                         number_of_generations: int | None = None,
@@ -148,30 +140,11 @@ def write_user_settings(handle: str,
 
     # Update only the provided settings
     if queries is not None:
-        # Preserve existing [query, summary] tuple format if it exists
-        # The frontend sends back only the query strings (from read_user_settings)
-        # We need to match them with existing stored queries to preserve summaries
-        existing_queries = user_info.get("queries", [])
-
-        # Build a map: full_query -> summary (if stored as tuples)
-        query_summary_map = {}
-        for stored_q in existing_queries:
-            if isinstance(stored_q, list) and len(stored_q) == 2:
-                query_summary_map[stored_q[0]] = stored_q[1]
-
-        # Process incoming queries
-        updated_queries = []
-        for q in queries:
-            # Check if this query already has a summary in storage
-            if q in query_summary_map:
-                # Preserve the tuple format with summary
-                updated_queries.append([q, query_summary_map[q]])
-            else:
-                # New query without summary - store as plain string for now
-                # (Will get summary when regenerated via intent system)
-                updated_queries.append(q)
-
-        user_info["queries"] = updated_queries
+        # Frontend sends queries as either:
+        # - Plain strings (manually added)
+        # - [query, summary] arrays (edited or generated from intent)
+        # Store as-is to preserve format
+        user_info["queries"] = queries
     if relevant_accounts is not None:
         # Store as dict {handle: validated}
         user_info["relevant_accounts"] = relevant_accounts
@@ -440,7 +413,7 @@ async def remove_account_endpoint(handle: str, account: str) -> dict:
 
 @router.delete("/{handle}/settings/query")
 async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dict:
-    """Remove a specific query from queries (accepts topic, converts to query internally)."""
+    """Remove a specific query from queries. Handles both plain strings and [query, summary] format."""
     from backend.utlils.utils import error, read_user_info, write_user_info
 
     try:
@@ -449,13 +422,23 @@ async def remove_query_endpoint(handle: str, payload: RemoveQueryRequest) -> dic
             error(f"User {handle} not found", status_code=404, function_name="remove_query_endpoint", username=handle)
             raise HTTPException(status_code=404, detail=f"User {handle} not found")
 
-        # Convert the topic to full query for matching
-        full_query = topic_to_query(payload.query)
+        # The query to remove (the full query string)
+        query_to_remove = payload.query
 
         queries = user_info.get("queries", [])
-        if full_query in queries:
-            queries.remove(full_query)
-            user_info["queries"] = queries
+        updated_queries = []
+        removed = False
+
+        for q in queries:
+            # Check if this is the query to remove
+            query_str = q[0] if isinstance(q, list) and len(q) == 2 else q
+            if query_str == query_to_remove:
+                removed = True
+                continue  # Skip this query (removes it)
+            updated_queries.append(q)
+
+        if removed:
+            user_info["queries"] = updated_queries
             write_user_info(user_info)
 
         return {"message": "Query removed successfully", "settings": read_user_settings(handle)}

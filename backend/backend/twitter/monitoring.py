@@ -234,6 +234,28 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                     except Exception as e:
                         notify(f"⚠️ Could not backfill context for {tweet_id}: {e}")
 
+                # Backfill/correct post_type if missing or incorrect
+                # Check if post_type needs to be set or corrected
+                current_post_type = existing_tweet.get("post_type")
+                response_to_thread = existing_tweet.get("response_to_thread", [])
+                responding_to = existing_tweet.get("responding_to", "")
+                parent_chain = existing_tweet.get("parent_chain", [])
+
+                # Determine correct post_type based on existing data
+                correct_post_type = "reply"  # default
+                if not parent_chain:
+                    correct_post_type = "original"
+                elif responding_to and responding_to.lower() == user_handle.lower():
+                    correct_post_type = "original"  # Thread continuation
+                elif response_to_thread and response_to_thread[0].strip().lower().startswith(f"@{user_handle.lower()}"):
+                    correct_post_type = "comment_reply"
+
+                # Update if missing or incorrect (specifically fix "reply" -> "comment_reply" misclassifications)
+                if current_post_type != correct_post_type:
+                    existing_tweet["post_type"] = correct_post_type
+                    updated = True
+                    notify(f"📝 Corrected post_type={correct_post_type} (was {current_post_type}) for tweet {tweet_id}")
+
                 if updated:
                     tweets_map[tweet_id] = existing_tweet
                     write_posted_tweets_cache(username, tweets_map)
@@ -288,6 +310,20 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                     except Exception as e:
                         notify(f"⚠️ Could not fetch original tweet {in_reply_to}: {e}")
 
+                # Determine post_type based on reply context
+                # - "original": standalone post or thread continuation (replying to self)
+                # - "reply": replying to someone else's original post
+                # - "comment_reply": replying to a comment on user's own post
+                post_type = "reply"  # default
+                if not in_reply_to:
+                    post_type = "original"
+                elif responding_to and responding_to.lower() == user_handle.lower():
+                    post_type = "original"  # Thread continuation
+                elif response_to_thread and response_to_thread[0].strip().lower().startswith(f"@{user_handle.lower()}"):
+                    # The tweet being replied to starts with @user_handle, meaning it was a reply to user
+                    post_type = "comment_reply"
+                # else: remains "reply" - replying to someone else's post
+
                 tweet_data = {
                     "id": tweet_id,
                     "text": tweet.get("text", ""),
@@ -316,7 +352,9 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                     "last_quote_count": tweet.get("quotes", 0),
                     "last_retweet_count": tweet.get("retweets", 0),
                     "resurrected_via": "none",
-                    "last_scraped_reply_ids": []
+                    "last_scraped_reply_ids": [],
+                    "post_type": post_type,
+                    "score": 0  # Will be updated when metrics are fetched
                 }
 
                 tweets_map[tweet_id] = tweet_data

@@ -8,7 +8,6 @@ This module provides a two-stage filtering system:
 
 from dotenv import load_dotenv
 
-from backend.config import OBELISK_KEY
 from backend.twitter.logging import TweetAction, read_user_log
 from backend.utlils.utils import error, notify, read_user_info
 
@@ -91,55 +90,19 @@ def build_examples_context(replied_to: list[dict], skipped: list[dict]) -> str:
     return context
 
 
-def _print_prompt(system_prompt: str, user_prompt: str, model: str, tweet_id: str = "unknown"):
-    """Print the full prompt to console for debugging (only if DEBUG_LOGS is enabled)."""
-    from backend.utlils.utils import DEBUG_LOGS
-    if not DEBUG_LOGS:
-        return
+async def ask_llm_for_filter(system_prompt: str, prompt: str, tweet_id: str = "unknown", username: str = "unknown", model: str = "chatgpt-4o") -> str:
+    """Call LLM for intent filtering. Returns message string or empty string on error."""
+    from backend.utlils.llm import ask_llm
 
-    print(f"\n{'='*80}")
-    print(f"🔍 INTENT FILTER PROMPT | Model: {model} | Tweet: {tweet_id}")
-    print(f"{'='*80}")
-    print(f"\n📋 SYSTEM PROMPT:\n{'-'*40}")
-    print(system_prompt)
-    print(f"\n📝 USER PROMPT:\n{'-'*40}")
-    print(user_prompt)
-    print(f"\n{'='*80}\n")
-
-
-async def ask_llm(system_prompt, prompt, tweet_id: str = "unknown", username: str = "unknown"):
-    from backend.twitter.rate_limiter import LLM_OBELISK, call_api
-
-    url = "https://obelisk.dread.technology/api/chat/completions"
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
-
-    model = "chatgpt-4o"
-    payload = {"model": model, "messages": [{"role": "system", "content": system_prompt}, {"role": "user", "content": prompt}]}
-
-    # Print the full prompt to console
-    _print_prompt(system_prompt, prompt, model, tweet_id)
-
-    # Use rate limiter with retry
-    response = await call_api(
-        method="POST",
-        url=url,
-        bucket=LLM_OBELISK,
-        headers=headers,
-        json_data=payload,
-        username=username
+    result = await ask_llm(
+        system_prompt=system_prompt,
+        user_prompt=prompt,
+        model=model,
+        username=username,
+        prompt_type=f"INTENT FILTER | Tweet: {tweet_id}"
     )
 
-    if not response.success:
-        error(f"❌ Error in LLM call for intent filter: {response.error_message}", status_code=response.status_code or 500, function_name="ask_llm", critical=False)
-        return ""
-
-    data = response.data
-
-    try:
-        message = data["choices"][0]["message"]["content"]
-        return message
-    except (KeyError, IndexError):
-        return ""
+    return result.get("message", "")
 
 
 def get_intent_filter_examples(username: str, limit: int = 5) -> list[dict]:
@@ -213,7 +176,7 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
     Answer with only "YES" or "NO"."""
 
     try:
-        message = await ask_llm(system_prompt, prompt, tweet_id=str(tweet_id), username=username)
+        message = await ask_llm_for_filter(system_prompt, prompt, tweet_id=str(tweet_id), username=username)
         message = message.strip().upper()
 
         matches = "YES" in message

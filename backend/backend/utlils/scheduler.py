@@ -48,14 +48,46 @@ async def cleanup_expired_browser_sessions():
 
 def get_users_with_valid_sessions() -> list[str]:
     """
-    Get list of users who have valid browser sessions.
-    Only users with valid browser states will have tweets scraped.
+    Get list of users who have valid OAuth tokens.
+
+    Browser sessions are optional and checked separately when needed for scraping.
+    This function checks OAuth tokens as the primary authentication mechanism.
+
+    Returns:
+        list[str]: List of usernames with valid OAuth tokens
+    """
+    from backend.utlils.utils import read_tokens
+
+    try:
+        tokens = read_tokens()
+
+        if not tokens:
+            notify("⚠️ No OAuth tokens found")
+            return []
+
+        # Return all users who have OAuth tokens
+        # Token refresh/validation happens when jobs actually run
+        valid_users = list(tokens.keys())
+        return valid_users
+
+    except Exception as e:
+        from backend.utlils.utils import error
+        error("Error reading OAuth tokens", status_code=500, exception_text=str(e), function_name="get_users_with_valid_sessions")
+        notify(f"❌ Error reading OAuth tokens: {e}")
+        return []
+
+
+def get_users_with_valid_browser_sessions() -> list[str]:
+    """
+    Get list of users who have valid browser sessions (for scraping).
+
+    This is separate from OAuth - browser sessions are only needed for
+    Playwright-based scraping, not for API calls.
 
     Returns:
         list[str]: List of usernames with valid browser sessions
     """
     if not BROWSER_STATE_FILE.exists():
-        notify("⚠️ No browser state file found")
         return []
 
     try:
@@ -63,23 +95,16 @@ def get_users_with_valid_sessions() -> list[str]:
             browser_states = json.load(f)
 
         if not isinstance(browser_states, dict):
-            notify("⚠️ Invalid browser state format")
             return []
 
-        # Filter users with valid sessions
         valid_users = []
         for username, state in browser_states.items():
             if cookie_still_valid(state):
                 valid_users.append(username)
-            else:
-                notify(f"⚠️ Browser session expired for {username}")
 
         return valid_users
 
-    except Exception as e:
-        from backend.utlils.utils import error
-        error("Error reading browser states", status_code=500, exception_text=str(e), function_name="get_users_with_valid_sessions")
-        notify(f"❌ Error reading browser states: {e}")
+    except Exception:
         return []
 
 
@@ -155,7 +180,12 @@ async def auto_scrape_all_users():
     """
     Run automatic scraping for all users with valid browser sessions.
     This is the main job function called by the scheduler.
+
+    Auth exceptions (OAuthTokenExpired, BrowserSessionExpired) are caught per-user
+    to gracefully stop processing for that user without affecting others.
     """
+    from backend.utlils.utils import AuthenticationError
+
     notify("🚀 [Auto-scrape] Starting scheduled scraping for all users...")
 
     try:
@@ -172,6 +202,10 @@ async def auto_scrape_all_users():
         for username in users:
             try:
                 await auto_scrape_for_user(username)
+            except AuthenticationError as auth_err:
+                # Auth failed mid-job - stop processing this user, continue with others
+                notify(f"🔐 [Auto-scrape] Auth expired for {username}, stopping job: {auth_err}")
+                continue
             except Exception as e:
                 from backend.utlils.utils import error
                 error("Error processing auto-scrape", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users", username=username)
@@ -243,7 +277,12 @@ async def engagement_monitoring_all_users():
     """
     Run engagement monitoring for all users with valid browser sessions.
     Discovers comments on posted tweets and generates AI replies.
+
+    Auth exceptions (OAuthTokenExpired, BrowserSessionExpired) are caught per-user
+    to gracefully stop processing for that user without affecting others.
     """
+    from backend.utlils.utils import AuthenticationError
+
     notify("🚀 [Engagement] Starting engagement monitoring for all users...")
 
     try:
@@ -258,6 +297,10 @@ async def engagement_monitoring_all_users():
         for username in users:
             try:
                 await engagement_monitoring_for_user(username)
+            except AuthenticationError as auth_err:
+                # Auth failed mid-job - stop processing this user, continue with others
+                notify(f"🔐 [Engagement] Auth expired for {username}, stopping job: {auth_err}")
+                continue
             except Exception as e:
                 from backend.utlils.utils import error
                 error("Error in engagement monitoring", status_code=500, exception_text=str(e), function_name="engagement_monitoring_all_users", username=username)
@@ -408,197 +451,3 @@ async def trigger_manual_engagement_endpoint():
         return {"message": "Manual engagement monitoring triggered successfully"}
     else:
         return {"message": "Failed to trigger engagement monitoring", "error": "Scheduler not running"}
-
-
-async def run_full_pipeline_for_user(username: str) -> dict:
-    """
-    Run the complete background job pipeline for a single user.
-    Executes all jobs in the same order they would run in production.
-
-    Pipeline Order:
-    1. Cleanup expired browser sessions
-    2. Purge unedited tweets
-    3. Scrape new tweets from configured accounts/queries
-    4. Generate AI replies for scraped tweets
-    5. Run engagement monitoring (discover comments on posted tweets)
-    6. Generate AI replies for discovered comments
-
-    Args:
-        username: Twitter handle of the user
-
-    Returns:
-        dict with results from each step
-    """
-    import time
-
-    from backend.data.twitter.edit_cache import purge_unedited_tweets
-    from backend.twitter.comment_replies import generate_comment_replies
-    from backend.twitter.monitoring import run_engagement_monitoring
-    from backend.utlils.utils import read_user_info
-
-    results = {
-        "username": username,
-        "steps": {},
-        "errors": [],
-        "total_time_seconds": 0
-    }
-
-    start_time = time.time()
-
-    try:
-        user_info = read_user_info(username)
-        if not user_info:
-            results["errors"].append(f"No user info found for {username}")
-            return results
-
-        user_handle = user_info.get("handle", username)
-
-        # Step 1: Cleanup expired browser sessions
-        notify(f"🧹 [Pipeline] Step 1: Cleaning up browser sessions...")
-        try:
-            await cleanup_expired_browser_sessions()
-            results["steps"]["cleanup_sessions"] = {"status": "success"}
-        except Exception as e:
-            results["steps"]["cleanup_sessions"] = {"status": "error", "error": str(e)}
-            results["errors"].append(f"cleanup_sessions: {e}")
-
-        # Step 2: Purge unedited tweets
-        notify(f"🗑️ [Pipeline] Step 2: Purging unedited tweets...")
-        try:
-            purged_count = await purge_unedited_tweets(username)
-            results["steps"]["purge_unedited"] = {"status": "success", "purged": purged_count}
-            notify(f"✅ Purged {purged_count} unedited tweet(s)")
-        except Exception as e:
-            results["steps"]["purge_unedited"] = {"status": "error", "error": str(e)}
-            results["errors"].append(f"purge_unedited: {e}")
-
-        # Step 3: Scrape new tweets
-        notify(f"🔍 [Pipeline] Step 3: Scraping tweets...")
-        try:
-            tweets = await read_tweets(username=username)
-            results["steps"]["scrape_tweets"] = {"status": "success", "tweets_scraped": len(tweets)}
-            notify(f"✅ Scraped {len(tweets)} tweets")
-        except Exception as e:
-            results["steps"]["scrape_tweets"] = {"status": "error", "error": str(e)}
-            results["errors"].append(f"scrape_tweets: {e}")
-            tweets = []
-
-        # Step 4: Generate replies for scraped tweets
-        notify(f"💬 [Pipeline] Step 4: Generating replies for tweets...")
-        try:
-            gen_result = await generate_replies(username=username, overwrite=False)
-            reply_count = sum(1 for t in gen_result if t.get('reply'))
-            results["steps"]["generate_tweet_replies"] = {"status": "success", "replies_generated": reply_count}
-            notify(f"✅ Generated {reply_count} tweet replies")
-        except Exception as e:
-            results["steps"]["generate_tweet_replies"] = {"status": "error", "error": str(e)}
-            results["errors"].append(f"generate_tweet_replies: {e}")
-
-        # Step 5: Run engagement monitoring (discover comments)
-        notify(f"📊 [Pipeline] Step 5: Running engagement monitoring...")
-        try:
-            monitoring_result = await run_engagement_monitoring(username, user_handle)
-            new_comments = monitoring_result.get("total_new_comments", 0)
-            results["steps"]["engagement_monitoring"] = {
-                "status": "success",
-                "new_comments": new_comments,
-                "details": monitoring_result
-            }
-            notify(f"✅ Found {new_comments} new comments")
-        except Exception as e:
-            results["steps"]["engagement_monitoring"] = {"status": "error", "error": str(e)}
-            results["errors"].append(f"engagement_monitoring: {e}")
-            new_comments = 0
-
-        # Step 6: Generate replies for comments (AFTER engagement monitoring)
-        notify(f"💬 [Pipeline] Step 6: Generating comment replies...")
-        try:
-            comment_gen_result = await generate_comment_replies(username)
-            processed = comment_gen_result.get("processed", 0)
-            total_comment_replies = comment_gen_result.get("total_replies_generated", 0)
-            results["steps"]["generate_comment_replies"] = {
-                "status": "success",
-                "comments_processed": processed,
-                "replies_generated": total_comment_replies
-            }
-            notify(f"✅ Processed {processed} comments, generated {total_comment_replies} replies")
-        except Exception as e:
-            results["steps"]["generate_comment_replies"] = {"status": "error", "error": str(e)}
-            results["errors"].append(f"generate_comment_replies: {e}")
-
-        notify(f"🎉 [Pipeline] Completed for {username}")
-
-    except Exception as e:
-        from backend.utlils.utils import error
-        error(f"Pipeline failed for {username}", status_code=500, exception_text=str(e), function_name="run_full_pipeline_for_user", username=username)
-        results["errors"].append(f"fatal: {e}")
-
-    results["total_time_seconds"] = round(time.time() - start_time, 2)
-    return results
-
-
-async def run_full_pipeline_all_users() -> dict:
-    """
-    Run the complete background job pipeline for all users with valid sessions.
-
-    Returns:
-        dict with results for each user
-    """
-    notify("🚀 [Pipeline] Starting full pipeline for all users...")
-
-    results = {
-        "users": {},
-        "total_users": 0,
-        "successful": 0,
-        "failed": 0
-    }
-
-    try:
-        users = get_users_with_valid_sessions()
-
-        if not users:
-            notify("⚠️ [Pipeline] No users with valid browser sessions found")
-            return results
-
-        results["total_users"] = len(users)
-        notify(f"👥 [Pipeline] Found {len(users)} user(s) with valid sessions")
-
-        for username in users:
-            try:
-                user_result = await run_full_pipeline_for_user(username)
-                results["users"][username] = user_result
-                if user_result["errors"]:
-                    results["failed"] += 1
-                else:
-                    results["successful"] += 1
-            except Exception as e:
-                results["users"][username] = {"error": str(e)}
-                results["failed"] += 1
-
-        notify(f"✅ [Pipeline] Completed: {results['successful']} succeeded, {results['failed']} failed")
-
-    except Exception as e:
-        from backend.utlils.utils import error
-        error("Fatal error in full pipeline", status_code=500, exception_text=str(e), function_name="run_full_pipeline_all_users")
-        notify(f"❌ [Pipeline] Fatal error: {e}")
-
-    return results
-
-
-@router.post("/run-pipeline/{username}")
-async def run_pipeline_for_user_endpoint(username: str):
-    """
-    Run the complete background job pipeline for a single user.
-    This runs all jobs in order: scrape → generate replies → monitor engagement → generate comment replies
-    """
-    result = await run_full_pipeline_for_user(username)
-    return result
-
-
-@router.post("/run-pipeline")
-async def run_pipeline_all_users_endpoint():
-    """
-    Run the complete background job pipeline for all users with valid sessions.
-    """
-    result = await run_full_pipeline_all_users()
-    return result

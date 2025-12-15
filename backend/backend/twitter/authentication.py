@@ -90,7 +90,7 @@ def exchange_code_for_token(code: str, code_verifier: str) -> dict[str, Any]:
     return response.json()
 
 
-def refresh_access_token(refresh_token: str) -> dict[str, Any]:
+def refresh_access_token(refresh_token: str, username: str | None = None) -> dict[str, Any]:
     import requests
 
     url = f"{BASE_URL}/oauth2/token"
@@ -113,7 +113,10 @@ def refresh_access_token(refresh_token: str) -> dict[str, Any]:
         return response.json()
     except requests.exceptions.HTTPError:
         from backend.utlils.utils import error
-        error("Failed to refresh access token", status_code=401, exception_text=response.text, function_name="refresh_access_token", critical=True)
+        # Log the error but don't mark as critical - this is a user auth issue, not a system failure
+        # The calling code (ensure_access_token) will handle notifying the user
+        error("Failed to refresh access token", status_code=401, exception_text=response.text, function_name="refresh_access_token", username=username, critical=False)
+        raise RuntimeError(f"Token refresh failed for {username or 'unknown user'}")
 
 
 def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTPServer, threading.Event]:
@@ -239,21 +242,26 @@ async def oauth_login(username: str, state_file: str = "storage_state.json") -> 
     return access_token
 
 
-async def ensure_access_token(username: str, state_file: str = "storage_state.json", raise_on_failure: bool = False) -> str | None:
+async def ensure_access_token(username: str, state_file: str = "storage_state.json", raise_on_failure: bool = False) -> str:
     """
     Return an access token for the user, refreshing or re-authenticating as needed.
 
     Args:
         username: The username to get token for
         state_file: State file name (default: storage_state.json)
-        raise_on_failure: If True, raise HTTPException 401 on failure. If False, return None.
+        raise_on_failure: If True, raise HTTPException 401 on failure (for API routes).
+                         If False, raise OAuthTokenExpired (for background jobs).
 
     Returns:
-        Access token string, or None if unavailable and raise_on_failure is False
+        Access token string
+
+    Raises:
+        OAuthTokenExpired: When token is missing/invalid and raise_on_failure is False
+        HTTPException: When token is missing/invalid and raise_on_failure is True
     """
     import time
 
-    from backend.utlils.utils import read_user_access_token, read_user_token, store_token
+    from backend.utlils.utils import OAuthTokenExpired, read_user_access_token, read_user_token, store_token
 
     try:
         # Check if we have a cached access token that's still valid
@@ -262,18 +270,43 @@ async def ensure_access_token(username: str, state_file: str = "storage_state.js
             notify(f"♻️ Using cached access token for {username} (expires in {int(expires_at - time.time())}s)")
             return cached_access_token
 
-        # Token expired or missing, refresh it
+        # Token expired or missing, try to refresh it
         refresh_token = read_user_token(username)
-        refreshed = refresh_access_token(refresh_token)
+
+        # If no refresh token exists (invalidated or never set), user needs to re-authenticate
+        if not refresh_token:
+            notify(f"⚠️ No refresh token found for {username} - re-authentication required")
+            if raise_on_failure:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=401,
+                    detail="Twitter authentication expired. Please log in again."
+                )
+            raise OAuthTokenExpired(f"No valid OAuth token for {username}")
+
+        refreshed = refresh_access_token(refresh_token, username=username)
         access_token = refreshed.get("access_token")
         new_refresh = refreshed.get("refresh_token") or refresh_token
         expires_in = refreshed.get("expires_in", 7200)  # Default 2 hours
         store_token(username, new_refresh, access_token, expires_in)
         notify(f"🔄 Refreshed access token for {username}")
         return access_token
+    except OAuthTokenExpired:
+        # Re-raise OAuthTokenExpired without modification
+        raise
     except (RuntimeError, Exception) as e:
         # Token refresh failed - user needs to re-authenticate
         notify(f"⚠️ OAuth token refresh failed for {username}: {e}")
+
+        # Invalidate the token so we don't keep trying
+        # This prevents repeated refresh attempts until user re-authenticates
+        try:
+            from backend.utlils.email import notify_user_reauth_needed
+            from backend.utlils.utils import invalidate_user_token
+            invalidate_user_token(username)
+            notify_user_reauth_needed(username)
+        except Exception as notify_err:
+            notify(f"⚠️ Failed to notify user {username} about re-auth: {notify_err}")
 
         if raise_on_failure:
             from fastapi import HTTPException
@@ -281,7 +314,7 @@ async def ensure_access_token(username: str, state_file: str = "storage_state.js
                 status_code=401,
                 detail="Twitter authentication expired. Please log in again."
             )
-        return None
+        raise OAuthTokenExpired(f"OAuth token refresh failed for {username}")
 
 
 def main() -> None:

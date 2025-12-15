@@ -37,7 +37,10 @@ RUN uv lock
 RUN uv sync --frozen
 
 # Install Playwright system dependencies first (as root before switching to appuser)
-RUN uv run playwright install-deps chromium
+# Clear apt lists first to avoid GPG signature issues in Docker builds
+RUN rm -rf /var/lib/apt/lists/* && \
+    apt-get clean && \
+    uv run playwright install-deps chromium
 
 # Create cache directory with proper permissions
 RUN mkdir -p /app/cache && \

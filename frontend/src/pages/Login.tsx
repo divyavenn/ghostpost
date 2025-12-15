@@ -152,7 +152,7 @@ export function Login() {
 
           const status = await statusResponse.json();
 
-          if (status.status === 'success' && status.username) {
+          if ((status.status === 'success' || status.status === 'complete') && status.username) {
             clearInterval(pollInterval);
             try { loginTab.close(); } catch (e) { console.warn(e); }
             window.focus();

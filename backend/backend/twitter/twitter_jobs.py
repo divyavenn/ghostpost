@@ -255,44 +255,51 @@ async def _generate_reply_for_tweet_background(tweet: dict, username: str):
 
 async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user") -> dict:
     """
-    Job 1: Scrape tweets from configured accounts/queries and generate AI replies.
+    Job 1: Scrape tweets using efficient 4-phase approach.
 
-    Reply generation happens in parallel as each tweet is discovered and written to cache.
+    Phase 1: Lightweight discovery from queries + home timeline (no threads)
+    Phase 2: Select top N by impressions
+    Phase 3: Lightweight fetch from user timelines (no impressions filter)
+    Phase 4: Fetch threads for ALL final tweets and write incrementally
 
     Args:
         username: The user to run the job for
         triggered_by: "user" for manual trigger, "scheduler" for background scheduler
 
-    Steps:
-    1. Cleanup old tweets and seen_tweets
-    2. Scrape tweets from accounts and queries (with intent filtering)
-    3. For each tweet written to cache, spawn background task to generate replies
-    4. Track scrolling_time_saved metrics
-
     Returns:
         Summary dict with counts
     """
     import time
+    import asyncio
 
-    from backend.browser_automation.twitter.api import fetch_search as api_fetch_search
-    from backend.config import MAX_TWEET_AGE_HOURS
+    from backend.browser_automation.twitter.api import (
+        fetch_search_raw,
+        fetch_home_timeline_raw,
+        fetch_user_timeline_raw,
+        populate_thread_for_tweet
+    )
+    from backend.twitter.filtering import check_tweet_matches_intent_initial
     from backend.data.twitter.edit_cache import cleanup_old_tweets, write_to_cache
     from backend.user.user import read_user_settings
-    from backend.utlils.utils import cleanup_seen_tweets, is_tweet_seen, write_user_info
+    from backend.utlils.utils import cleanup_seen_tweets, read_user_info, write_user_info
 
     print_job_start("find_and_reply_to_new_posts", username, triggered_by)
     _update_job_status(username, "find_and_reply_to_new_posts", "running", "starting", triggered_by=triggered_by)
-    notify(f"🚀 [Job 1] Starting find_and_reply_to_new_posts for {username}")
+    notify(f"🚀 [Job 1] Starting OPTIMIZED find_and_reply_to_new_posts for {username}")
 
     start_time = time.time()
     results = {
         "tweets_scraped": 0,
-        "tweets_filtered": 0,
+        "tweets_discovered": 0,
+        "discovery_tweets_selected": 0,
+        "account_tweets": 0,
+        "threads_fetched": 0,
         "replies_generating": 0,
         "errors": []
     }
 
     try:
+        # Load settings
         user_settings = read_user_settings(username)
         if not user_settings:
             error(f"No settings found for user {username}", critical=True)
@@ -301,299 +308,182 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         user_info = read_user_info(username)
         is_premium = user_info.get("account_type") == "premium" if user_info else False
 
-        # Get accounts and queries
+        # Get configuration
         accounts_dict = user_settings.get("relevant_accounts", {})
         relevant_accounts = [handle for handle, validated in accounts_dict.items() if validated]
 
-        # Build query summary map
+        # Parse queries and build summary map
+        stored_queries = user_info.get("queries", []) if user_info else []
+        queries = []
         query_summary_map = {}
-        if user_info:
-            stored_queries = user_info.get("queries", [])
-            queries = []
-            for q in stored_queries:
-                if isinstance(q, list) and len(q) == 2:
-                    queries.append(q[0])
-                    query_summary_map[q[0]] = q[1]
-                elif isinstance(q, str):
-                    queries.append(q)
-                    query_summary_map[q] = q
+        for q in stored_queries:
+            if isinstance(q, list) and len(q) == 2:
+                # New format: [query, summary]
+                queries.append(q[0])
+                query_summary_map[q[0]] = q[1]
+            elif isinstance(q, str):
+                # Legacy format: just query string
+                queries.append(q)
+                query_summary_map[q] = q  # Use query itself as fallback
+
+        ideal_num_posts = user_settings.get("ideal_num_posts", 30)
+
+        # Determine filter
+        manual_override = user_settings.get("manual_minimum_impressions")
+        auto_filter = user_settings.get("min_impressions_filter", 2000)
+        min_impressions_filter = manual_override if manual_override is not None else auto_filter
+
+        if manual_override is not None:
+            notify(f"🔒 [Job 1] Using manual impressions filter: {manual_override}")
         else:
-            queries = user_settings.get("queries", [])
-            for q in queries:
-                query_summary_map[q] = q
+            notify(f"⚙️ [Job 1] Using auto impressions filter: {auto_filter}")
 
-        max_tweets = user_settings.get("max_tweets_retrieve", 50)
+        # Cleanup old data
+        notify(f"🗑️ [Job 1] Cleaning up old tweets and seen_tweets...")
+        await cleanup_old_tweets(username)
+        cleanup_seen_tweets(username)
 
-        # Log what we're going to scrape
-        notify(f"📋 [Job 1] {username}: {len(relevant_accounts)} accounts, {len(queries)} queries")
-        if queries:
-            for i, q in enumerate(queries[:3]):  # Show first 3 queries
-                summary = query_summary_map.get(q, q)[:40]
-                notify(f"   Query {i+1}: {summary}...")
+        # =======================================================================
+        # PHASE 1: LIGHTWEIGHT DISCOVERY (Queries + Home Timeline)
+        # =======================================================================
+        notify(f"🔍 [Phase 1] Discovering tweets from {len(queries)} queries and home timeline...")
+        _update_job_status(username, "find_and_reply_to_new_posts", "running", "Phase 1: Discovery")
 
-        # Cleanup old tweets
-        _update_job_status(username, "find_and_reply_to_new_posts", "running", "cleanup")
-        await cleanup_old_tweets(username, hours=MAX_TWEET_AGE_HOURS)
-        cleanup_seen_tweets(username, hours=MAX_TWEET_AGE_HOURS)
+        discovered_tweets = []  # List of {id, impressions, source, raw_tweet}
 
-        # Helper function to process tweets: filter, generate replies, write to cache
-        async def process_tweets(tweets: dict, source: dict) -> int:
-            """Filter tweets, generate replies for premium users, write to cache. Returns count written."""
-            from backend.twitter.generate_replies import generate_replies_for_tweet
-
-            if not tweets:
-                return 0
-
-            # Filter tweets: skip seen and user's own posts
-            filtered = []
-            for tweet in tweets.values():
-                tweet_id = tweet.get("id") or tweet.get("tweet_id")
-                tweet_handle = tweet.get("handle", "").lower()
-
-                # Skip user's own tweets
-                if tweet_handle == username.lower():
-                    continue
-
-                # Skip already seen tweets
-                if tweet_id and is_tweet_seen(username, str(tweet_id)):
-                    continue
-
-                tweet["scraped_from"] = source
-                filtered.append(tweet)
-
-            if not filtered:
-                return 0
-
-            notify(f"📝 Processing {len(filtered)} new tweets from {source.get('type', 'unknown')}")
-
-            # For premium users, generate replies before writing
-            tweets_to_write = []
-            if is_premium:
-                models = user_info.get("models", ["claude-3-5-sonnet-20241022"]) if user_info else ["claude-3-5-sonnet-20241022"]
-                num_generations = user_info.get("number_of_generations", 2) if user_info else 2
-
-                for tweet in filtered:
-                    tweet_id = tweet.get("id") or tweet.get("tweet_id")
-                    try:
-                        replies = await generate_replies_for_tweet(
-                            tweet=tweet,
-                            models=models,
-                            needed_generations=num_generations,
-                            delay_seconds=0.5,
-                            username=username
-                        )
-                        if replies:
-                            tweet["generated_replies"] = replies
-                            results["replies_generating"] += 1
-                            tweets_to_write.append(tweet)
-                            notify(f"✅ Generated {len(replies)} replies for tweet {tweet_id}")
-                        else:
-                            notify(f"⚠️ No replies generated for tweet {tweet_id}")
-                    except Exception as e:
-                        notify(f"⚠️ Error generating replies for tweet {tweet_id}: {e}")
-            else:
-                # Non-premium users: write all tweets without replies
-                tweets_to_write = filtered
-
-            # Write to cache
-            if tweets_to_write:
-                await write_to_cache(tweets_to_write, f"Scraped from {source.get('type', 'unknown')}", username=username)
-                results["tweets_scraped"] += len(tweets_to_write)
-
-            return len(tweets_to_write)
-
-        # Generate replies for any cached tweets that don't have them (for premium users)
-        if is_premium:
-            from backend.data.twitter.edit_cache import read_from_cache
-            from backend.twitter.generate_replies import generate_replies_for_tweet
-
-            _update_job_status(username, "find_and_reply_to_new_posts", "running", "generating", details="cached tweets")
-            cached_tweets = await read_from_cache(username)
-            tweets_needing_replies = [t for t in cached_tweets if not t.get("generated_replies") and t.get("thread")]
-
-            if tweets_needing_replies:
-                notify(f"📝 Found {len(tweets_needing_replies)} cached tweet(s) without replies, generating...")
-                models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
-                num_generations = user_info.get("number_of_generations", 2)
-
-                for i, tweet in enumerate(tweets_needing_replies):
-                    tweet_id = tweet.get("id") or tweet.get("tweet_id")
-                    _update_job_status(
-                        username, "find_and_reply_to_new_posts", "running",
-                        "generating",
-                        progress={"current": i + 1, "total": len(tweets_needing_replies)},
-                        details="cached tweets"
-                    )
-                    try:
-                        replies = await generate_replies_for_tweet(
-                            tweet=tweet,
-                            models=models,
-                            needed_generations=num_generations,
-                            delay_seconds=0.5,
-                            username=username
-                        )
-                        if replies:
-                            tweet["generated_replies"] = replies
-                            await write_to_cache([tweet], f"Generated replies for cached tweet {tweet_id}", username=username)
-                            results["replies_generating"] += 1
-                            notify(f"✅ Generated {len(replies)} replies for cached tweet {tweet_id}")
-                    except Exception as e:
-                        notify(f"⚠️ Error generating replies for cached tweet {tweet_id}: {e}")
-
-        # Scrape accounts and queries with granular progress
-        total_sources = len(relevant_accounts) + len(queries) + 1  # +1 for home timeline
-        current_source = 0
-        all_tweets = {}
-
-        # Import the new granular functions
-        from backend.browser_automation.twitter.api import fetch_search_raw, populate_thread_for_tweet
-        from backend.twitter.filtering import check_tweet_matches_intent_initial
-
-        async def scrape_source_with_progress(
-            source_query: str,
-            source_info: dict,
-            phase: str,
-            details: str
-        ) -> dict:
-            """Scrape a source with per-tweet progress updates."""
-            # Phase 1: Fetch raw tweets (1 API call)
-            _update_job_status(
-                username, "find_and_reply_to_new_posts", "running",
-                phase,
-                progress={"current": current_source, "total": total_sources},
-                details=f"{details} (fetching)"
-            )
-
-            raw_tweets, _stats = await fetch_search_raw(source_query, username=username)
-
-            if not raw_tweets:
-                return {}
-
-            # Phase 2: Pre-filter tweets BEFORE fetching thread data (expensive)
-            # Filter order: FREE local checks first, then PAID LLM calls
-            # This minimizes API costs by filtering out obvious skips first
-            pre_filtered = []
-            filtered_own = 0
-            filtered_seen = 0
-            filtered_intent = 0
-
-            for tid, tweet in raw_tweets.items():
-                tweet_handle = tweet.get("handle", "").lower()
-
-                # 1. Skip user's own tweets (FREE - local check)
-                if tweet_handle == username.lower():
-                    filtered_own += 1
-                    continue
-
-                # 2. Skip already seen tweets (FREE - local check)
-                if is_tweet_seen(username, str(tid)):
-                    filtered_seen += 1
-                    continue
-
-                # 3. Check intent filter LAST (PAID - LLM API call)
-                passes_intent = await check_tweet_matches_intent_initial(tweet, username)
-                if not passes_intent:
-                    filtered_intent += 1
-                    continue
-
-                pre_filtered.append((tid, tweet))
-
-            if not pre_filtered:
-                filter_breakdown = []
-                if filtered_own > 0:
-                    filter_breakdown.append(f"own:{filtered_own}")
-                if filtered_seen > 0:
-                    filter_breakdown.append(f"seen:{filtered_seen}")
-                if filtered_intent > 0:
-                    filter_breakdown.append(f"intent:{filtered_intent}")
-                breakdown_str = ", ".join(filter_breakdown) if filter_breakdown else "all filtered"
-                notify(f"📊 {details}: {len(raw_tweets)} found, 0 new ({breakdown_str})")
-                return {}
-
-            # Log filter breakdown
-            filter_breakdown = []
-            if filtered_own > 0:
-                filter_breakdown.append(f"own:{filtered_own}")
-            if filtered_seen > 0:
-                filter_breakdown.append(f"seen:{filtered_seen}")
-            if filtered_intent > 0:
-                filter_breakdown.append(f"intent:{filtered_intent}")
-            breakdown_str = f" | filtered: {', '.join(filter_breakdown)}" if filter_breakdown else ""
-            notify(f"📊 {details}: {len(raw_tweets)} found, {len(pre_filtered)} new{breakdown_str}")
-
-            # Phase 3: Populate threads only for tweets that passed pre-filtering
-            tweets = {}
-            total_tweets = len(pre_filtered)
-
-            for i, (tid, tweet) in enumerate(pre_filtered):
-                # Update progress for each tweet
-                _update_job_status(
-                    username, "find_and_reply_to_new_posts", "running",
-                    phase,
-                    progress={"current": current_source, "total": total_sources},
-                    details=f"{details} ({i+1}/{total_tweets} tweets)"
-                )
-
-                try:
-                    populated = await populate_thread_for_tweet(tweet)
-                    if populated:
-                        tweets[tid] = populated
-                        await process_tweets({tid: populated}, source_info)
-                except Exception as e:
-                    notify(f"⚠️ Error populating thread for tweet {tid}: {e}")
-
-            return tweets
-
-        for account in relevant_accounts:
-            current_source += 1
-            try:
-                account_source = {"type": "account", "value": account}
-                account_query = f"from:{account}"
-                tweets = await scrape_source_with_progress(
-                    account_query, account_source, "scraping", f"@{account}"
-                )
-                all_tweets.update(tweets)
-            except Exception as e:
-                notify(f"⚠️ Error scraping @{account}: {e}")
-                results["errors"].append(f"Account {account}: {e}")
-
-        # Scrape queries
+        # 1A. Queries
         for query in queries:
-            current_source += 1
-            summary = query_summary_map.get(query, query)
             try:
-                query_source = {"type": "query", "value": query, "summary": summary}
-                tweets = await scrape_source_with_progress(
-                    query, query_source, "searching", summary[:30]
-                )
-                all_tweets.update(tweets)
+                raw_tweets, stats = await fetch_search_raw(query, username, min_impressions_filter)
+
+                for tweet_id, tweet in raw_tweets.items():
+                    # Check intent
+                    if await check_tweet_matches_intent_initial(tweet, username):
+                        summary = query_summary_map.get(query, query)
+                        discovered_tweets.append({
+                            'id': tweet_id,
+                            'impressions': tweet.get('impressions', 0),
+                            'source': {'type': 'query', 'value': query, 'summary': summary},
+                            'raw_tweet': tweet
+                        })
             except Exception as e:
-                notify(f"⚠️ Error searching [{query}]: {e}")
+                notify(f"⚠️ Error fetching query [{query}]: {e}")
                 results["errors"].append(f"Query {query}: {e}")
 
-        # Fetch from home timeline with intent filtering
-        current_source += 1
-        _update_job_status(
-            username, "find_and_reply_to_new_posts", "running",
-            "scanning",
-            progress={"current": current_source, "total": total_sources},
-            details="your feed"
-        )
+        # 1B. Home Timeline
+        if is_premium:  # Only scrape home timeline for premium users
+            try:
+                home_tweets, stats = await fetch_home_timeline_raw(username, ideal_num_posts, min_impressions_filter)
 
-        try:
-            from backend.browser_automation.twitter.api import fetch_home_timeline_with_intent_filter
+                for tweet_id, tweet in home_tweets.items():
+                    # Check intent
+                    if await check_tweet_matches_intent_initial(tweet, username):
+                        discovered_tweets.append({
+                            'id': tweet_id,
+                            'impressions': tweet.get('impressions', 0),
+                            'source': {'type': 'home_timeline', 'value': 'following'},
+                            'raw_tweet': tweet
+                        })
+            except Exception as e:
+                notify(f"⚠️ Error fetching home timeline: {e}")
+                results["errors"].append(f"Home timeline: {e}")
 
-            home_source = {"type": "home_timeline", "value": "following"}
-            home_tweets, _stats = await fetch_home_timeline_with_intent_filter(
-                username=username,
-                max_tweets=max_tweets
-            )
-            await process_tweets(home_tweets, home_source)
-            all_tweets.update(home_tweets)
-            results["home_timeline_tweets"] = len(home_tweets)
-        except Exception as e:
-            notify(f"⚠️ Error fetching home timeline: {e}")
-            results["errors"].append(f"Home timeline: {e}")
+        results["tweets_discovered"] = len(discovered_tweets)
+        notify(f"✅ [Phase 1] Discovered {len(discovered_tweets)} tweets from queries/home")
+
+        # =======================================================================
+        # PHASE 2: SELECT TOP N BY IMPRESSIONS
+        # =======================================================================
+        notify(f"📊 [Phase 2] Selecting top {ideal_num_posts} tweets by impressions...")
+        _update_job_status(username, "find_and_reply_to_new_posts", "running", "Phase 2: Selection")
+
+        discovered_tweets.sort(key=lambda t: t['impressions'], reverse=True)
+        selected_discovery = discovered_tweets[:ideal_num_posts]
+
+        results["discovery_tweets_selected"] = len(selected_discovery)
+        notify(f"✅ [Phase 2] Selected {len(selected_discovery)} tweets (from {len(discovered_tweets)} discovered)")
+
+        # =======================================================================
+        # PHASE 3: LIGHTWEIGHT USER TIMELINES (No Impressions Filter)
+        # =======================================================================
+        notify(f"👥 [Phase 3] Fetching tweets from {len(relevant_accounts)} user timelines...")
+        _update_job_status(username, "find_and_reply_to_new_posts", "running", "Phase 3: User timelines")
+
+        account_tweets_list = []  # List of {id, source, raw_tweet}
+
+        for account in relevant_accounts:
+            try:
+                raw_tweets, stats = await fetch_user_timeline_raw(username, account, ideal_num_posts)
+
+                for tweet_id, tweet in raw_tweets.items():
+                    # Check intent
+                    if await check_tweet_matches_intent_initial(tweet, username):
+                        account_tweets_list.append({
+                            'id': tweet_id,
+                            'source': {'type': 'account', 'value': account},
+                            'raw_tweet': tweet
+                        })
+            except Exception as e:
+                notify(f"⚠️ Error fetching timeline for @{account}: {e}")
+                results["errors"].append(f"Account {account}: {e}")
+
+        results["account_tweets"] = len(account_tweets_list)
+        notify(f"✅ [Phase 3] Found {len(account_tweets_list)} tweets from user timelines")
+
+        # =======================================================================
+        # PHASE 4: COMBINE AND FETCH THREADS INCREMENTALLY
+        # =======================================================================
+        final_tweets_list = selected_discovery + account_tweets_list
+        total_to_fetch = len(final_tweets_list)
+
+        notify(f"🧵 [Phase 4] Fetching threads for {total_to_fetch} tweets and writing to cache...")
+
+        tweets_written = 0
+        threads_fetched = 0
+
+        for idx, item in enumerate(final_tweets_list, 1):
+            try:
+                tweet = item['raw_tweet']
+                source = item['source']
+
+                # Update progress
+                _update_job_status(
+                    username, "find_and_reply_to_new_posts", "running",
+                    f"Phase 4: Fetching threads ({idx}/{total_to_fetch})",
+                    progress={"current": idx, "total": total_to_fetch}
+                )
+
+                # Fetch thread data (expensive operation)
+                populated = await populate_thread_for_tweet(tweet)
+
+                if populated:
+                    threads_fetched += 1
+                    # Add source metadata
+                    populated['scraped_from'] = source
+
+                    # Write to cache IMMEDIATELY
+                    await write_to_cache(
+                        [populated],
+                        f"Tweet from {source['type']}: {source['value'][:30]}",
+                        username=username
+                    )
+                    tweets_written += 1
+
+                    # Trigger reply generation in background
+                    if is_premium:
+                        asyncio.create_task(
+                            _generate_replies_for_tweet_background(populated, username, user_settings)
+                        )
+                        results["replies_generating"] += 1
+
+            except Exception as e:
+                notify(f"⚠️ Failed to process tweet {item['id']}: {e}")
+                results["errors"].append(f"Tweet {item['id']}: {e}")
+
+        notify(f"✅ [Phase 4] Wrote {tweets_written} tweets with {threads_fetched} threads")
+
+        results["tweets_scraped"] = tweets_written
+        results["threads_fetched"] = threads_fetched
 
         # Update scrolling time saved
         end_time = time.time()
@@ -612,7 +502,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         # Print completion log
         summary = f"{results['tweets_scraped']} tweets, {results['replies_generating']} replies"
         print_job_complete("find_and_reply_to_new_posts", username, triggered_by, summary, duration)
-        notify(f"✅ [Job 1] Complete: {results['tweets_scraped']} tweets, {results['replies_generating']} replies generating")
+        notify(f"✅ [Job 1] Complete: {summary}")
 
         # Reset to idle after delay
         asyncio.create_task(_reset_job_to_idle(username, "find_and_reply_to_new_posts"))
@@ -625,6 +515,130 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
             results=results, error_msg=str(e)
         )
 
+    return results
+
+
+async def _generate_replies_for_tweet_background(tweet: dict, username: str, user_settings: dict):
+    """
+    Background task to generate replies for a single tweet.
+    Runs in parallel with scraping for optimal performance.
+    """
+    try:
+        from backend.twitter.generate_replies import generate_replies_for_tweet
+
+        # Generate replies using the configured models and number_of_generations
+        number_of_generations = user_settings.get("number_of_generations", 1)
+        models = user_settings.get("models", ["claude-3-5-sonnet-20241022"])
+
+        await generate_replies_for_tweet(
+            tweet=tweet,
+            username=username,
+            number_of_generations=number_of_generations,
+            models=models
+        )
+
+    except Exception as e:
+        notify(f"⚠️ [Background] Error generating replies for tweet: {e}")
+
+
+
+async def find_and_reply_to_new_posts_with_retry(username: str, triggered_by: str = "user") -> dict:
+    """
+    Wrapper for find_and_reply_to_new_posts that retries with reduced impressions filter if not enough tweets are found.
+
+    Retry logic:
+    - Target: At least ideal_num_posts - 10 tweets
+    - If fewer tweets, clear seen_tweets and halve the impressions filter
+    - If more tweets, that's fine - show them all (better to have more content)
+    - Retry until we have enough tweets or filter reaches minimum of 100
+    - If manual_minimum_impressions is set, skip retry logic entirely
+
+    Args:
+        username: The user to run the job for
+        triggered_by: "user" for manual trigger, "scheduler" for background scheduler
+
+    Returns:
+        Results dict from the final attempt
+    """
+    from backend.twitter.logging import log_filter_adjustment
+    from backend.user.user import read_user_settings, write_user_settings
+    from backend.utlils.utils import read_user_info
+
+    # Get user settings first to check for manual override
+    user_settings = read_user_settings(username)
+    if not user_settings:
+        notify(f"⚠️ [Job 1] Cannot proceed: No user settings found")
+        return {"tweets_scraped": 0, "tweets_filtered": 0, "replies_generating": 0, "errors": ["No user settings"]}
+
+    # Check if user has set manual override - if so, skip retry logic
+    manual_override = user_settings.get("manual_minimum_impressions")
+    if manual_override is not None:
+        notify(f"🔒 [Job 1] Manual impressions filter set ({manual_override}) - skipping auto-adjustment")
+        # Run job once without retry logic
+        return await find_and_reply_to_new_posts(username, triggered_by)
+
+    # Normal retry logic with auto-adjustment
+    MIN_FILTER_THRESHOLD = 100
+    attempt = 1
+    max_attempts = 10  # Safety limit to prevent infinite loops
+
+    while attempt <= max_attempts:
+        notify(f"🔄 [Job 1 Attempt {attempt}] Starting find_and_reply_to_new_posts for {username}")
+
+        # Get ideal_num_posts for this user
+        user_settings = read_user_settings(username)
+        if not user_settings:
+            notify(f"⚠️ [Job 1] Cannot proceed: No user settings found")
+            return {"tweets_scraped": 0, "tweets_filtered": 0, "replies_generating": 0, "errors": ["No user settings"]}
+
+        ideal_num_posts = user_settings.get("ideal_num_posts", 30)
+        min_target = ideal_num_posts - 10
+
+        # Run the job
+        results = await find_and_reply_to_new_posts(username, triggered_by)
+
+        tweets_found = results.get("tweets_scraped", 0)
+        notify(f"📊 [Job 1 Attempt {attempt}] Found {tweets_found} tweets (target: at least {min_target})")
+
+        # Check if we have enough tweets (no maximum - more is better!)
+        if tweets_found >= min_target:
+            notify(f"✅ [Job 1] Success: Found {tweets_found} tweets (target: at least {min_target})")
+            return results
+
+        # Too few tweets - need to retry with reduced filter
+        current_filter = user_settings.get("min_impressions_filter", 2000)
+
+        # Check if we can reduce the filter further
+        if current_filter <= MIN_FILTER_THRESHOLD:
+            notify(f"⚠️ [Job 1] Cannot retry: Impressions filter already at minimum ({current_filter} <= {MIN_FILTER_THRESHOLD})")
+            notify(f"📊 [Job 1] Final result: {tweets_found} tweets found (target: at least {min_target})")
+            return results
+
+        # Prepare for retry: clear seen tweets and reduce filter
+        new_filter = max(current_filter // 2, MIN_FILTER_THRESHOLD)
+        notify(f"🔄 [Job 1] Retrying: Reducing impressions filter from {current_filter} to {new_filter}")
+
+        # Log to user's log file
+        log_filter_adjustment(username, current_filter, new_filter, tweets_found)
+
+        # Clear seen tweets
+        notify(f"🧹 [Job 1] Clearing seen_tweets for {username}")
+        user_info = read_user_info(username)
+        if user_info:
+            user_info["seen_tweets"] = {}
+            from backend.utlils.utils import write_user_info
+            write_user_info(user_info)
+
+        # Update the impressions filter
+        write_user_settings(username, min_impressions_filter=new_filter)
+        notify(f"✅ [Job 1] Updated min_impressions_filter to {new_filter}")
+
+        attempt += 1
+
+        # Small delay before retry to avoid rate limits
+        await asyncio.sleep(2)
+
+    notify(f"⚠️ [Job 1] Max attempts ({max_attempts}) reached")
     return results
 
 
@@ -1106,6 +1120,9 @@ async def start_find_and_reply_to_new_posts(
     Scrapes tweets from configured accounts/queries and generates AI replies
     in parallel as tweets are discovered.
 
+    Uses retry logic: if < 7 tweets are found, clears seen_tweets and halves
+    the impressions filter, then retries (min filter: 100).
+
     Uses asyncio.create_task() for true parallel execution with other background jobs.
 
     Args:
@@ -1116,7 +1133,7 @@ async def start_find_and_reply_to_new_posts(
         raise HTTPException(status_code=404, detail="User not found")
 
     asyncio.create_task(_run_job_with_error_handling(
-        find_and_reply_to_new_posts(username, triggered_by),
+        find_and_reply_to_new_posts_with_retry(username, triggered_by),
         "find_and_reply_to_new_posts", username
     ))
 
@@ -1344,7 +1361,7 @@ async def run_all_background_jobs(
 
     # Launch all 4 jobs in parallel
     asyncio.create_task(_run_job_with_error_handling(
-        find_and_reply_to_new_posts(username, triggered_by),
+        find_and_reply_to_new_posts_with_retry(username, triggered_by),
         "find_and_reply_to_new_posts", username
     ))
     asyncio.create_task(_run_job_with_error_handling(

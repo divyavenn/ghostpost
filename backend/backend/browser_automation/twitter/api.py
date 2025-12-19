@@ -130,14 +130,20 @@ def _get_full_text(tweet: dict) -> str:
         tweet: Tweet data from API
 
     Returns:
-        Full tweet text
+        Full tweet text with HTML entities decoded
     """
+    import html
+
     # Check for note_tweet (long tweets > 280 chars)
     note_tweet = tweet.get("note_tweet", {})
     if note_tweet and note_tweet.get("text"):
-        return note_tweet.get("text", "")
-    # Fall back to regular text field
-    return tweet.get("text", "")
+        text = note_tweet.get("text", "")
+    else:
+        # Fall back to regular text field
+        text = tweet.get("text", "")
+
+    # Decode HTML entities (&gt; -> >, &lt; -> <, &amp; -> &, etc.)
+    return html.unescape(text)
 
 
 def _parse_twitter_date(date_str: str) -> datetime:
@@ -543,7 +549,7 @@ def _convert_web_query_to_api(query: str) -> str:
     return query
 
 
-async def fetch_search_raw(query: str, username: str | None = None) -> tuple[dict, ScrapeStats]:
+async def fetch_search_raw(query: str, username: str | None = None, min_impressions_filter: int = MIN_IMPRESSIONS_FOR_DISCOVERY) -> tuple[dict, ScrapeStats]:
     """
     Search for tweets using Twitter API v2 WITHOUT thread population.
 
@@ -553,6 +559,7 @@ async def fetch_search_raw(query: str, username: str | None = None) -> tuple[dic
     Args:
         query: Search query (supports both web-style and API-style operators)
         username: Username for authentication
+        min_impressions_filter: Minimum impressions required for discovery tweets (default: MIN_IMPRESSIONS_FOR_DISCOVERY)
 
     Returns:
         Tuple of (raw_tweets dict without thread data, ScrapeStats)
@@ -602,11 +609,11 @@ async def fetch_search_raw(query: str, username: str | None = None) -> tuple[dic
             stats.filtered_old += 1
             continue
 
-        # Filter by minimum impressions for discovery
+        # Filter by minimum impressions for discovery (use user-specific filter)
         metrics = tweet.get("public_metrics", {})
         impressions = metrics.get("impression_count", 0)
 
-        if impressions < MIN_IMPRESSIONS_FOR_DISCOVERY:
+        if impressions < min_impressions_filter:
             stats.filtered_impressions += 1
             continue
 
@@ -614,6 +621,117 @@ async def fetch_search_raw(query: str, username: str | None = None) -> tuple[dic
         raw_tweets[tweet_dict["id"]] = tweet_dict
 
     stats.passed = len(raw_tweets)  # Before thread filtering
+    stats.log_summary()
+
+    return raw_tweets, stats
+
+
+async def fetch_user_timeline_raw(
+    username: str,
+    target_user: str,
+    max_tweets: int = 50
+) -> tuple[dict, ScrapeStats]:
+    """
+    Fetch tweets from a user's timeline WITHOUT thread population.
+    No impressions filter applied (curated source).
+
+    Args:
+        username: Username for authentication
+        target_user: Handle of user whose timeline to fetch
+        max_tweets: Maximum tweets to fetch
+
+    Returns:
+        Tuple of (raw_tweets dict without thread data, ScrapeStats)
+    """
+    query = f"from:{target_user}"
+    # No impressions filter for curated sources (user timelines)
+    return await fetch_search_raw(query, username, min_impressions_filter=0)
+
+
+async def fetch_home_timeline_raw(
+    username: str,
+    max_tweets: int = 50,
+    min_impressions_filter: int = MIN_IMPRESSIONS_FOR_DISCOVERY
+) -> tuple[dict, ScrapeStats]:
+    """
+    Fetch home timeline WITHOUT thread population or intent filtering.
+    Returns lightweight tweet objects for later selection.
+
+    Args:
+        username: Username for authentication
+        max_tweets: Maximum tweets to fetch
+        min_impressions_filter: Minimum impressions filter
+
+    Returns:
+        Tuple of (raw_tweets dict without thread data, ScrapeStats)
+    """
+    from backend.utlils.utils import is_tweet_seen
+
+    stats = ScrapeStats(source_type="home_timeline", source_value="following", username=username)
+
+    # Get access token
+    access_token = await ensure_access_token(username)
+    if not access_token:
+        error("No access token available for home timeline", status_code=401, function_name="fetch_home_timeline_raw", critical=False)
+        return {}, stats
+
+    # Get user ID
+    user_id = await _get_authenticated_user_id(access_token)
+    if not user_id:
+        error("Could not get user ID for home timeline", status_code=400, function_name="fetch_home_timeline_raw", critical=False)
+        return {}, stats
+
+    # Fetch timeline
+    response = await _fetch_home_timeline_raw(access_token, user_id, max_results=min(max_tweets, 100))
+
+    data = response.get("data", [])
+    includes = response.get("includes", {})
+    user_map = _build_user_map(includes)
+
+    stats.fetched = len(data)
+
+    # Process tweets (lightweight - no threads, no intent filtering)
+    raw_tweets = {}
+
+    for tweet in data:
+        tweet_id = tweet.get("id")
+
+        # Skip already seen tweets
+        if tweet_id and is_tweet_seen(username, str(tweet_id)):
+            stats.filtered_seen += 1
+            continue
+
+        # Skip old tweets
+        created_at = tweet.get("created_at", "")
+        if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
+            stats.filtered_old += 1
+            continue
+
+        # Skip replies
+        if _get_in_reply_to(tweet):
+            stats.filtered_replies += 1
+            continue
+
+        # Skip retweets
+        referenced = tweet.get("referenced_tweets", [])
+        is_retweet = any(ref.get("type") == "retweeted" for ref in referenced)
+        if is_retweet:
+            stats.filtered_retweets += 1
+            continue
+
+        # Filter by minimum impressions
+        metrics = tweet.get("public_metrics", {})
+        impressions = metrics.get("impression_count", 0)
+
+        if impressions < min_impressions_filter:
+            stats.filtered_impressions += 1
+            continue
+
+        # Convert to dict WITHOUT thread data
+        tweet_dict = _tweet_to_dict(tweet, user_map, includes)
+        raw_tweets[tweet_dict["id"]] = tweet_dict
+
+    stats.passed = len(raw_tweets)
     stats.log_summary()
 
     return raw_tweets, stats
@@ -1299,7 +1417,8 @@ async def _fetch_home_timeline_raw(
 
 async def fetch_home_timeline_with_intent_filter(
     username: str,
-    max_tweets: int = 50
+    max_tweets: int = 50,
+    min_impressions_filter: int = MIN_IMPRESSIONS_FOR_DISCOVERY
 ) -> tuple[dict, ScrapeStats]:
     """
     Fetch tweets from the user's home timeline and filter by intent.
@@ -1310,6 +1429,7 @@ async def fetch_home_timeline_with_intent_filter(
     Args:
         username: Username for authentication
         max_tweets: Maximum tweets to fetch and filter
+        min_impressions_filter: Minimum impressions required for discovery tweets (default: MIN_IMPRESSIONS_FOR_DISCOVERY)
 
     Returns:
         Tuple of (tweets dict, ScrapeStats)
@@ -1370,11 +1490,11 @@ async def fetch_home_timeline_with_intent_filter(
             stats.filtered_retweets += 1
             continue
 
-        # Filter by minimum impressions for discovery (home timeline = FYP)
+        # Filter by minimum impressions for discovery (home timeline = FYP, use user-specific filter)
         metrics = tweet.get("public_metrics", {})
         impressions = metrics.get("impression_count", 0)
 
-        if impressions < MIN_IMPRESSIONS_FOR_DISCOVERY:
+        if impressions < min_impressions_filter:
             stats.filtered_impressions += 1
             continue
 

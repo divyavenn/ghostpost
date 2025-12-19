@@ -709,6 +709,29 @@ const RegeneratingContent = styled.div`
   padding-top: 0.5rem;
 `;
 
+// Helper function to get a display label for query sources
+function getQueryDisplayLabel(scrapedFrom: ReplyData['scraped_from']): string {
+  if (!scrapedFrom || scrapedFrom.type !== 'query') {
+    return 'Custom Query';
+  }
+
+  const summary = scrapedFrom.summary;
+  const query = scrapedFrom.value;
+
+  // If no summary or summary is null/empty, show fallback
+  if (!summary) {
+    return 'Custom Query';
+  }
+
+  // If summary equals the full query (migration default), show fallback
+  if (summary === query) {
+    return 'Custom Query';
+  }
+
+  // Otherwise use the summary
+  return summary;
+}
+
 export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: ReplyDisplayProps) {
   const allReplies = tweet.generated_replies
     ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
@@ -907,7 +930,7 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                             ? `@${tweet.scraped_from.value}`
                             : tweet.scraped_from.type === 'home_timeline'
                             ? 'For You'
-                            : tweet.scraped_from.summary || tweet.scraped_from.value}
+                            : getQueryDisplayLabel(tweet.scraped_from)}
                         </span>
                       </Badge>
                     )}

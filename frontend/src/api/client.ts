@@ -164,8 +164,10 @@ export type QueryItem = string | [string, string];
 export interface UserSettings {
   queries: QueryItem[];
   relevant_accounts: Record<string, boolean>; // {handle: validated}
-  max_tweets_retrieve: number;
+  ideal_num_posts: number;
   number_of_generations: number;
+  min_impressions_filter?: number;
+  manual_minimum_impressions?: number | null;
   models?: string[]; // Read-only, managed via dedicated endpoint
   intent?: string; // User's intent for filtering and query generation
 }
@@ -194,6 +196,8 @@ export interface UserInfo {
   uid?: number;
   scrapes_left?: number;
   posts_left?: number;
+  min_impressions_filter?: number;
+  manual_minimum_impressions?: number | null;
 }
 
 // Job status types

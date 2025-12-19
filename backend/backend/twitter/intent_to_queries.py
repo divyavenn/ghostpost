@@ -181,8 +181,10 @@ async def update_intent_endpoint(username: str, payload: UpdateIntentRequest):
             raise HTTPException(status_code=404, detail=f"User {username} not found")
 
         # Update intent immediately and clear examples (they're no longer relevant to new intent)
+        from datetime import datetime, timezone
         user_info["intent"] = payload.intent
         user_info["intent_filter_examples"] = []  # Clear examples when intent changes
+        user_info["intent_filter_last_updated"] = datetime.now(timezone.utc).isoformat()  # Track when intent was updated
         write_user_info(user_info)
 
         notify(f"✅ [Intent] Updated intent for {username} (cleared filter examples)")

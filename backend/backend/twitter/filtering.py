@@ -105,7 +105,7 @@ async def ask_llm_for_filter(system_prompt: str, prompt: str, tweet_id: str = "u
     return result.get("message", "")
 
 
-def get_intent_filter_examples(username: str, limit: int = 5) -> list[dict]:
+def get_intent_filter_examples(username: str, limit: int = 10) -> list[dict]:
     """
     Get examples of original posts the user has replied to.
 
@@ -150,7 +150,7 @@ async def check_tweet_matches_intent_initial(tweet_data: dict, username: str) ->
         return False
 
     # Get examples from top-performing replies (sorted by engagement score)
-    examples = get_intent_filter_examples(username, limit=5)
+    examples = get_intent_filter_examples(username, limit=10)
     examples_context = ""
     if examples:
         examples_context = "\n\n[EXAMPLES OF POSTS THE USER HAS REPLIED TO (sorted by engagement)]\n"

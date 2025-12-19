@@ -42,10 +42,13 @@ class User(BaseModel):
     models: list[str] = []
     relevant_accounts: dict[str, bool] = {}  # handle -> isverified
     queries: list[str] | list[list[str]] = []  # Can be list of strings (legacy) or list of [query, summary] pairs
-    max_tweets_retrieve: int = 30
+    ideal_num_posts: int = 30  # Target number of tweets to retrieve (will aim for ±10 of this)
     number_of_generations: int = 2
+    min_impressions_filter: int = 2000  # Minimum impressions required for discovery tweets (auto-adjusted)
+    manual_minimum_impressions: int | None = None  # User override - disables auto-adjustment when set
     intent: str = ""  # User's intent for filtering and query generation
-    intent_filter_examples: list[dict] = []  # Up to 5 examples of posts user replied to, cleared when intent changes
+    intent_filter_examples: list[dict] = []  # Up to 10 examples of posts user replied to, cleared when intent changes
+    intent_filter_last_updated: str | None = None  # ISO 8601 timestamp of when intent was last updated
 
     # metrics
     lifetime_new_follows: int = 0
@@ -82,6 +85,7 @@ class ScrapedTweet(BaseModel):
     handle: str
     author_profile_pic_url: str
     quoted_tweet: QuotedTweet | None = None
+    conversation_id: str = ""  # ID of the root tweet in this conversation
 
     # attachments
     media: list[MediaItem] = []  # List of media items with type, url, and alt_text
@@ -267,8 +271,10 @@ class UpdateSettingsRequest(BaseModel):
     # Queries can be plain strings or [query, summary] tuples
     queries: list[str | list[str]] | None = None
     relevant_accounts: dict[str, bool] | None = None
-    max_tweets_retrieve: int | None = None
+    ideal_num_posts: int | None = None
     number_of_generations: int | None = None
+    min_impressions_filter: int | None = None
+    manual_minimum_impressions: int | None = None
     # models are NOT accepted here - use dedicated model management endpoint
 
 

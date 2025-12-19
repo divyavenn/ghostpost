@@ -27,6 +27,8 @@ class TweetAction(str, Enum):
     COMMENT_SKIPPED = "comment_skipped"
     COMMENT_REPLY_EDITED = "comment_reply_edited"
     COMMENT_DELETED = "comment_deleted"  # Comment/tweet was deleted on Twitter
+    # Settings adjustments
+    FILTER_ADJUSTED = "filter_adjusted"  # Impressions filter adjusted due to low tweet count
 
 
 def get_user_log_path(username: str) -> Path:
@@ -188,6 +190,35 @@ def log_scrape_action(username: str, number_of_tweets_written: int, initiated_by
         "action": TweetAction.SCRAPED.value,
         "number_of_tweets_written": number_of_tweets_written,
         "initiated_by": initiated_by,
+    }
+
+    # Append to JSONL file (each line is a JSON object)
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+
+
+def log_filter_adjustment(username: str, old_filter: int, new_filter: int, tweets_found: int, reason: str = "too_few_tweets") -> None:
+    """
+    Log an automatic adjustment to the impressions filter.
+
+    Args:
+        username: The user whose filter was adjusted
+        old_filter: Previous impressions filter value
+        new_filter: New impressions filter value
+        tweets_found: Number of tweets found that triggered the adjustment
+        reason: Reason for adjustment (default: "too_few_tweets")
+    """
+    log_path = get_user_log_path(username)
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    entry = {
+        "timestamp": datetime.now(UTC).isoformat(),
+        "action": TweetAction.FILTER_ADJUSTED.value,
+        "old_filter": old_filter,
+        "new_filter": new_filter,
+        "tweets_found": tweets_found,
+        "reason": reason,
+        "message": f"Too few tweets discovered ({tweets_found}), reduced impressions filter from {old_filter} to {new_filter}"
     }
 
     # Append to JSONL file (each line is a JSON object)

@@ -102,24 +102,53 @@ def _determine_monitoring_state(tweet: dict) -> str:
         return "warm"
 
 
-def _update_intent_filter_examples(username: str, limit: int = 5) -> None:
+def _update_intent_filter_examples(username: str, limit: int = 10) -> None:
     """
     Update intent_filter_examples in user_info with top-performing replies.
 
     Uses get_top_posts_by_type("reply") to get replies sorted by engagement score,
     then extracts the original posts (not the user's reply text) as examples.
 
+    Only includes replies posted AFTER intent_filter_last_updated to ensure
+    examples are relevant to the current intent.
+
     Args:
         username: User's handle
         limit: Max number of examples to store
     """
+    from datetime import datetime
     from backend.data.twitter.posted_tweets_cache import get_top_posts_by_type
     from backend.utlils.utils import read_user_info, write_user_info
 
-    top_replies = get_top_posts_by_type(username, post_type="reply", limit=limit)
+    # Read user info to get intent_filter_last_updated timestamp
+    user_info = read_user_info(username)
+    if not user_info:
+        return
+
+    intent_last_updated = user_info.get("intent_filter_last_updated")
+    intent_last_updated_dt = None
+    if intent_last_updated:
+        try:
+            intent_last_updated_dt = datetime.fromisoformat(intent_last_updated)
+        except (ValueError, TypeError):
+            pass
+
+    # Get top replies - fetch more than limit to account for filtering
+    top_replies = get_top_posts_by_type(username, post_type="reply", limit=limit * 3)
 
     examples = []
     for post in top_replies:
+        # Skip if this reply was posted before intent was last updated
+        if intent_last_updated_dt:
+            created_at = post.get("created_at")
+            if created_at:
+                try:
+                    created_at_dt = datetime.fromisoformat(created_at)
+                    if created_at_dt < intent_last_updated_dt:
+                        continue  # Skip this post - it's from before current intent
+                except (ValueError, TypeError):
+                    pass  # If we can't parse, include it anyway
+
         response_to_thread = post.get("response_to_thread", [])
         responding_to = post.get("responding_to", "")
 
@@ -131,12 +160,14 @@ def _update_intent_filter_examples(username: str, limit: int = 5) -> None:
                 "text": original_text
             })
 
+            # Stop once we have enough examples
+            if len(examples) >= limit:
+                break
+
     # Update user_info with new examples
-    user_info = read_user_info(username)
-    if user_info:
-        user_info["intent_filter_examples"] = examples
-        write_user_info(user_info)
-        notify(f"📚 Updated intent filter examples ({len(examples)}) for @{username}")
+    user_info["intent_filter_examples"] = examples
+    write_user_info(user_info)
+    notify(f"📚 Updated intent filter examples ({len(examples)}) for @{username}")
 
 
 async def discover_recently_posted(username: str, user_handle: str, max_tweets: int = 50) -> dict[str, Any]:

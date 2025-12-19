@@ -246,19 +246,24 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
                 current_posts = user_info.get("lifetime_posts", 0)
                 user_info["lifetime_posts"] = current_posts + 1
 
-                # Add to intent_filter_examples if we have < 5 examples and this is a reply to someone else's post
+                # Add to intent_filter_examples if we have < 10 examples and this is a reply to someone else's post
                 # Only add "reply" type posts (not comment_reply or original)
+                # Only add if intent_filter_last_updated is set (meaning user has an active intent)
                 if response_to_thread and responding_to_handle and post_type == "reply":
-                    examples = user_info.get("intent_filter_examples", [])
-                    if len(examples) < 5:
-                        # Add the original tweet as an example
-                        example = {
-                            "author": responding_to_handle,
-                            "text": " | ".join(response_to_thread)[:500]  # Truncate long threads
-                        }
-                        examples.append(example)
-                        user_info["intent_filter_examples"] = examples
-                        notify(f"📚 Added intent filter example ({len(examples)}/5) for @{username}")
+                    # Check if intent is set (has been updated at least once)
+                    intent_last_updated = user_info.get("intent_filter_last_updated")
+                    if intent_last_updated:  # Only add examples if intent is actively set
+                        examples = user_info.get("intent_filter_examples", [])
+                        if len(examples) < 10:
+                            # Add the original tweet as an example
+                            # (This tweet is being posted NOW, so it's always after intent_filter_last_updated)
+                            example = {
+                                "author": responding_to_handle,
+                                "text": " | ".join(response_to_thread)[:500]  # Truncate long threads
+                            }
+                            examples.append(example)
+                            user_info["intent_filter_examples"] = examples
+                            notify(f"📚 Added intent filter example ({len(examples)}/10) for @{username}")
 
                 write_user_info(user_info)
                 notify(f"📝 Post count incremented for @{username} (total: {user_info['lifetime_posts']})")
@@ -284,9 +289,13 @@ async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
 
     data = {"text": payload.text, "reply": {"in_reply_to_tweet_id": payload.tweet_id}}
 
-    # Determine post_type based on who we're replying to
-    # If replying to our own tweet (thread continuation) → "original"
-    # If replying to someone else's tweet → "reply"
+    # Determine post_type based on:
+    # 1. Whether parent is the conversation root (original post vs comment)
+    # 2. Whether we're replying to ourselves (thread continuation)
+    #
+    # If replying to root of our own thread → "original"
+    # If replying to root of someone else's thread → "reply"
+    # If replying to a comment (not root) → "comment_reply"
     post_type = "reply"  # default
     if payload.cache_id:
         try:
@@ -297,9 +306,21 @@ async def post_reply(payload: ReplyTweet, username: str = Query(...)) -> dict:
                 for tweet in cached_tweets:
                     if tweet.get("cache_id") == payload.cache_id:
                         responding_to_handle = tweet.get("handle", "")
-                        # Compare handles (case-insensitive)
-                        if responding_to_handle.lower() == username.lower():
-                            post_type = "original"  # Thread continuation
+                        conversation_id = tweet.get("conversation_id") or tweet.get("id")
+                        parent_tweet_id = payload.tweet_id
+
+                        # Check if we're replying to the conversation root
+                        is_replying_to_root = (parent_tweet_id == conversation_id)
+
+                        if is_replying_to_root:
+                            # Replying to the root/original post
+                            if responding_to_handle.lower() == username.lower():
+                                post_type = "original"  # Thread continuation
+                            else:
+                                post_type = "reply"  # Reply to someone else's original post
+                        else:
+                            # Replying to a comment (not the root)
+                            post_type = "comment_reply"
                         break
         except Exception:
             pass  # Default to "reply" on any error

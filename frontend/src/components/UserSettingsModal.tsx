@@ -175,8 +175,10 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const [settings, setSettings] = useState<UserSettings>({
     queries: [],
     relevant_accounts: {},
-    max_tweets_retrieve: 30,
+    ideal_num_posts: 30,
     number_of_generations: 1,
+    min_impressions_filter: 2000,
+    manual_minimum_impressions: null,
     models: [], // Read-only, not editable in settings modal
     intent: '',
   });
@@ -188,7 +190,9 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
   const [validating, setValidating] = useState(false);
-  const [maxTweetsInput, setMaxTweetsInput] = useState<string>('30');
+  const [idealNumPostsInput, setIdealNumPostsInput] = useState<string>('30');
+  const [minImpressionsInput, setMinImpressionsInput] = useState<string>('2000');
+  const [isManualOverride, setIsManualOverride] = useState(false);
   const [generatingQueries, setGeneratingQueries] = useState(false);
 
   useEffect(() => {
@@ -203,7 +207,15 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     try {
       const userSettings = await api.getUserSettings(username);
       setSettings(userSettings);
-      setMaxTweetsInput(userSettings.max_tweets_retrieve.toString());
+      setIdealNumPostsInput(userSettings.ideal_num_posts.toString());
+
+      // Determine which value to display and if manual override is active
+      const manualValue = userSettings.manual_minimum_impressions;
+      const autoValue = userSettings.min_impressions_filter ?? 2000;
+      const displayValue = (manualValue !== null && manualValue !== undefined) ? manualValue : autoValue;
+
+      setMinImpressionsInput(displayValue.toString());
+      setIsManualOverride(manualValue !== null && manualValue !== undefined);
     } catch (error) {
       console.error('Failed to load settings:', error);
     } finally {
@@ -551,26 +563,103 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
               </div>
             </div>
 
-            {/* Max Tweets */}
+            {/* Ideal Number of Posts */}
             <div>
-              <SectionTitle text="Max Tweets to Retrieve" />
+              <SectionTitle text="Ideal Number of Posts" />
+              <div className="mb-2">
+                <span className="text-neutral-400 text-sm">Target number of tweets (system will aim for ±10 of this)</span>
+              </div>
               <input
                 type="number"
-                value={maxTweetsInput}
-                onChange={(e) => setMaxTweetsInput(e.target.value)}
+                value={idealNumPostsInput}
+                onChange={(e) => setIdealNumPostsInput(e.target.value)}
                 onBlur={() => {
-                  const parsed = parseInt(maxTweetsInput);
+                  const parsed = parseInt(idealNumPostsInput);
                   const validated = isNaN(parsed) ? 30 : Math.min(Math.max(parsed, 1), 100);
-                  setMaxTweetsInput(validated.toString());
+                  setIdealNumPostsInput(validated.toString());
                   setSettings(prev => ({
                     ...prev,
-                    max_tweets_retrieve: validated,
+                    ideal_num_posts: validated,
                   }));
                 }}
                 min="1"
                 max="100"
                 className="w-full bg-neutral-800 text-white px-4 py-2 rounded-[15px] focus:outline-none transition"
               />
+            </div>
+
+            {/* Min Impressions Filter */}
+            <div>
+              <SectionTitle text="Minimum Impressions Filter" />
+              <div className="mb-2">
+                <span className="text-neutral-400 text-sm">
+                  {isManualOverride
+                    ? "Manual override active - automatic adjustment disabled"
+                    : "Filter out tweets from queries/FYP with fewer impressions (0 = no filter)"}
+                </span>
+              </div>
+
+              {/* Warning when manual override is active */}
+              {isManualOverride && (
+                <div className="mb-2 px-3 py-2 bg-yellow-900/20 border border-yellow-700/50 rounded-lg">
+                  <span className="text-yellow-400 text-sm">
+                    ⚠️ Manual override active - this could lead to fewer posts than your ideal number
+                  </span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={minImpressionsInput}
+                  onChange={(e) => {
+                    setMinImpressionsInput(e.target.value);
+                    setIsManualOverride(true);  // Mark as manual when user types
+                  }}
+                  onBlur={() => {
+                    // Don't allow empty input - revert to previous value
+                    if (minImpressionsInput.trim() === '' || isNaN(parseInt(minImpressionsInput))) {
+                      const currentValue = settings.manual_minimum_impressions ?? settings.min_impressions_filter ?? 2000;
+                      setMinImpressionsInput(currentValue.toString());
+                      return;
+                    }
+
+                    const parsed = parseInt(minImpressionsInput);
+                    const validated = Math.max(parsed, 0);
+                    setMinImpressionsInput(validated.toString());
+                    setSettings(prev => ({
+                      ...prev,
+                      manual_minimum_impressions: validated,
+                    }));
+                  }}
+                  min="0"
+                  className={`flex-1 px-4 py-2 rounded-[15px] focus:outline-none transition ${
+                    isManualOverride
+                      ? 'bg-blue-900/30 border-2 border-blue-500 text-blue-200'
+                      : 'bg-neutral-800 text-white'
+                  }`}
+                />
+
+                {/* X button to clear manual override */}
+                {isManualOverride && (
+                  <button
+                    onClick={() => {
+                      setIsManualOverride(false);
+                      // Set to the auto-calculated value
+                      const autoValue = settings.min_impressions_filter ?? 2000;
+                      setMinImpressionsInput(autoValue.toString());
+                      setSettings(prev => ({
+                        ...prev,
+                        manual_minimum_impressions: null,
+                      }));
+                    }}
+                    className="px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded-[15px] transition"
+                    title="Remove manual override"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             </div>
 
             {/* Number of Generations */}

@@ -100,7 +100,7 @@ def topic_to_query(topic: str) -> str:
 
 
 def read_user_settings(handle: str) -> dict[str, Any] | None:
-    """Return the scraping settings for a user (queries, relevant_accounts, max_tweets_retrieve)."""
+    """Return the scraping settings for a user (queries, relevant_accounts, ideal_num_posts)."""
     from backend.utlils.utils import read_user_info
 
     user_info = read_user_info(handle)
@@ -117,8 +117,10 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     return {
         "queries": queries,  # Return queries with summaries intact
         "relevant_accounts": relevant_accounts,
-        "max_tweets_retrieve": user_info.get("max_tweets_retrieve", 30),
+        "ideal_num_posts": user_info.get("ideal_num_posts", 30),
         "number_of_generations": user_info.get("number_of_generations", 1),
+        "min_impressions_filter": user_info.get("min_impressions_filter", 2000),
+        "manual_minimum_impressions": user_info.get("manual_minimum_impressions"),  # Can be None
         "models": user_info.get("models", ["claude-3-5-sonnet-20241022"]),  # Default to single model
         "intent": user_info.get("intent", "")
     }
@@ -127,8 +129,10 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
 def write_user_settings(handle: str,
                         queries: list | None = None,  # Can be list of strings or [query, summary] pairs
                         relevant_accounts: dict[str, bool] | None = None,
-                        max_tweets_retrieve: int | None = None,
+                        ideal_num_posts: int | None = None,
                         number_of_generations: int | None = None,
+                        min_impressions_filter: int | None = None,
+                        manual_minimum_impressions: int | None = False,  # Use False as sentinel, None means "clear override"
                         models: list[str] | None = None) -> None:
     """Update scraping settings for a user in user_info.json."""
     from backend.utlils.utils import read_user_info, write_user_info
@@ -148,8 +152,8 @@ def write_user_settings(handle: str,
     if relevant_accounts is not None:
         # Store as dict {handle: validated}
         user_info["relevant_accounts"] = relevant_accounts
-    if max_tweets_retrieve is not None:
-        user_info["max_tweets_retrieve"] = max_tweets_retrieve
+    if ideal_num_posts is not None:
+        user_info["ideal_num_posts"] = ideal_num_posts
     if number_of_generations is not None:
         # Validate range 1-5
         if not 1 <= number_of_generations <= 5:
@@ -157,6 +161,28 @@ def write_user_settings(handle: str,
             error("Invalid number_of_generations: must be between 1 and 5", status_code=400, function_name="write_user_settings", username=handle)
             raise ValueError("number_of_generations must be between 1 and 5")
         user_info["number_of_generations"] = number_of_generations
+    if min_impressions_filter is not None:
+        # Validate it's a positive integer
+        if not isinstance(min_impressions_filter, int) or min_impressions_filter < 0:
+            from backend.utlils.utils import error
+            error("Invalid min_impressions_filter: must be a non-negative integer", status_code=400, function_name="write_user_settings", username=handle)
+            raise ValueError("min_impressions_filter must be a non-negative integer")
+        user_info["min_impressions_filter"] = min_impressions_filter
+    # Track if we need to delete manual_minimum_impressions key
+    delete_manual_override = False
+
+    if manual_minimum_impressions is not False:  # False is our sentinel value meaning "not provided"
+        # manual_minimum_impressions can be None (to clear) or an int (to set)
+        if manual_minimum_impressions is None:
+            # Mark for deletion after write
+            delete_manual_override = True
+        else:
+            # Set the manual override - validate it's a positive integer
+            if not isinstance(manual_minimum_impressions, int) or manual_minimum_impressions < 0:
+                from backend.utlils.utils import error
+                error("Invalid manual_minimum_impressions: must be a non-negative integer", status_code=400, function_name="write_user_settings", username=handle)
+                raise ValueError("manual_minimum_impressions must be a non-negative integer")
+            user_info["manual_minimum_impressions"] = manual_minimum_impressions
     if models is not None:
         # Validate models list is not empty
         if not models or not isinstance(models, list):
@@ -166,6 +192,18 @@ def write_user_settings(handle: str,
         user_info["models"] = models
 
     write_user_info(user_info)
+
+    # Handle key deletion for manual override
+    # write_user_info doesn't delete keys, so we need to manipulate the file directly
+    if delete_manual_override:
+        from backend.utlils.utils import load_user_info_entries, find_user_info, atomic_file_update, USER_INFO_FILE
+        entries = load_user_info_entries()
+        target = find_user_info(entries, handle)
+        if target and "manual_minimum_impressions" in target:
+            del target["manual_minimum_impressions"]
+            atomic_file_update(USER_INFO_FILE, entries)
+            notify(f"🧹 Cleared manual impressions override for {handle}")
+
     notify(f"✅ Updated settings for {handle}")
 
 
@@ -244,8 +282,10 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
         write_user_settings(handle=handle,
                             queries=payload.queries,
                             relevant_accounts=payload.relevant_accounts,
-                            max_tweets_retrieve=payload.max_tweets_retrieve,
+                            ideal_num_posts=payload.ideal_num_posts,
                             number_of_generations=payload.number_of_generations,
+                            min_impressions_filter=payload.min_impressions_filter,
+                            manual_minimum_impressions=payload.manual_minimum_impressions if hasattr(payload, 'manual_minimum_impressions') else False,
                             models=None)
 
         # Handle changes in number_of_generations

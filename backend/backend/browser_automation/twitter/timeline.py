@@ -338,17 +338,20 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
 
 async def _run_find_and_reply_with_error_handling(username: str, triggered_by: str = "user"):
     """
-    Wrapper that catches and logs any exceptions from find_and_reply_to_new_posts.
+    Wrapper that catches and logs any exceptions from find_and_reply_to_new_posts_with_retry.
     asyncio.create_task() silently swallows exceptions, so we need explicit handling.
+
+    Uses retry logic: if < 7 tweets are found, clears seen_tweets and halves
+    the impressions filter, then retries (min filter: 100).
     """
     try:
-        from backend.twitter.twitter_jobs import find_and_reply_to_new_posts
-        await find_and_reply_to_new_posts(username, triggered_by)
+        from backend.twitter.twitter_jobs import find_and_reply_to_new_posts_with_retry
+        await find_and_reply_to_new_posts_with_retry(username, triggered_by)
     except Exception as e:
         import traceback
-        error_msg = f"find_and_reply_to_new_posts crashed: {e}\n{traceback.format_exc()}"
+        error_msg = f"find_and_reply_to_new_posts_with_retry crashed: {e}\n{traceback.format_exc()}"
         notify(f"❌ [Background] {error_msg}")
-        error(error_msg, status_code=500, function_name="find_and_reply_to_new_posts", username=username, critical=False)
+        error(error_msg, status_code=500, function_name="find_and_reply_to_new_posts_with_retry", username=username, critical=False)
 
 
 @router.post("/{username}/tweets")

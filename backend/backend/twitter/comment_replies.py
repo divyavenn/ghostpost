@@ -251,13 +251,26 @@ def build_comment_prompt(comment: dict, thread_context: list[dict], user_handle:
 
 
 async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", commenter_handle: str | None = None, prompt_variant: str = "default", username: str = "unknown") -> dict:
-    """Generate a comment reply using the unified LLM caller."""
-    from backend.utlils.llm import ask_llm
+    """Generate a comment reply using the unified LLM caller with Gemini fallback."""
+    from backend.utlils.llm import ask_llm, ask_gemini
 
     # Build system prompt personalized with commenter handle
     system_prompt = build_comment_reply_system_prompt(commenter_handle)
 
-    return await ask_llm(
+    # If no model specified, use Gemini directly (user has no model configured)
+    if not model or model == "":
+        notify(f"ℹ️ No model configured, using Gemini")
+        return await ask_gemini(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model="gemini-2.0-flash-exp",
+            image_urls=image_urls,
+            username=username,
+            prompt_type="COMMENT REPLY"
+        )
+
+    # Try Obelisk first
+    response = await ask_llm(
         system_prompt=system_prompt,
         user_prompt=prompt,
         model=model,
@@ -265,6 +278,22 @@ async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model
         username=username,
         prompt_type="COMMENT REPLY"
     )
+
+    # If Obelisk failed, fallback to Gemini
+    if "error" in response:
+        notify(f"⚠️ Obelisk failed, falling back to Gemini: {response.get('error')}")
+        response = await ask_gemini(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model="gemini-2.0-flash-exp",
+            image_urls=image_urls,
+            username=username,
+            prompt_type="COMMENT REPLY"
+        )
+        if "message" in response:
+            notify(f"✅ Gemini fallback successful")
+
+    return response
 
 
 async def generate_replies_for_comment(
@@ -370,13 +399,16 @@ async def generate_comment_replies(
         get_thread_context,
         update_comment_generated_replies,
     )
+    from backend.config import GEMINI_API_KEY
 
-    if not OBELISK_KEY:
-        error("OBELISK_KEY not configured", status_code=500, function_name="generate_comment_replies", username=username, critical=True)
-        raise ValueError("OBELISK_KEY not configured")
+    # Check if at least one API key is configured
+    if not OBELISK_KEY and not GEMINI_API_KEY:
+        error("Neither OBELISK_KEY nor GEMINI_API_KEY configured", status_code=500, function_name="generate_comment_replies", username=username, critical=True)
+        raise ValueError("Neither OBELISK_KEY nor GEMINI_API_KEY configured")
 
     user_info = read_user_info(username)
-    models = user_info.get("models", ["claude-3-5-sonnet-20241022"]) if user_info else ["claude-3-5-sonnet-20241022"]
+    # If models not configured, use None to trigger Gemini
+    models = user_info.get("models", [None]) if user_info and user_info.get("models") else [None]
     num_generations = user_info.get("number_of_generations", 2) if user_info else 2
 
     results = {
@@ -581,9 +613,11 @@ async def regenerate_single_comment_reply_endpoint(
         get_thread_context,
         update_comment_generated_replies,
     )
+    from backend.config import GEMINI_API_KEY
 
-    if not OBELISK_KEY:
-        error("OBELISK_KEY not configured", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
+    # Check if at least one API key is configured
+    if not OBELISK_KEY and not GEMINI_API_KEY:
+        error("Neither OBELISK_KEY nor GEMINI_API_KEY configured", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
 
     comment = get_comment(username, comment_id)
     if not comment:
@@ -594,7 +628,8 @@ async def regenerate_single_comment_reply_endpoint(
         error(f"No thread context for comment {comment_id}", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
 
     user_info = read_user_info(username)
-    models = user_info.get("models", ["claude-3-5-sonnet-20241022"]) if user_info else ["claude-3-5-sonnet-20241022"]
+    # If models not configured, use None to trigger Gemini
+    models = user_info.get("models", [None]) if user_info and user_info.get("models") else [None]
     num_generations = user_info.get("number_of_generations", 2) if user_info else 2
 
     replies = await generate_replies_for_comment(

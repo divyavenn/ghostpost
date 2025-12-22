@@ -255,6 +255,7 @@ TWITTER_POST = "twitter_post"
 
 # LLM API buckets
 LLM_OBELISK = "llm_obelisk"
+LLM_GEMINI = "llm_gemini"
 
 
 def create_rate_limiter() -> RateLimiter:
@@ -295,6 +296,13 @@ def create_rate_limiter() -> RateLimiter:
         60,  # 60 requests per minute
         window_seconds=60,  # 1 minute window
         name="Obelisk LLM",
+        max_retries=0,  # No retries - fail fast and fallback to Gemini
+        base_delay=2.0  # Longer base delay for LLM calls
+    ))
+    limiter.add_bucket(LLM_GEMINI, RateLimitConfig(
+        60,  # 60 requests per minute (Gemini has generous free tier limits)
+        window_seconds=60,  # 1 minute window
+        name="Gemini LLM",
         max_retries=3,
         base_delay=2.0  # Longer base delay for LLM calls
     ))

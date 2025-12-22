@@ -227,7 +227,8 @@ async def _generate_reply_for_tweet_background(tweet: dict, username: str):
         if user_info.get("account_type") != "premium":
             return
 
-        models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
+        # If models not configured, use None to trigger Gemini
+        models = user_info.get("models", [None]) if user_info.get("models") else [None]
         num_generations = user_info.get("number_of_generations", 2)
 
         tweet_id = tweet.get("id") or tweet.get("tweet_id")
@@ -806,7 +807,8 @@ async def _generate_reply_for_comment_background(
         if not user_info:
             return
 
-        models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
+        # If models not configured, use None to trigger Gemini
+        models = user_info.get("models", [None]) if user_info.get("models") else [None]
         num_generations = user_info.get("number_of_generations", 2)
 
         comment_id = comment.get("id")

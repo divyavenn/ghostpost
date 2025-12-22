@@ -59,6 +59,7 @@ USE_BROWSERBASE_FOR_SCRAPING = False
 # AI/LLM CONFIGURATION
 # =============================================================================
 OBELISK_KEY = os.getenv("OBELISK_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # =============================================================================
 # STRIPE BILLING CONFIGURATION

@@ -29,7 +29,12 @@ import {
   loadingOverlayDismissedState,
   showNewPostsModalState,
   newPostsCountState,
+  supabaseSessionLoadingState,
+  supabaseSessionState,
+  supabaseUserState,
+  twitterConnectedState,
 } from './atoms';
+import { supabase, signOut } from './lib/supabase';
 
 function App() {
   const navigate = useNavigate();
@@ -45,6 +50,10 @@ function App() {
   const [overlayDismissed, setOverlayDismissed] = useRecoilState(loadingOverlayDismissedState);
   const [showNewPostsModal, setShowNewPostsModal] = useRecoilState(showNewPostsModalState);
   const [newPostsCount, setNewPostsCount] = useRecoilState(newPostsCountState);
+  const [sessionLoading, setSessionLoading] = useRecoilState(supabaseSessionLoadingState);
+  const [supabaseSession, setSupabaseSession] = useRecoilState(supabaseSessionState);
+  const [, setSupabaseUser] = useRecoilState(supabaseUserState);
+  const [, setTwitterConnected] = useRecoilState(twitterConnectedState);
 
   // Local state (component-specific)
   const [tweets, setTweets] = useState<ReplyData[]>([]);
@@ -294,12 +303,58 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Redirect to login if no username
+  // Supabase auth state listener
   useEffect(() => {
-    if (!username) {
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSupabaseSession(session);
+      setSupabaseUser(session?.user ?? null);
+      setSessionLoading(false);
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setSupabaseSession(session);
+        setSupabaseUser(session?.user ?? null);
+      }
+    );
+
+    return () => subscription.unsubscribe();
+  }, [setSupabaseSession, setSupabaseUser, setSessionLoading]);
+
+  // Redirect to login if no Supabase session (wait for session check to complete)
+  useEffect(() => {
+    // Don't redirect until we've checked for a session
+    if (sessionLoading) return;
+
+    // Check both Supabase session and username
+    if (!supabaseSession) {
       navigate('/login');
+    } else if (supabaseSession && !username) {
+      // Has Supabase session but no username in localStorage
+      // Check if user has a linked Twitter profile
+      const checkLinkedTwitter = async () => {
+        try {
+          const syncResult = await api.syncSupabaseUser(supabaseSession.access_token);
+          if (syncResult.twitter_handle) {
+            // Twitter already connected - set username and stay on home
+            setUsername(syncResult.twitter_handle);
+            setTwitterConnected(true);
+          } else {
+            // Need to connect Twitter
+            navigate('/connect-twitter');
+          }
+        } catch {
+          // If sync fails, go to connect-twitter
+          navigate('/connect-twitter');
+        }
+      };
+      checkLinkedTwitter();
+    } else if (username) {
+      setTwitterConnected(true);
     }
-  }, [username, navigate]);
+  }, [sessionLoading, supabaseSession, username, navigate, setTwitterConnected, setUsername]);
 
   // Load posted tweets when switching to Posted tab
   useEffect(() => {
@@ -802,7 +857,12 @@ function App() {
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Sign out from Supabase
+    await signOut();
+    setSupabaseSession(null);
+    setSupabaseUser(null);
+    setTwitterConnected(false);
     setUsername(null);
     setTweets([]);
     localStorage.removeItem('username');

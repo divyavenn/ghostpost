@@ -9,8 +9,6 @@ This module sets up scheduled tasks to:
 - Run at configurable intervals (default: every 24 hours for scraping, every 6 hours for engagement)
 """
 
-import json
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import APIRouter
@@ -18,7 +16,8 @@ from fastapi import APIRouter
 from backend.browser_automation.twitter.timeline import read_tweets
 from backend.twitter.generate_replies import generate_replies
 from backend.twitter.logging import log_scrape_action
-from backend.utlils.utils import BROWSER_STATE_FILE, cookie_still_valid, log_background_task, notify
+from backend.utlils.utils import cookie_still_valid, log_background_task, notify
+from backend.utlils.supabase_client import get_all_twitter_profiles, get_browser_state
 
 # Default intervals
 DEFAULT_SCRAPE_INTERVAL_HOURS = 24
@@ -87,20 +86,22 @@ def get_users_with_valid_browser_sessions() -> list[str]:
     Returns:
         list[str]: List of usernames with valid browser sessions
     """
-    if not BROWSER_STATE_FILE.exists():
-        return []
-
     try:
-        with open(BROWSER_STATE_FILE) as f:
-            browser_states = json.load(f)
-
-        if not isinstance(browser_states, dict):
+        # Get all Twitter profiles from database
+        profiles = get_all_twitter_profiles()
+        if not profiles:
             return []
 
         valid_users = []
-        for username, state in browser_states.items():
-            if cookie_still_valid(state):
-                valid_users.append(username)
+        for profile in profiles:
+            handle = profile.get("handle")
+            if not handle:
+                continue
+
+            # Check if user has a valid browser state
+            state = get_browser_state(handle, site="twitter")
+            if state and cookie_still_valid(state):
+                valid_users.append(handle)
 
         return valid_users
 

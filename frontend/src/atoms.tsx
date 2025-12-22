@@ -1,5 +1,6 @@
 import { atom, selector } from 'recoil';
 import { type UserInfo } from './api/client';
+import { type Session, type User } from '@supabase/supabase-js';
 
 
 export const usernameState = atom<string | null>({
@@ -168,4 +169,48 @@ export const showNewPostsModalState = atom<boolean>({
 export const newPostsCountState = atom<number>({
   key: 'newPostsCountState',
   default: 0,
+});
+
+/**
+ * Whether we're still checking for a Supabase session
+ */
+export const supabaseSessionLoadingState = atom<boolean>({
+  key: 'supabaseSessionLoadingState',
+  default: true,
+});
+
+/**
+ * Supabase session state
+ */
+export const supabaseSessionState = atom<Session | null>({
+  key: 'supabaseSessionState',
+  default: null,
+});
+
+/**
+ * Supabase user state
+ */
+export const supabaseUserState = atom<User | null>({
+  key: 'supabaseUserState',
+  default: null,
+});
+
+/**
+ * Whether user has connected their Twitter account
+ */
+export const twitterConnectedState = atom<boolean>({
+  key: 'twitterConnectedState',
+  default: false,
+});
+
+/**
+ * Selector to check if fully authenticated (Supabase + Twitter)
+ */
+export const isFullyAuthenticatedSelector = selector<boolean>({
+  key: 'isFullyAuthenticatedSelector',
+  get: ({ get }) => {
+    const supabaseUser = get(supabaseUserState);
+    const twitterConnected = get(twitterConnectedState);
+    return !!supabaseUser && twitterConnected;
+  },
 });

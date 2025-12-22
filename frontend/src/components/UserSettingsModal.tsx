@@ -442,6 +442,16 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
             <p className="text-neutral-500 text-[18px]">@{username}</p>
             <p className="text-neutral-500 text-[18px]">{userInfo.follower_count.toLocaleString()} followers</p>
             </div>
+            {/* Connected X Account */}
+            <div className="mt-4 pt-4 border-t border-neutral-800 w-full">
+              <div className="flex items-center justify-center gap-3">
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" className="text-white">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                </svg>
+                <span className="text-white text-sm">@{username}</span>
+                <span className="text-green-400 text-xs px-2 py-0.5 bg-green-900/30 rounded-full">Connected</span>
+              </div>
+            </div>
           </div>
         </div>
 

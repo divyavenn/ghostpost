@@ -404,7 +404,7 @@ async def generate_comment_replies(
     notify(f"📝 Processing {len(comments)} comments for @{username}")
 
     for comment in comments:
-        comment_id = comment.get("id")
+        comment_id = comment.get("tweet_id")
 
         # Skip if already has replies and not overwriting
         existing_replies = comment.get("generated_replies", [])

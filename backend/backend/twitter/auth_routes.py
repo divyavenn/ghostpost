@@ -4,21 +4,28 @@ import datetime
 import json
 import secrets
 
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, Header, Query, Request
 from fastapi.responses import HTMLResponse
 from playwright.async_api import async_playwright
 from pydantic import BaseModel
 
 from backend.browser_management.context import cleanup_browser_session
 from backend.config import (
-    BROWSER_STATE_FILE,
     BROWSERBASE_API_KEY,
     BROWSERBASE_PROJECT_ID,
     SHOW_BROWSER,
 )
 from backend.twitter.authentication import exchange_code_for_token, get_authorization_url
 from backend.user.user import get_user_info
-from backend.utlils.utils import atomic_file_update, error, notify, read_user_info, store_browser_state, store_token
+from backend.utlils.utils import error, notify, read_user_info, store_token
+from backend.auth.supabase_routes import get_optional_user
+from backend.utlils.supabase_client import (
+    create_twitter_profile,
+    get_twitter_profile,
+    get_user_by_id,
+    store_browser_state,
+    update_twitter_profile,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -314,6 +321,9 @@ async def twitter_callback(
         user_info = await get_user_info(access_token)
         twitter_handle = user_info.get("handle") or user_info.get("username")
     except Exception as e:
+        notify(f"❌ get_user_info failed: {type(e).__name__}: {e}")
+        import traceback
+        traceback.print_exc()
         _update_session_error(session_id, "user_info_fetch_failed", str(e))
         error("Failed to fetch user info from Twitter API", status_code=500, function_name="twitter_callback", exception_text=str(e))
         return redirect_error("user_info_failed")
@@ -327,12 +337,36 @@ async def twitter_callback(
     notify(f"✅ OAuth tokens obtained for @{twitter_handle}")
     store_token(twitter_handle, refresh_token, access_token, expires_in)
 
+    # Link Twitter profile to Supabase user if we have a user_id
+    supabase_user_id = oauth_data.get("supabase_user_id")
+    if supabase_user_id:
+        try:
+            existing_profile = get_twitter_profile(twitter_handle)
+            if existing_profile:
+                # Update existing profile to link to Supabase user
+                if existing_profile.get("user_id") != supabase_user_id:
+                    update_twitter_profile(twitter_handle, {"user_id": supabase_user_id})
+                    notify(f"🔗 Linked existing Twitter profile @{twitter_handle} to Supabase user {supabase_user_id}")
+            else:
+                # Create new Twitter profile linked to Supabase user
+                create_twitter_profile({
+                    "handle": twitter_handle,
+                    "user_id": supabase_user_id,
+                    "username": user_info.get("username") or twitter_handle,
+                    "profile_pic_url": user_info.get("profile_pic_url"),
+                    "follower_count": user_info.get("follower_count", 0),
+                })
+                notify(f"✨ Created Twitter profile @{twitter_handle} linked to Supabase user {supabase_user_id}")
+        except Exception as e:
+            notify(f"⚠️ Failed to link Twitter profile to Supabase user: {e}")
+            # Continue anyway - the OAuth worked, linking is a bonus
+
     # Mark login as complete - OAuth is sufficient, browser cookies are optional
     if session_id and session_id in _cookie_sessions:
         _cookie_sessions[session_id]["oauth_complete"] = True
         _cookie_sessions[session_id]["username"] = twitter_handle
         _cookie_sessions[session_id]["status"] = "complete"  # Login complete with OAuth
-        _cookie_sessions[session_id]["oauth_complete_time"] = datetime.datetime.now(datetime.UTC).isoformat()
+        _cookie_sessions[session_id]["oauth_complete_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         notify(f"✅ Login complete for @{twitter_handle} (browser cookies optional)")
 
     notify(f"🔗 Redirecting to: {frontend_url}/login-success?username={twitter_handle}")
@@ -356,11 +390,17 @@ class LoginUrlRequest(BaseModel):
 
 
 @router.post("/twitter/login-url")
-async def get_login_url(payload: LoginUrlRequest | None = None) -> dict:
+async def get_login_url(
+    payload: LoginUrlRequest | None = None,
+    authorization: str | None = Header(None),
+) -> dict:
     """
     Generate a session ID and return Twitter OAuth URL.
     Frontend opens this URL in a new tab, user logs in via OAuth,
     extension sends cookies back after redirect.
+
+    If Authorization header is provided with a valid Supabase JWT,
+    the Twitter profile will be linked to the Supabase user after OAuth completes.
     """
     import secrets
 
@@ -377,11 +417,31 @@ async def get_login_url(payload: LoginUrlRequest | None = None) -> dict:
     # Store frontend URL for redirect after OAuth
     frontend_url = payload.frontend_url if payload else None
 
+    # Extract Supabase user ID if JWT provided
+    supabase_user_id = None
+    if authorization:
+        try:
+            user_data = await get_optional_user(authorization)
+            if user_data:
+                # The 'sub' claim is the UUID from auth.users, which is our users.id
+                supabase_user_id = user_data.get("sub")
+                if supabase_user_id:
+                    # Verify user exists in our database
+                    user = get_user_by_id(supabase_user_id)
+                    if user:
+                        notify(f"📝 Twitter OAuth for Supabase user {supabase_user_id}")
+                    else:
+                        notify(f"⚠️ Supabase user {supabase_user_id} not found in database")
+                        supabase_user_id = None
+        except Exception as e:
+            notify(f"⚠️ Could not verify Supabase JWT: {e}")
+
     # Store OAuth state for potential callback handling
     _oauth_states[state] = {
         "code_verifier": code_verifier,
         "session_id": session_id,
         "frontend_url": frontend_url,  # Store for redirect
+        "supabase_user_id": supabase_user_id,  # Link to Supabase user
         "created_at": __import__('datetime').datetime.now().isoformat()
     }
 
@@ -506,7 +566,7 @@ async def import_cookies(payload: CookieImport) -> dict:
     # Convert browser extension format to Playwright storage_state format
     import datetime
     try:
-        storage_state = {"cookies": sanitized_cookies, "origins": [{"origin": "https://x.com", "localStorage": []}], "timestamp": datetime.datetime.now(datetime.UTC).isoformat()}
+        storage_state = {"cookies": sanitized_cookies, "origins": [{"origin": "https://x.com", "localStorage": []}], "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}
     except Exception as e:
         error_msg = f"Failed to create storage state for @{username}: {e}"
         notify(f"❌ {error_msg}")
@@ -518,27 +578,9 @@ async def import_cookies(payload: CookieImport) -> dict:
             "username": username
         }
 
-    # Load existing cache
+    # Save browser state to database
     try:
-        if BROWSER_STATE_FILE.exists():
-            try:
-                cache = json.loads(BROWSER_STATE_FILE.read_text())
-            except json.JSONDecodeError as e:
-                notify(f"⚠️  Warning: Corrupted cache file, creating new one: {e}")
-                cache = {}
-        else:
-            cache = {}
-    except Exception as e:
-        error_msg = f"Failed to load browser state cache: {e}"
-        notify(f"❌ {error_msg}")
-        return {"success": False, "error": "cache_load_failed", "message": error_msg, "user_message": "Server Error: Failed to access cookie storage. Please contact support.", "username": username}
-
-    # Add user's cookies with timestamp
-    cache[username] = storage_state
-
-    # Save to file
-    try:
-        atomic_file_update(BROWSER_STATE_FILE, cache)
+        store_browser_state(username, storage_state, site="twitter")
         notify(f"✅ Imported {len(cookies)} cookies for @{username}")
     except Exception as e:
         error_msg = f"Failed to save browser state for @{username}: {e}"

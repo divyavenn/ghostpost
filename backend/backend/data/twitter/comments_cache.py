@@ -1,18 +1,8 @@
 """
-Manage comments cache in [handle]_comments.json files.
+Manage comments cache in Supabase.
 Stores comments (replies from others) on user's tweets.
-
-Storage format: Map with _order array for pagination
-{
-    "_order": ["id3", "id2", "id1"],  // newest first
-    "id1": { comment data },
-    "id2": { comment data },
-    ...
-}
 """
-import json
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 try:  # Python 3.11+
@@ -21,97 +11,29 @@ except ImportError:
     from datetime import timezone
     UTC = timezone.utc
 
-from backend.utlils.utils import CACHE_DIR, _cache_key, notify
+from backend.utlils.utils import notify
 
 
-def get_comments_path(username: str) -> Path:
-    """Get the path to the comments cache file for a user."""
-    return CACHE_DIR / f"{_cache_key(username)}_comments.json"
+def _convert_to_map_format(comments: list[dict[str, Any]]) -> dict[str, Any]:
+    """Convert a list of comments to map format with _order."""
+    comments_map: dict[str, Any] = {"_order": []}
+    for comment in comments:
+        comment_id = comment.get("tweet_id")
+        if comment_id:
+            comments_map[comment_id] = comment
+            comments_map["_order"].append(comment_id)
+    return comments_map
 
 
 def read_comments_cache(username: str) -> dict[str, Any]:
     """
-    Read comments from cache file.
+    Read comments from Supabase.
     Returns map with _order array for pagination.
     """
-    from pydantic import ValidationError
+    from backend.utlils.supabase_client import get_comments
 
-    from backend.data.twitter.data_validation import CommentRecord
-    from backend.utlils.utils import error
-
-    cache_path = get_comments_path(username)
-
-    if not cache_path.exists():
-        return {"_order": []}
-
-    try:
-        with open(cache_path, encoding="utf-8") as f:
-            data = json.load(f)
-
-        # Ensure it's a map with _order
-        if not isinstance(data, dict):
-            error("Invalid comments cache format", status_code=500, function_name="read_comments_cache", username=username)
-            return {"_order": []}
-
-        if "_order" not in data:
-            data["_order"] = [k for k in data.keys()]
-
-        # Validate each comment (skip _order)
-        for comment_id, comment in list(data.items()):
-            if comment_id == "_order":
-                continue
-
-            try:
-                validated = CommentRecord(**comment)
-                data[comment_id] = validated.model_dump()
-            except ValidationError as e:
-                error(f"Invalid comment data for comment {comment_id}", status_code=500, exception_text=str(e), function_name="read_comments_cache", username=username)
-                # Keep invalid comment but log the error
-
-        return data
-
-    except Exception as e:
-        error("Error reading comments cache", status_code=500, exception_text=str(e), function_name="read_comments_cache", username=username)
-        notify(f"❌ Error reading comments cache for {username}: {e}")
-        return {"_order": []}
-
-
-def write_comments_cache(username: str, comments_map: dict[str, Any]) -> None:
-    """
-    Write comments to cache file.
-    Overwrites the entire file.
-    """
-    from pydantic import ValidationError
-
-    from backend.data.twitter.data_validation import CommentRecord
-    from backend.utlils.utils import error
-
-    cache_path = get_comments_path(username)
-    cache_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Ensure _order exists
-    if "_order" not in comments_map:
-        comments_map["_order"] = [k for k in comments_map.keys() if k != "_order"]
-
-    # Validate each comment before writing (skip _order)
-    for comment_id, comment in list(comments_map.items()):
-        if comment_id == "_order":
-            continue
-
-        try:
-            validated = CommentRecord(**comment)
-            comments_map[comment_id] = validated.model_dump()
-        except ValidationError as e:
-            error(f"Invalid comment data for comment {comment_id}", status_code=500, exception_text=str(e), function_name="write_comments_cache", username=username)
-            # Still include the comment but log the error
-
-    try:
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(comments_map, f, indent=2, ensure_ascii=False)
-    except Exception as e:
-        error("Error writing comments cache", status_code=500, exception_text=str(e), function_name="write_comments_cache", username=username)
-        notify(f"❌ Error writing comments cache for {username}: {e}")
-        raise
+    comments = get_comments(username)
+    return _convert_to_map_format(comments or [])
 
 
 def get_comments_list(
@@ -123,33 +45,17 @@ def get_comments_list(
     """
     Get comments as a list for pagination.
     Returns comments in order (newest first).
-
-    Args:
-        username: User's Twitter handle
-        limit: Maximum number of comments to return
-        offset: Number of comments to skip
-        status_filter: Optional filter by status ("pending", "replied", "skipped")
     """
-    comments_map = read_comments_cache(username)
-    order = comments_map.get("_order", [])
+    from backend.utlils.supabase_client import get_comments
 
-    # Get all comments in order
-    comments = [comments_map[cid] for cid in order if cid in comments_map and cid != "_order"]
-
-    # Apply status filter if provided
-    if status_filter:
-        comments = [c for c in comments if c.get("status") == status_filter]
-
-    # Apply pagination
-    if limit is not None:
-        return comments[offset:offset + limit]
-    return comments[offset:]
+    return get_comments(username, limit, offset, status_filter)
 
 
 def get_comment(username: str, comment_id: str) -> dict[str, Any] | None:
     """Get a single comment by ID."""
-    comments_map = read_comments_cache(username)
-    return comments_map.get(comment_id)
+    from backend.utlils.supabase_client import get_comment as sb_get_comment
+
+    return sb_get_comment(username, comment_id)
 
 
 def add_comment(
@@ -173,30 +79,28 @@ def add_comment(
     other_replies: list[dict] | None = None,
     media: list[dict] | None = None,
     quoted_tweet: dict | None = None,
-    engagement_type: str = "reply"  # "reply" or "quote_tweet"
+    engagement_type: str = "reply"
 ) -> dict[str, Any]:
     """
     Add a new comment to the cache.
-
-    Returns:
-        The created comment object
     """
-    comments_map = read_comments_cache(username)
+    from backend.utlils.supabase_client import add_comment as sb_add_comment, get_comment as sb_get_comment
 
-    # Check if already exists
-    if comment_id in comments_map:
-        # Update metrics only
+    # Check if already exists - update metrics only
+    existing = sb_get_comment(username, comment_id)
+    if existing:
         update_comment_metrics(
             username, comment_id,
             likes=likes, retweets=retweets, quotes=quotes, replies=replies, impressions=impressions
         )
-        return comments_map[comment_id]
+        return existing
 
     comment = {
-        "id": comment_id,
+        "tweet_id": comment_id,
+        "handle": username,
         "text": text,
-        "handle": handle,
-        "username": commenter_username,
+        "commenter_handle": handle,
+        "commenter_username": commenter_username,
         "author_profile_pic_url": author_profile_pic_url,
         "followers": followers,
         "likes": likes,
@@ -215,32 +119,17 @@ def add_comment(
         "source": "external",
         "monitoring_state": "active",
         "last_activity_at": created_at,
-        "last_deep_scrape": None,
-        "last_shallow_scrape": None,
-        "last_reply_count": replies,
-        "last_like_count": likes,
-        "last_quote_count": quotes,
-        "last_retweet_count": retweets,
         "resurrected_via": "none",
         "last_scraped_reply_ids": [],
         "thread": thread or [],
         "other_replies": other_replies or [],
         "media": media or [],
         "quoted_tweet": quoted_tweet,
-        "engagement_type": engagement_type  # "reply" or "quote_tweet"
+        "engagement_type": engagement_type
     }
 
-    # Add to map
-    comments_map[comment_id] = comment
-
-    # Update order (prepend for newest-first)
-    order = comments_map.get("_order", [])
-    comments_map["_order"] = [comment_id] + [oid for oid in order if oid != comment_id]
-
-    write_comments_cache(username, comments_map)
-
-    notify(f"💬 Added comment {comment_id} from @{handle} to cache for @{username}")
-
+    sb_add_comment(comment)
+    notify(f"💬 Added comment {comment_id} from @{handle} for @{username}")
     return comment
 
 
@@ -255,57 +144,33 @@ def update_comment_metrics(
 ) -> dict[str, Any] | None:
     """
     Update metrics for a comment.
-
-    Returns:
-        Updated comment object, or None if not found
     """
-    comments_map = read_comments_cache(username)
+    from backend.utlils.supabase_client import update_comment as sb_update_comment
 
-    if comment_id not in comments_map or comment_id == "_order":
-        return None
-
-    comment = comments_map[comment_id]
-
+    updates = {"last_metrics_update": datetime.now(UTC).isoformat()}
     if likes is not None:
-        comment["likes"] = likes
+        updates["likes"] = likes
     if retweets is not None:
-        comment["retweets"] = retweets
+        updates["retweets"] = retweets
     if quotes is not None:
-        comment["quotes"] = quotes
+        updates["quotes"] = quotes
     if replies is not None:
-        comment["replies"] = replies
+        updates["replies"] = replies
     if impressions is not None:
-        comment["impressions"] = impressions
-
-    comment["last_metrics_update"] = datetime.now(UTC).isoformat()
-
-    write_comments_cache(username, comments_map)
-    return comment
+        updates["impressions"] = impressions
+    return sb_update_comment(comment_id, updates)
 
 
 def update_comment_status(username: str, comment_id: str, status: str) -> bool:
     """
     Update the status of a comment.
-
-    Args:
-        username: User's Twitter handle
-        comment_id: Comment ID to update
-        status: New status ("pending", "replied", "skipped")
-
-    Returns:
-        True if updated, False if not found
     """
-    comments_map = read_comments_cache(username)
+    from backend.utlils.supabase_client import update_comment as sb_update_comment
 
-    if comment_id not in comments_map or comment_id == "_order":
-        notify(f"⚠️ Comment {comment_id} not found in cache for @{username}")
-        return False
-
-    comments_map[comment_id]["status"] = status
-    write_comments_cache(username, comments_map)
-
-    notify(f"✅ Updated comment {comment_id} status to {status}")
-    return True
+    result = sb_update_comment(comment_id, {"status": status})
+    if result:
+        notify(f"✅ Updated comment {comment_id} status to {status}")
+    return result is not None
 
 
 def update_comment_generated_replies(
@@ -315,67 +180,35 @@ def update_comment_generated_replies(
 ) -> bool:
     """
     Update the generated replies for a comment.
-
-    Args:
-        username: User's Twitter handle
-        comment_id: Comment ID to update
-        generated_replies: List of (reply_text, model_name) tuples
-
-    Returns:
-        True if updated, False if not found
     """
-    comments_map = read_comments_cache(username)
+    from backend.utlils.supabase_client import update_comment as sb_update_comment
 
-    if comment_id not in comments_map or comment_id == "_order":
-        return False
-
-    comments_map[comment_id]["generated_replies"] = generated_replies
-    write_comments_cache(username, comments_map)
-    return True
+    result = sb_update_comment(comment_id, {"generated_replies": generated_replies})
+    return result is not None
 
 
 def delete_comment(username: str, comment_id: str) -> bool:
     """
     Delete a comment from the cache.
-
-    Returns:
-        True if deleted, False if not found
     """
-    comments_map = read_comments_cache(username)
+    from backend.utlils.supabase_client import delete_comment as sb_delete_comment
 
-    if comment_id not in comments_map or comment_id == "_order":
-        notify(f"⚠️ Comment {comment_id} not found in cache for @{username}")
-        return False
-
-    # Remove from map
-    del comments_map[comment_id]
-
-    # Remove from order
-    order = comments_map.get("_order", [])
-    comments_map["_order"] = [oid for oid in order if oid != comment_id]
-
-    write_comments_cache(username, comments_map)
-    notify(f"✅ Deleted comment {comment_id} from cache for @{username}")
-    return True
+    result = sb_delete_comment(comment_id)
+    if result:
+        notify(f"✅ Deleted comment {comment_id} for @{username}")
+    return result
 
 
 def get_pending_comments_count(username: str) -> int:
     """Get count of pending comments."""
-    comments_map = read_comments_cache(username)
-    return sum(
-        1 for cid, c in comments_map.items()
-        if cid != "_order" and isinstance(c, dict) and c.get("status") == "pending"
-    )
+    from backend.utlils.supabase_client import get_pending_comments_count as sb_get_count
+
+    return sb_get_count(username)
 
 
 def get_user_replied_comment_ids(username: str) -> set[str]:
     """
     Get the set of comment IDs that the user has already replied to.
-
-    Checks posted_tweets cache for any tweets that are replies to comments.
-
-    Returns:
-        Set of comment IDs that the user has responded to
     """
     from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
 
@@ -386,12 +219,10 @@ def get_user_replied_comment_ids(username: str) -> set[str]:
         if tweet_id == "_order" or not isinstance(tweet, dict):
             continue
 
-        # Check in_reply_to_status_id (direct reply parent)
         in_reply_to = tweet.get("in_reply_to_status_id")
         if in_reply_to:
             replied_to_ids.add(in_reply_to)
 
-        # Also check parent_chain for nested replies
         parent_chain = tweet.get("parent_chain", [])
         for parent_id in parent_chain:
             replied_to_ids.add(parent_id)
@@ -418,11 +249,9 @@ def get_thread_context(tweet_id: str, username: str) -> list[dict[str, Any]]:
     for ancestor_id in tweet.get("parent_chain", []):
         ancestor = posted_tweets.get(ancestor_id) or comments.get(ancestor_id)
         if ancestor and isinstance(ancestor, dict):
-            # Get media - check both 'media' (tweet's own) and 'parent_media' (parent's media)
-            # For thread context display, we show the tweet's own media
             ancestor_media = ancestor.get("media", [])
             chain.append({
-                "id": ancestor_id,
+                "tweet_id": ancestor_id,
                 "text": ancestor.get("text", ""),
                 "handle": ancestor.get("handle", ancestor.get("responding_to", "")),
                 "username": ancestor.get("username", ""),
@@ -432,9 +261,8 @@ def get_thread_context(tweet_id: str, username: str) -> list[dict[str, Any]]:
                 "media": ancestor_media if ancestor_media else []
             })
         else:
-            # Ancestor was deleted or not tracked
             chain.append({
-                "id": ancestor_id,
+                "tweet_id": ancestor_id,
                 "text": "<tweet deleted>",
                 "handle": "",
                 "username": "",
@@ -444,11 +272,9 @@ def get_thread_context(tweet_id: str, username: str) -> list[dict[str, Any]]:
                 "media": []
             })
 
-    # Add current tweet
-    # Get media for current tweet
     current_media = tweet.get("media", [])
     chain.append({
-        "id": tweet_id,
+        "tweet_id": tweet_id,
         "text": tweet.get("text", ""),
         "handle": tweet.get("handle", tweet.get("responding_to", "")),
         "username": tweet.get("username", ""),
@@ -468,17 +294,6 @@ def process_scraped_replies(
 ) -> list[str]:
     """
     Process scraped replies and add new comments to cache.
-
-    Only adds comments that the user has NOT already replied to.
-    Also removes any existing cached comments that user has replied to externally.
-
-    Args:
-        username: User's Twitter handle (for cache)
-        scraped_replies: List of reply dicts from scraping
-        user_handle: User's Twitter handle (for filtering out user's own tweets)
-
-    Returns:
-        List of new comment IDs that were added
     """
     from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
 
@@ -486,21 +301,18 @@ def process_scraped_replies(
     comments_map = read_comments_cache(username)
     user_tweet_ids = set(k for k in posted_tweets.keys() if k != "_order")
 
-    # Get IDs of comments the user has already replied to
     user_replied_ids = get_user_replied_comment_ids(username)
 
     # First pass: Check if any scraped replies are FROM the user
-    # If so, their parent comment should be removed from cache
     user_reply_parent_ids = set()
     for reply in scraped_replies:
         reply_handle = reply.get("handle", "")
         if reply_handle.lower() == user_handle.lower():
-            # This is a user's reply - mark its parent for removal
             parent_id = reply.get("in_reply_to_status_id")
             if parent_id:
                 user_reply_parent_ids.add(parent_id)
 
-    # Remove cached comments that user has replied to (externally or from scraped data)
+    # Remove cached comments that user has replied to
     all_replied_ids = user_replied_ids | user_reply_parent_ids
     removed_count = 0
     for comment_id in list(comments_map.keys()):
@@ -509,7 +321,6 @@ def process_scraped_replies(
         if comment_id in all_replied_ids:
             delete_comment(username, comment_id)
             removed_count += 1
-            # Refresh comments_map after deletion
             comments_map = read_comments_cache(username)
 
     if removed_count > 0:
@@ -524,15 +335,12 @@ def process_scraped_replies(
         if not reply_id:
             continue
 
-        # Skip user's own tweets
         if reply_handle.lower() == user_handle.lower():
             continue
 
-        # Skip if user has already replied to this comment
         if reply_id in all_replied_ids:
             continue
 
-        # Skip if already in comments (just update metrics)
         if reply_id in comments_map:
             update_comment_metrics(
                 username, reply_id,
@@ -548,19 +356,16 @@ def process_scraped_replies(
         if not in_reply_to_id:
             continue
 
-        # Build parent_chain
         parent = posted_tweets.get(in_reply_to_id) or comments_map.get(in_reply_to_id)
         if parent and isinstance(parent, dict):
             parent_chain = parent.get("parent_chain", []) + [in_reply_to_id]
         else:
             parent_chain = [in_reply_to_id]
 
-        # Only track if root is user's tweet
         root_id = parent_chain[0] if parent_chain else in_reply_to_id
         if root_id not in user_tweet_ids:
             continue
 
-        # Add comment
         add_comment(
             username=username,
             comment_id=reply_id,
@@ -585,8 +390,6 @@ def process_scraped_replies(
         )
 
         new_comment_ids.append(reply_id)
-
-        # Also add to comments_map for subsequent lookups in this loop
         comments_map = read_comments_cache(username)
 
     if new_comment_ids:
@@ -602,19 +405,7 @@ def process_scraped_quote_tweets(
     quoted_tweet_id: str
 ) -> list[str]:
     """
-    Process scraped quote tweets and add new ones to cache as engagement opportunities.
-
-    Quote tweets are stored similarly to comments but with engagement_type="quote_tweet".
-    The quoted_tweet_id links back to the user's original tweet.
-
-    Args:
-        username: User's Twitter handle (for cache)
-        scraped_quote_tweets: List of quote tweet dicts from scraping
-        user_handle: User's Twitter handle (for filtering out user's own tweets)
-        quoted_tweet_id: The ID of the user's tweet that was quoted
-
-    Returns:
-        List of new quote tweet IDs that were added
+    Process scraped quote tweets and add new ones to cache.
     """
     from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
 
@@ -622,11 +413,9 @@ def process_scraped_quote_tweets(
     comments_map = read_comments_cache(username)
     user_tweet_ids = set(k for k in posted_tweets.keys() if k != "_order")
 
-    # Verify the quoted tweet belongs to the user
     if quoted_tweet_id not in user_tweet_ids:
         return []
 
-    # Get IDs of comments the user has already replied to
     user_replied_ids = get_user_replied_comment_ids(username)
 
     new_qt_ids = []
@@ -638,15 +427,12 @@ def process_scraped_quote_tweets(
         if not qt_id:
             continue
 
-        # Skip user's own quote tweets
         if qt_handle.lower() == user_handle.lower():
             continue
 
-        # Skip if user has already replied to this QT
         if qt_id in user_replied_ids:
             continue
 
-        # Skip if already in comments (just update metrics)
         if qt_id in comments_map:
             update_comment_metrics(
                 username, qt_id,
@@ -658,18 +444,15 @@ def process_scraped_quote_tweets(
             )
             continue
 
-        # For QTs, the "parent" is the quoted tweet, not in_reply_to
-        # parent_chain is just [quoted_tweet_id] since QT directly references user's tweet
         parent_chain = [quoted_tweet_id]
 
-        # Add as a comment with engagement_type marker
         add_comment(
             username=username,
             comment_id=qt_id,
             text=qt.get("text", ""),
             handle=qt_handle,
             commenter_username=qt.get("username", qt_handle),
-            in_reply_to_id=quoted_tweet_id,  # QT is in response to this tweet
+            in_reply_to_id=quoted_tweet_id,
             parent_chain=parent_chain,
             created_at=qt.get("created_at", datetime.now(UTC).isoformat()),
             url=qt.get("url", f"https://x.com/{qt_handle}/status/{qt_id}"),
@@ -680,16 +463,14 @@ def process_scraped_quote_tweets(
             quotes=qt.get("quotes", 0),
             replies=qt.get("replies", 0),
             impressions=qt.get("impressions", 0),
-            thread=None,  # QTs don't have thread context in same way
+            thread=None,
             other_replies=None,
             media=qt.get("media"),
-            quoted_tweet=None,  # The QT itself is the quote, not quoting another
-            engagement_type="quote_tweet"  # Mark this as a quote tweet
+            quoted_tweet=None,
+            engagement_type="quote_tweet"
         )
 
         new_qt_ids.append(qt_id)
-
-        # Refresh comments_map for subsequent lookups
         comments_map = read_comments_cache(username)
 
     if new_qt_ids:

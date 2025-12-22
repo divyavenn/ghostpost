@@ -40,7 +40,7 @@ class TestMigration:
 
     def test_migrate_array_to_map(self):
         """Migration should convert array format to map with _order."""
-        # Create temp file with old array format
+        # Create temp file with old array format (uses "id" not "tweet_id")
         old_data = [
             {
                 "id": "123",
@@ -103,7 +103,7 @@ class TestMigration:
         """Migration should skip files already in map format."""
         map_data = {
             "_order": ["123"],
-            "123": {"id": "123", "text": "Test"},
+            "123": {"tweet_id": "123", "text": "Test"},
         }
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
@@ -166,19 +166,15 @@ class TestMigration:
 
 
 class TestPostedTweetsCache:
-    """Tests for posted_tweets_cache functions."""
+    """Tests for posted_tweets_cache functions with Supabase mocking."""
 
     @pytest.fixture
-    def mock_cache_dir(self, tmp_path):
-        """Create a temporary cache directory with test data."""
-        cache_dir = tmp_path / "cache"
-        cache_dir.mkdir()
-
-        # Create test data in new map format
-        test_data = {
-            "_order": ["tweet1", "tweet2", "tweet3"],
-            "tweet1": {
-                "id": "tweet1",
+    def mock_supabase_data(self):
+        """Mock Supabase data for tests."""
+        test_data = [
+            {
+                "tweet_id": "tweet1",
+                "handle": "testuser",
                 "text": "First tweet",
                 "likes": 10,
                 "retweets": 2,
@@ -186,27 +182,11 @@ class TestPostedTweetsCache:
                 "replies": 1,
                 "impressions": 100,
                 "created_at": datetime.now(UTC).isoformat(),
-                "url": "https://x.com/test/status/tweet1",
-                "last_metrics_update": datetime.now(UTC).isoformat(),
-                "parent_chain": [],
-                "response_to_thread": [],
-                "responding_to": "someone",
-                "replying_to_pfp": "",
-                "original_tweet_url": "",
-                "source": "app_posted",
                 "monitoring_state": "active",
-                "last_activity_at": datetime.now(UTC).isoformat(),
-                "last_deep_scrape": None,
-                "last_shallow_scrape": None,
-                "last_reply_count": 1,
-                "last_like_count": 10,
-                "last_quote_count": 0,
-                "last_retweet_count": 2,
-                "resurrected_via": "none",
-                "last_scraped_reply_ids": [],
             },
-            "tweet2": {
-                "id": "tweet2",
+            {
+                "tweet_id": "tweet2",
+                "handle": "testuser",
                 "text": "Second tweet",
                 "likes": 5,
                 "retweets": 0,
@@ -214,27 +194,11 @@ class TestPostedTweetsCache:
                 "replies": 0,
                 "impressions": 50,
                 "created_at": (datetime.now(UTC) - timedelta(days=2)).isoformat(),
-                "url": "https://x.com/test/status/tweet2",
-                "last_metrics_update": datetime.now(UTC).isoformat(),
-                "parent_chain": [],
-                "response_to_thread": [],
-                "responding_to": "another",
-                "replying_to_pfp": "",
-                "original_tweet_url": "",
-                "source": "app_posted",
                 "monitoring_state": "warm",
-                "last_activity_at": (datetime.now(UTC) - timedelta(days=2)).isoformat(),
-                "last_deep_scrape": None,
-                "last_shallow_scrape": None,
-                "last_reply_count": 0,
-                "last_like_count": 5,
-                "last_quote_count": 0,
-                "last_retweet_count": 0,
-                "resurrected_via": "none",
-                "last_scraped_reply_ids": [],
             },
-            "tweet3": {
-                "id": "tweet3",
+            {
+                "tweet_id": "tweet3",
+                "handle": "testuser",
                 "text": "Third tweet",
                 "likes": 20,
                 "retweets": 5,
@@ -242,90 +206,82 @@ class TestPostedTweetsCache:
                 "replies": 3,
                 "impressions": 500,
                 "created_at": (datetime.now(UTC) - timedelta(days=10)).isoformat(),
-                "url": "https://x.com/test/status/tweet3",
-                "last_metrics_update": datetime.now(UTC).isoformat(),
-                "parent_chain": [],
-                "response_to_thread": [],
-                "responding_to": "third",
-                "replying_to_pfp": "",
-                "original_tweet_url": "",
-                "source": "app_posted",
                 "monitoring_state": "cold",
-                "last_activity_at": (datetime.now(UTC) - timedelta(days=10)).isoformat(),
-                "last_deep_scrape": None,
-                "last_shallow_scrape": None,
-                "last_reply_count": 3,
-                "last_like_count": 20,
-                "last_quote_count": 1,
-                "last_retweet_count": 5,
-                "resurrected_via": "none",
-                "last_scraped_reply_ids": [],
             },
-        }
+        ]
 
-        test_file = cache_dir / "testuser_posted_tweets.json"
-        with open(test_file, "w") as f:
-            json.dump(test_data, f)
+        def mock_get_posted_tweets(username, limit=None, offset=0):
+            filtered = [t for t in test_data if t.get("handle") == username]
+            if offset:
+                filtered = filtered[offset:]
+            if limit:
+                filtered = filtered[:limit]
+            return filtered
 
-        return cache_dir
+        def mock_get_posted_tweets_by_state(username, states):
+            return [t for t in test_data if t.get("handle") == username and t.get("monitoring_state") in states]
 
-    def test_read_posted_tweets_cache(self, mock_cache_dir):
+        def mock_get_user_posted_tweet_ids(username):
+            return {t["tweet_id"] for t in test_data if t.get("handle") == username}
+
+        with patch("backend.utlils.supabase_client.get_posted_tweets", mock_get_posted_tweets), \
+             patch("backend.utlils.supabase_client.get_posted_tweets_by_state", mock_get_posted_tweets_by_state), \
+             patch("backend.utlils.supabase_client.get_user_posted_tweet_ids", mock_get_user_posted_tweet_ids):
+            yield test_data
+
+    def test_read_posted_tweets_cache(self, mock_supabase_data):
         """Test reading the posted tweets cache."""
-        with patch("backend.utlils.utils.CACHE_DIR", mock_cache_dir):
-            from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
+        from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
 
-            tweets_map = read_posted_tweets_cache("testuser")
+        tweets_map = read_posted_tweets_cache("testuser")
 
-            assert "_order" in tweets_map
-            assert len(tweets_map["_order"]) == 3
-            assert "tweet1" in tweets_map
-            assert "tweet2" in tweets_map
-            assert "tweet3" in tweets_map
+        assert "_order" in tweets_map
+        assert len(tweets_map["_order"]) == 3
+        assert "tweet1" in tweets_map
+        assert "tweet2" in tweets_map
+        assert "tweet3" in tweets_map
 
-    def test_get_posted_tweets_list_pagination(self, mock_cache_dir):
+    def test_get_posted_tweets_list_pagination(self, mock_supabase_data):
         """Test pagination with get_posted_tweets_list."""
-        with patch("backend.utlils.utils.CACHE_DIR", mock_cache_dir):
-            from backend.data.twitter.posted_tweets_cache import get_posted_tweets_list
+        from backend.data.twitter.posted_tweets_cache import get_posted_tweets_list
 
-            # Get first 2
-            page1 = get_posted_tweets_list("testuser", limit=2, offset=0)
-            assert len(page1) == 2
-            assert page1[0]["id"] == "tweet1"
-            assert page1[1]["id"] == "tweet2"
+        # Get first 2
+        page1 = get_posted_tweets_list("testuser", limit=2, offset=0)
+        assert len(page1) == 2
+        assert page1[0]["tweet_id"] == "tweet1"
+        assert page1[1]["tweet_id"] == "tweet2"
 
-            # Get next 2 (only 1 remaining)
-            page2 = get_posted_tweets_list("testuser", limit=2, offset=2)
-            assert len(page2) == 1
-            assert page2[0]["id"] == "tweet3"
+        # Get next 2 (only 1 remaining)
+        page2 = get_posted_tweets_list("testuser", limit=2, offset=2)
+        assert len(page2) == 1
+        assert page2[0]["tweet_id"] == "tweet3"
 
-    def test_get_tweets_by_monitoring_state(self, mock_cache_dir):
+    def test_get_tweets_by_monitoring_state(self, mock_supabase_data):
         """Test filtering by monitoring state."""
-        with patch("backend.utlils.utils.CACHE_DIR", mock_cache_dir):
-            from backend.data.twitter.posted_tweets_cache import get_tweets_by_monitoring_state
+        from backend.data.twitter.posted_tweets_cache import get_tweets_by_monitoring_state
 
-            active = get_tweets_by_monitoring_state("testuser", ["active"])
-            assert len(active) == 1
-            assert active[0]["id"] == "tweet1"
+        active = get_tweets_by_monitoring_state("testuser", ["active"])
+        assert len(active) == 1
+        assert active[0]["tweet_id"] == "tweet1"
 
-            warm = get_tweets_by_monitoring_state("testuser", ["warm"])
-            assert len(warm) == 1
-            assert warm[0]["id"] == "tweet2"
+        warm = get_tweets_by_monitoring_state("testuser", ["warm"])
+        assert len(warm) == 1
+        assert warm[0]["tweet_id"] == "tweet2"
 
-            cold = get_tweets_by_monitoring_state("testuser", ["cold"])
-            assert len(cold) == 1
-            assert cold[0]["id"] == "tweet3"
+        cold = get_tweets_by_monitoring_state("testuser", ["cold"])
+        assert len(cold) == 1
+        assert cold[0]["tweet_id"] == "tweet3"
 
-            # Multiple states
-            active_warm = get_tweets_by_monitoring_state("testuser", ["active", "warm"])
-            assert len(active_warm) == 2
+        # Multiple states
+        active_warm = get_tweets_by_monitoring_state("testuser", ["active", "warm"])
+        assert len(active_warm) == 2
 
-    def test_get_user_tweet_ids(self, mock_cache_dir):
+    def test_get_user_tweet_ids(self, mock_supabase_data):
         """Test getting all tweet IDs."""
-        with patch("backend.utlils.utils.CACHE_DIR", mock_cache_dir):
-            from backend.data.twitter.posted_tweets_cache import get_user_tweet_ids
+        from backend.data.twitter.posted_tweets_cache import get_user_tweet_ids
 
-            ids = get_user_tweet_ids("testuser")
-            assert ids == {"tweet1", "tweet2", "tweet3"}
+        ids = get_user_tweet_ids("testuser")
+        assert ids == {"tweet1", "tweet2", "tweet3"}
 
 
 if __name__ == "__main__":

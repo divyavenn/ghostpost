@@ -7,6 +7,7 @@ from backend.data.twitter.edit_cache import router as tweets_router
 from backend.browser_automation.twitter.metrics import router as performance_router
 from backend.browser_automation.twitter.timeline import router as read_router
 from backend.twitter.auth_routes import router as auth_router
+from backend.auth.supabase_routes import router as supabase_auth_router
 from backend.twitter.comment_replies import router as comment_replies_router
 from backend.twitter.comments_routes import router as comments_router
 from backend.twitter.generate_replies import router as generate_router
@@ -50,6 +51,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(supabase_auth_router)
 app.include_router(tweets_router)
 app.include_router(post_router)
 app.include_router(posted_router)

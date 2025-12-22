@@ -124,7 +124,7 @@ async def get_comments_grouped_by_post(
             }
 
         # Add comment to group with its thread context
-        thread_context = get_thread_context(comment["id"], username)
+        thread_context = get_thread_context(comment["tweet_id"], username)
         grouped[user_post_id]["comments"].append({
             **comment,
             "thread_context": thread_context

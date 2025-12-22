@@ -34,13 +34,14 @@ from backend.utlils.utils import error, notify
 def _calculate_activity_delta(tweet: dict, new_metrics: dict) -> int:
     """
     Calculate the activity delta from last scrape.
-    Returns sum of (new_replies - last_replies) + (new_likes - last_likes) + ...
+    Compares new metrics against current stored metrics (which represent the previous scrape).
+    Returns sum of (new_replies - old_replies) + (new_likes - old_likes) + ...
     """
     delta = 0
-    delta += max(0, new_metrics.get("replies", 0) - (tweet.get("last_reply_count") or 0))
-    delta += max(0, new_metrics.get("likes", 0) - (tweet.get("last_like_count") or 0))
-    delta += max(0, new_metrics.get("quotes", 0) - (tweet.get("last_quote_count") or 0))
-    delta += max(0, new_metrics.get("retweets", 0) - (tweet.get("last_retweet_count") or 0))
+    delta += max(0, new_metrics.get("replies", 0) - (tweet.get("replies") or 0))
+    delta += max(0, new_metrics.get("likes", 0) - (tweet.get("likes") or 0))
+    delta += max(0, new_metrics.get("quotes", 0) - (tweet.get("quotes") or 0))
+    delta += max(0, new_metrics.get("retweets", 0) - (tweet.get("retweets") or 0))
     return delta
 
 
@@ -193,11 +194,12 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
     """
     from backend.data.twitter.comments_cache import process_scraped_replies, process_scraped_quote_tweets
     from backend.data.twitter.posted_tweets_cache import (
-        add_posted_tweet,
         get_user_tweet_ids,
-        read_posted_tweets_cache,
-        update_monitoring_state,
-        write_posted_tweets_cache,
+        get_posted_tweet,
+    )
+    from backend.utlils.supabase_client import (
+        add_posted_tweet as sb_add_tweet,
+        update_posted_tweet as sb_update_tweet,
     )
     from backend.browser_automation.twitter.api import scrape_user_recent_tweets, get_thread, deep_scrape_thread
 
@@ -237,8 +239,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
             if tweet_id in existing_ids:
                 skipped_existing += 1
                 # Update existing tweet with missing data (quoted_tweet, response_to_thread)
-                tweets_map = read_posted_tweets_cache(username)
-                existing_tweet = tweets_map.get(tweet_id, {})
+                existing_tweet = get_posted_tweet(username, tweet_id) or {}
                 updated = False
 
                 # Backfill quoted_tweet if missing
@@ -288,8 +289,19 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                     notify(f"📝 Corrected post_type={correct_post_type} (was {current_post_type}) for tweet {tweet_id}")
 
                 if updated:
-                    tweets_map[tweet_id] = existing_tweet
-                    write_posted_tweets_cache(username, tweets_map)
+                    # Build update dict with only changed fields
+                    update_fields = {}
+                    if existing_tweet.get("quoted_tweet"):
+                        update_fields["quoted_tweet"] = existing_tweet["quoted_tweet"]
+                    if existing_tweet.get("response_to_thread"):
+                        update_fields["response_to_thread"] = existing_tweet["response_to_thread"]
+                        update_fields["responding_to"] = existing_tweet.get("responding_to", "")
+                        update_fields["replying_to_pfp"] = existing_tweet.get("replying_to_pfp", "")
+                        update_fields["original_tweet_url"] = existing_tweet.get("original_tweet_url", "")
+                    if existing_tweet.get("post_type"):
+                        update_fields["post_type"] = existing_tweet["post_type"]
+                    if update_fields:
+                        sb_update_tweet(tweet_id, update_fields)
                 continue
 
             # Skip retweets (in_reply_to_status_id would be set for quote tweets too)
@@ -300,10 +312,6 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 # Add to posted_tweets
                 created_at = tweet.get("created_at", datetime.now(UTC).isoformat())
                 url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
-
-                # For external tweets, we set source="external" and calculate monitoring state
-                # We'll create a minimal entry and then update it
-                tweets_map = read_posted_tweets_cache(username)
 
                 # Determine initial monitoring state based on age
                 temp_tweet = {"created_at": created_at, "last_activity_at": created_at}
@@ -376,22 +384,13 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                     "source": "external",
                     "monitoring_state": initial_state,
                     "last_activity_at": created_at,
-                    "last_deep_scrape": None,
-                    "last_shallow_scrape": None,
-                    "last_reply_count": tweet.get("replies", 0),
-                    "last_like_count": tweet.get("likes", 0),
-                    "last_quote_count": tweet.get("quotes", 0),
-                    "last_retweet_count": tweet.get("retweets", 0),
                     "resurrected_via": "none",
                     "last_scraped_reply_ids": [],
                     "post_type": post_type,
                     "score": 0  # Will be updated when metrics are fetched
                 }
 
-                tweets_map[tweet_id] = tweet_data
-                order = tweets_map.get("_order", [])
-                tweets_map["_order"] = [tweet_id] + [oid for oid in order if oid != tweet_id]
-                write_posted_tweets_cache(username, tweets_map)
+                sb_add_tweet(tweet_data)
 
                 results["discovered_tweets"] += 1
                 notify(f"✅ Discovered external tweet {tweet_id} ({initial_state})")
@@ -412,11 +411,9 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                         results["new_quote_tweets"] += len(new_qt_ids)
 
                         # Update tweet with scrape info
-                        tweets_map = read_posted_tweets_cache(username)
-                        if tweet_id in tweets_map:
-                            tweets_map[tweet_id]["last_deep_scrape"] = datetime.now(UTC).isoformat()
-                            tweets_map[tweet_id]["last_scraped_reply_ids"] = scrape_result.get("all_reply_ids", [])[:50]
-                            write_posted_tweets_cache(username, tweets_map)
+                        sb_update_tweet(tweet_id, {
+                            "last_scraped_reply_ids": scrape_result.get("all_reply_ids", [])[:50]
+                        })
 
                     except Exception as e:
                         notify(f"⚠️ Error deep scraping {tweet_id}: {e}")
@@ -462,9 +459,8 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
     from backend.data.twitter.comments_cache import process_scraped_replies, process_scraped_quote_tweets
     from backend.data.twitter.posted_tweets_cache import (
         get_tweets_by_monitoring_state,
-        read_posted_tweets_cache,
-        write_posted_tweets_cache,
     )
+    from backend.utlils.supabase_client import update_posted_tweet as sb_update_tweet
     from backend.browser_automation.twitter.api import shallow_scrape_thread, deep_scrape_thread
 
     notify(f"🔍 [discover_engagement] Starting for @{user_handle}")
@@ -493,7 +489,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
         active_idx = 0
         for tweet in active_tweets:
             active_idx += 1
-            tweet_id = tweet.get("id")
+            tweet_id = tweet.get("tweet_id")
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
@@ -511,34 +507,31 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
                 results["new_quote_tweets"] += len(new_qt_ids)
 
                 # Update tweet
-                tweets_map = read_posted_tweets_cache(username)
-                if tweet_id in tweets_map:
-                    now = datetime.now(UTC).isoformat()
-                    tweets_map[tweet_id]["last_deep_scrape"] = now
-                    tweets_map[tweet_id]["last_reply_count"] = scrape_result.get("reply_count", 0)
-                    tweets_map[tweet_id]["last_like_count"] = scrape_result.get("like_count", 0)
-                    tweets_map[tweet_id]["last_quote_count"] = scrape_result.get("quote_count", 0)
-                    tweets_map[tweet_id]["last_retweet_count"] = scrape_result.get("retweet_count", 0)
-                    tweets_map[tweet_id]["replies"] = scrape_result.get("reply_count", 0)
-                    tweets_map[tweet_id]["likes"] = scrape_result.get("like_count", 0)
-                    tweets_map[tweet_id]["quotes"] = scrape_result.get("quote_count", 0)
-                    tweets_map[tweet_id]["retweets"] = scrape_result.get("retweet_count", 0)
-                    tweets_map[tweet_id]["last_scraped_reply_ids"] = scrape_result.get("all_reply_ids", [])[:50]
+                now = datetime.now(UTC).isoformat()
+                updates = {
+                    "replies": scrape_result.get("reply_count", 0),
+                    "likes": scrape_result.get("like_count", 0),
+                    "quotes": scrape_result.get("quote_count", 0),
+                    "retweets": scrape_result.get("retweet_count", 0),
+                    "last_scraped_reply_ids": scrape_result.get("all_reply_ids", [])[:50],
+                }
 
-                    # Update activity if new comments or quote tweets found
-                    if new_comment_ids or new_qt_ids:
-                        tweets_map[tweet_id]["last_activity_at"] = now
+                # Update activity if new comments or quote tweets found
+                if new_comment_ids or new_qt_ids:
+                    updates["last_activity_at"] = now
 
-                    # Check if should demote to warm
-                    new_state = _determine_monitoring_state(tweets_map[tweet_id])
-                    if new_state != "active":
-                        tweets_map[tweet_id]["monitoring_state"] = new_state
-                        if new_state == "warm":
-                            results["demoted_to_warm"] += 1
-                        else:
-                            results["demoted_to_cold"] += 1
+                # Check if should demote - need to build temp tweet for state check
+                temp_tweet = dict(tweet)
+                temp_tweet.update(updates)
+                new_state = _determine_monitoring_state(temp_tweet)
+                if new_state != "active":
+                    updates["monitoring_state"] = new_state
+                    if new_state == "warm":
+                        results["demoted_to_warm"] += 1
+                    else:
+                        results["demoted_to_cold"] += 1
 
-                    write_posted_tweets_cache(username, tweets_map)
+                sb_update_tweet(tweet_id, updates)
 
                 # Rate limiting
                 await asyncio.sleep(2)
@@ -554,7 +547,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
         warm_idx = 0
         for tweet in warm_tweets:
             warm_idx += 1
-            tweet_id = tweet.get("id")
+            tweet_id = tweet.get("tweet_id")
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
@@ -572,33 +565,30 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
                 # Check for promotion
                 should_promote = _should_promote_to_active(tweet, new_metrics, new_reply_ids)
 
-                tweets_map = read_posted_tweets_cache(username)
-                if tweet_id in tweets_map:
-                    now = datetime.now(UTC).isoformat()
-                    tweets_map[tweet_id]["last_shallow_scrape"] = now
-                    tweets_map[tweet_id]["last_reply_count"] = new_metrics["replies"]
-                    tweets_map[tweet_id]["last_like_count"] = new_metrics["likes"]
-                    tweets_map[tweet_id]["last_quote_count"] = new_metrics["quotes"]
-                    tweets_map[tweet_id]["last_retweet_count"] = new_metrics["retweets"]
-                    tweets_map[tweet_id]["replies"] = new_metrics["replies"]
-                    tweets_map[tweet_id]["likes"] = new_metrics["likes"]
-                    tweets_map[tweet_id]["quotes"] = new_metrics["quotes"]
-                    tweets_map[tweet_id]["retweets"] = new_metrics["retweets"]
+                now = datetime.now(UTC).isoformat()
+                updates = {
+                    "replies": new_metrics["replies"],
+                    "likes": new_metrics["likes"],
+                    "quotes": new_metrics["quotes"],
+                    "retweets": new_metrics["retweets"],
+                }
 
-                    if should_promote:
-                        tweets_map[tweet_id]["monitoring_state"] = "active"
-                        tweets_map[tweet_id]["last_activity_at"] = now
-                        tweets_map[tweet_id]["resurrected_via"] = "engagement"
-                        results["promoted_to_active"] += 1
-                        notify(f"🔥 Promoted {tweet_id} to active (new engagement)")
-                    else:
-                        # Check for demotion to cold
-                        new_state = _determine_monitoring_state(tweets_map[tweet_id])
-                        if new_state == "cold":
-                            tweets_map[tweet_id]["monitoring_state"] = "cold"
-                            results["demoted_to_cold"] += 1
+                if should_promote:
+                    updates["monitoring_state"] = "active"
+                    updates["last_activity_at"] = now
+                    updates["resurrected_via"] = "engagement"
+                    results["promoted_to_active"] += 1
+                    notify(f"🔥 Promoted {tweet_id} to active (new engagement)")
+                else:
+                    # Check for demotion to cold
+                    temp_tweet = dict(tweet)
+                    temp_tweet.update(updates)
+                    new_state = _determine_monitoring_state(temp_tweet)
+                    if new_state == "cold":
+                        updates["monitoring_state"] = "cold"
+                        results["demoted_to_cold"] += 1
 
-                    write_posted_tweets_cache(username, tweets_map)
+                sb_update_tweet(tweet_id, updates)
 
                 # Rate limiting
                 await asyncio.sleep(1)
@@ -648,9 +638,9 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
     from backend.data.twitter.comments_cache import process_scraped_replies, process_scraped_quote_tweets
     from backend.data.twitter.posted_tweets_cache import (
         get_tweets_by_monitoring_state,
-        read_posted_tweets_cache,
-        write_posted_tweets_cache,
+        get_posted_tweet,
     )
+    from backend.utlils.supabase_client import update_posted_tweet as sb_update_tweet
     from backend.browser_automation.twitter.api import deep_scrape_thread
 
     notify(f"🔍 [discover_resurrected] Starting for @{user_handle}")
@@ -670,7 +660,7 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
 
         # Get cold tweet IDs for matching
         cold_tweets = get_tweets_by_monitoring_state(username, ["cold"])
-        cold_tweet_ids = {t.get("id") for t in cold_tweets if t.get("id")}
+        cold_tweet_ids = {t.get("tweet_id") for t in cold_tweets if t.get("tweet_id")}
 
         notify(f"📊 Monitoring {len(cold_tweet_ids)} cold tweets for resurrection")
 
@@ -723,11 +713,10 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
         for tweet_id in resurrected_ids:
             resurrected_idx += 1
             try:
-                tweets_map = read_posted_tweets_cache(username)
-                if tweet_id not in tweets_map:
+                tweet = get_posted_tweet(username, tweet_id)
+                if not tweet:
                     continue
 
-                tweet = tweets_map[tweet_id]
                 url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
                 # Deep scrape the resurrected tweet
@@ -745,22 +734,16 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
 
                 # Promote to active
                 now = datetime.now(UTC).isoformat()
-                tweets_map = read_posted_tweets_cache(username)
-                if tweet_id in tweets_map:
-                    tweets_map[tweet_id]["monitoring_state"] = "active"
-                    tweets_map[tweet_id]["resurrected_via"] = "notification"
-                    tweets_map[tweet_id]["last_activity_at"] = now
-                    tweets_map[tweet_id]["last_deep_scrape"] = now
-                    tweets_map[tweet_id]["last_reply_count"] = scrape_result.get("reply_count", 0)
-                    tweets_map[tweet_id]["last_like_count"] = scrape_result.get("like_count", 0)
-                    tweets_map[tweet_id]["last_quote_count"] = scrape_result.get("quote_count", 0)
-                    tweets_map[tweet_id]["last_retweet_count"] = scrape_result.get("retweet_count", 0)
-                    tweets_map[tweet_id]["replies"] = scrape_result.get("reply_count", 0)
-                    tweets_map[tweet_id]["likes"] = scrape_result.get("like_count", 0)
-                    tweets_map[tweet_id]["quotes"] = scrape_result.get("quote_count", 0)
-                    tweets_map[tweet_id]["retweets"] = scrape_result.get("retweet_count", 0)
-                    tweets_map[tweet_id]["last_scraped_reply_ids"] = scrape_result.get("all_reply_ids", [])[:50]
-                    write_posted_tweets_cache(username, tweets_map)
+                sb_update_tweet(tweet_id, {
+                    "monitoring_state": "active",
+                    "resurrected_via": "notification",
+                    "last_activity_at": now,
+                    "replies": scrape_result.get("reply_count", 0),
+                    "likes": scrape_result.get("like_count", 0),
+                    "quotes": scrape_result.get("quote_count", 0),
+                    "retweets": scrape_result.get("retweet_count", 0),
+                    "last_scraped_reply_ids": scrape_result.get("all_reply_ids", [])[:50],
+                })
 
                 results["resurrected_tweets"] += 1
                 notify(f"🔥 Resurrected cold tweet {tweet_id}")

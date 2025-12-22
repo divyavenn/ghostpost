@@ -177,7 +177,7 @@ async def test_replies_have_valid_urls(browser_context):
         assert url.startswith("https://x.com/"), f"URL should start with https://x.com/, got: {url}"
         assert "/status/" in url, f"URL should contain /status/, got: {url}"
         # URL should contain the reply's tweet ID
-        assert reply["id"] in url, f"URL should contain tweet ID {reply['id']}, got: {url}"
+        assert reply["tweet_id"] in url, f"URL should contain tweet ID {reply['id']}, got: {url}"
 
 
 # ============================================================================
@@ -283,90 +283,75 @@ class TestDiscoverEngagementCommentsJob:
 class TestCommentsCacheReadWrite:
     """
     Unit tests for comments_cache read/write functions.
-    No browser context needed - tests basic cache operations.
-    Uses a dedicated test user and cleans up after each test.
+    Tests Supabase-based cache operations with mocking.
     """
 
     TEST_USER = "__test_cache_user__"
 
-    @pytest.fixture(autouse=True)
-    def cleanup_test_cache(self):
-        """Clean up test cache before and after each test."""
-        from backend.data.twitter.comments_cache import get_comments_path
+    @pytest.fixture
+    def mock_supabase(self):
+        """Mock Supabase client for cache tests."""
+        from unittest.mock import patch
 
-        cache_path = get_comments_path(self.TEST_USER)
+        stored_comments = {}
 
-        # Clean before test
-        if cache_path.exists():
-            cache_path.unlink()
+        def mock_get_comments(username, limit=None, offset=0, status_filter=None):
+            comments = list(stored_comments.values())
+            if offset:
+                comments = comments[offset:]
+            if limit:
+                comments = comments[:limit]
+            return comments
 
-        yield
+        def mock_get_comment(username, comment_id):
+            return stored_comments.get(comment_id)
 
-        # Clean after test
-        if cache_path.exists():
-            cache_path.unlink()
+        def mock_add_comment(comment):
+            stored_comments[comment["tweet_id"]] = comment
 
-    def test_read_empty_cache(self):
-        """Test reading from non-existent cache returns empty structure."""
+        def mock_delete_comment(comment_id):
+            if comment_id in stored_comments:
+                del stored_comments[comment_id]
+                return True
+            return False
+
+        with patch("backend.utlils.supabase_client.get_comments", mock_get_comments), \
+             patch("backend.utlils.supabase_client.get_comment", mock_get_comment), \
+             patch("backend.utlils.supabase_client.add_comment", mock_add_comment), \
+             patch("backend.utlils.supabase_client.delete_comment", mock_delete_comment):
+            yield stored_comments
+
+    def test_read_empty_cache(self, mock_supabase):
+        """Test reading from empty cache returns empty structure."""
         from backend.data.twitter.comments_cache import read_comments_cache
 
         result = read_comments_cache(self.TEST_USER)
         assert result == {"_order": []}, "Empty cache should return {'_order': []}"
 
-    def test_write_and_read_comment(self):
-        """Test writing a comment and reading it back."""
-        from backend.data.twitter.comments_cache import (
-            get_comment,
-            read_comments_cache,
-            write_comments_cache,
+    def test_write_and_read_comment(self, mock_supabase):
+        """Test adding a comment and reading it back."""
+        from backend.data.twitter.comments_cache import add_comment, get_comment, read_comments_cache
+
+        # Add a test comment
+        add_comment(
+            username=self.TEST_USER,
+            comment_id="12345",
+            text="Test comment",
+            handle="tester",
+            commenter_username="Test User",
+            in_reply_to_id="parent_1",
+            parent_chain=["parent_1"],
+            created_at="2025-01-01T00:00:00+00:00",
+            url="https://x.com/tester/status/12345",
+            followers=100,
+            likes=5
         )
-
-        # Write a test comment
-        test_comment = {
-            "id": "12345",
-            "text": "Test comment",
-            "handle": "tester",
-            "username": "Test User",
-            "author_profile_pic_url": "",
-            "followers": 100,
-            "likes": 5,
-            "retweets": 0,
-            "quotes": 0,
-            "replies": 0,
-            "impressions": 0,
-            "created_at": "2025-01-01T00:00:00+00:00",
-            "url": "https://x.com/tester/status/12345",
-            "last_metrics_update": None,
-            "parent_chain": ["parent_1"],
-            "in_reply_to_status_id": "parent_1",
-            "status": "pending",
-            "generated_replies": [],
-            "edited": False,
-            "source": "external",
-            "monitoring_state": "active",
-            "last_activity_at": None,
-            "last_deep_scrape": None,
-            "last_shallow_scrape": None,
-            "last_reply_count": None,
-            "last_quote_count": None,
-            "last_like_count": None,
-            "last_retweet_count": None,
-            "resurrected_via": "none",
-            "last_scraped_reply_ids": [],
-            "thread": [],
-            "other_replies": [],
-            "quoted_tweet": None,
-            "media": [],
-        }
-
-        comments_map = {"_order": ["12345"], "12345": test_comment}
-        write_comments_cache(self.TEST_USER, comments_map)
 
         # Read it back
         result = read_comments_cache(self.TEST_USER)
         assert "12345" in result, "Comment should be in cache"
         assert result["12345"]["text"] == "Test comment"
-        assert result["12345"]["handle"] == "tester"
+        assert result["12345"]["commenter_handle"] == "tester"
 
         # Test get_comment
         comment = get_comment(self.TEST_USER, "12345")
@@ -375,53 +360,22 @@ class TestCommentsCacheReadWrite:
 
         print("✅ Write and read comment works correctly")
 
-    def test_delete_comment(self):
+    def test_delete_comment(self, mock_supabase):
         """Test deleting a comment from cache."""
-        from backend.data.twitter.comments_cache import (
-            delete_comment,
-            get_comment,
-            write_comments_cache,
+        from backend.data.twitter.comments_cache import add_comment, delete_comment, get_comment
+
+        # Add a test comment
+        add_comment(
+            username=self.TEST_USER,
+            comment_id="99999",
+            text="To be deleted",
+            handle="tester",
+            commenter_username="Test User",
+            in_reply_to_id="parent_1",
+            parent_chain=[],
+            created_at="2025-01-01T00:00:00+00:00",
+            url="https://x.com/tester/status/99999"
         )
-
-        # Write initial comment
-        test_comment = {
-            "id": "99999",
-            "text": "To be deleted",
-            "handle": "tester",
-            "username": "Test User",
-            "author_profile_pic_url": "",
-            "followers": 0,
-            "likes": 0,
-            "retweets": 0,
-            "quotes": 0,
-            "replies": 0,
-            "impressions": 0,
-            "created_at": "2025-01-01T00:00:00+00:00",
-            "url": "https://x.com/tester/status/99999",
-            "last_metrics_update": None,
-            "parent_chain": [],
-            "in_reply_to_status_id": None,
-            "status": "pending",
-            "generated_replies": [],
-            "edited": False,
-            "source": "external",
-            "monitoring_state": "active",
-            "last_activity_at": None,
-            "last_deep_scrape": None,
-            "last_shallow_scrape": None,
-            "last_reply_count": None,
-            "last_quote_count": None,
-            "last_like_count": None,
-            "last_retweet_count": None,
-            "resurrected_via": "none",
-            "last_scraped_reply_ids": [],
-            "thread": [],
-            "other_replies": [],
-            "quoted_tweet": None,
-            "media": [],
-        }
-
-        write_comments_cache(self.TEST_USER, {"_order": ["99999"], "99999": test_comment})
 
         # Verify it exists
         assert get_comment(self.TEST_USER, "99999") is not None
@@ -435,63 +389,35 @@ class TestCommentsCacheReadWrite:
 
         print("✅ Delete comment works correctly")
 
-    def test_get_comments_list_pagination(self):
+    def test_get_comments_list_pagination(self, mock_supabase):
         """Test pagination of comments list."""
-        from backend.data.twitter.comments_cache import get_comments_list, write_comments_cache
+        from backend.data.twitter.comments_cache import add_comment, get_comments_list
 
         # Create multiple comments
-        comments_map = {"_order": ["c1", "c2", "c3", "c4", "c5"]}
-        for i, cid in enumerate(comments_map["_order"]):
-            comments_map[cid] = {
-                "id": cid,
-                "text": f"Comment {i+1}",
-                "handle": "tester",
-                "username": "Test User",
-                "author_profile_pic_url": "",
-                "followers": 0,
-                "likes": 0,
-                "retweets": 0,
-                "quotes": 0,
-                "replies": 0,
-                "impressions": 0,
-                "created_at": "2025-01-01T00:00:00+00:00",
-                "url": f"https://x.com/tester/status/{cid}",
-                "last_metrics_update": None,
-                "parent_chain": [],
-                "in_reply_to_status_id": None,
-                "status": "pending",
-                "generated_replies": [],
-                "edited": False,
-                "source": "external",
-                "monitoring_state": "active",
-                "last_activity_at": None,
-                "last_deep_scrape": None,
-                "last_shallow_scrape": None,
-                "last_reply_count": None,
-                "last_quote_count": None,
-                "last_like_count": None,
-                "last_retweet_count": None,
-                "resurrected_via": "none",
-                "last_scraped_reply_ids": [],
-                "thread": [],
-                "other_replies": [],
-                "quoted_tweet": None,
-                "media": [],
-            }
-
-        write_comments_cache(self.TEST_USER, comments_map)
+        for i, cid in enumerate(["c1", "c2", "c3", "c4", "c5"]):
+            add_comment(
+                username=self.TEST_USER,
+                comment_id=cid,
+                text=f"Comment {i+1}",
+                handle="tester",
+                commenter_username="Test User",
+                in_reply_to_id="parent_1",
+                parent_chain=[],
+                created_at="2025-01-01T00:00:00+00:00",
+                url=f"https://x.com/tester/status/{cid}"
+            )
 
         # Test limit
         result = get_comments_list(self.TEST_USER, limit=2)
         assert len(result) == 2, "Should return 2 comments"
-        assert result[0]["id"] == "c1"
-        assert result[1]["id"] == "c2"
+        assert result[0]["tweet_id"] == "c1"
+        assert result[1]["tweet_id"] == "c2"
 
         # Test offset
         result = get_comments_list(self.TEST_USER, limit=2, offset=2)
         assert len(result) == 2, "Should return 2 comments"
-        assert result[0]["id"] == "c3"
-        assert result[1]["id"] == "c4"
+        assert result[0]["tweet_id"] == "c3"
+        assert result[1]["tweet_id"] == "c4"
 
         # Test no limit
         result = get_comments_list(self.TEST_USER)
@@ -544,7 +470,8 @@ class TestProcessScrapedReplies:
             comment = get_comment(test_username, test_reply_id)
             assert comment is not None, "Comment should be in cache"
             assert comment["text"] == "Test reply for unit test"
-            assert comment["handle"] == "test_replier"
+            assert comment["commenter_handle"] == "test_replier"  # commenter_handle, not handle
+            assert comment["handle"] == test_username  # handle is the owner's username
             assert comment["status"] == "pending"
             print(f"✅ Successfully added test comment {test_reply_id}")
 

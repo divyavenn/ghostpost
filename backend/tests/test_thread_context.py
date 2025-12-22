@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 # Test data: A comment with multiple parents in the chain
 TEST_COMMENT = {
-    "id": "1998770703634767906",
+    "tweet_id": "1998770703634767906",
     "text": "@EyeDual @divya_venn Ok, yeah a lot of their songs were basically solo but they agreed to still credit each other. But, I was pretty sure many of them were still a team effort",
     "handle": "Rorywrite",
     "username": "Rory",
@@ -41,7 +41,7 @@ TEST_COMMENT = {
 
 # User's original post (first in parent_chain)
 TEST_POSTED_TWEET_ORIGINAL = {
-    "id": "1998510228602851514",
+    "tweet_id": "1998510228602851514",
     "text": "Hot take: The Beatles weren't really a band, they were four solo artists who happened to share a name",
     "handle": "divya_venn",
     "username": "divya",
@@ -55,7 +55,7 @@ TEST_POSTED_TWEET_ORIGINAL = {
 
 # User's reply to EyeDual (third in parent_chain)
 TEST_POSTED_TWEET_REPLY = {
-    "id": "1998582940796952629",
+    "tweet_id": "1998582940796952629",
     "text": "@EyeDual That's fair! I was being hyperbolic but you're right they did collaborate",
     "handle": "divya_venn",
     "username": "divya",
@@ -67,7 +67,7 @@ TEST_POSTED_TWEET_REPLY = {
 
 # Intermediate comment from EyeDual (second in parent_chain)
 TEST_INTERMEDIATE_COMMENT = {
-    "id": "1998530617500451256",
+    "tweet_id": "1998530617500451256",
     "text": "@divya_venn I disagree - they clearly wrote songs together and collaborated on arrangements",
     "handle": "EyeDual",
     "username": "Eye Dual",
@@ -114,10 +114,10 @@ def test_get_thread_context_with_multiple_parents():
     assert len(thread_context) == 4, f"Expected 4 items in thread context, got {len(thread_context)}"
 
     # Verify order: root -> current
-    assert thread_context[0]["id"] == "1998510228602851514", "First should be original post"
-    assert thread_context[1]["id"] == "1998530617500451256", "Second should be EyeDual's reply"
-    assert thread_context[2]["id"] == "1998582940796952629", "Third should be divya's reply"
-    assert thread_context[3]["id"] == "1998770703634767906", "Fourth should be Rory's comment"
+    assert thread_context[0]["tweet_id"] == "1998510228602851514", "First should be original post"
+    assert thread_context[1]["tweet_id"] == "1998530617500451256", "Second should be EyeDual's reply"
+    assert thread_context[2]["tweet_id"] == "1998582940796952629", "Third should be divya's reply"
+    assert thread_context[3]["tweet_id"] == "1998770703634767906", "Fourth should be Rory's comment"
 
     # Verify media is included
     assert thread_context[0]["media"] == TEST_POSTED_TWEET_ORIGINAL["media"], "Original post should have media"
@@ -209,18 +209,18 @@ def test_frontend_filtering_logic():
 
     filtered_thread_context = [
         ctx for ctx in thread_context
-        if ctx["id"] != original_post_id and ctx["id"] != current_comment_id
+        if ctx["tweet_id"] != original_post_id and ctx["tweet_id"] != current_comment_id
     ]
 
     # Should have 2 items: EyeDual's reply and divya's reply
     assert len(filtered_thread_context) == 2, f"Expected 2 items after filtering, got {len(filtered_thread_context)}"
 
     # Verify the filtered items are the intermediate replies
-    assert filtered_thread_context[0]["id"] == "1998530617500451256", "First should be EyeDual's reply"
+    assert filtered_thread_context[0]["tweet_id"] == "1998530617500451256", "First should be EyeDual's reply"
     assert filtered_thread_context[0]["handle"] == "EyeDual"
     assert filtered_thread_context[0]["media"] == TEST_INTERMEDIATE_COMMENT["media"]
 
-    assert filtered_thread_context[1]["id"] == "1998582940796952629", "Second should be divya's reply"
+    assert filtered_thread_context[1]["tweet_id"] == "1998582940796952629", "Second should be divya's reply"
     assert filtered_thread_context[1]["handle"] == "divya_venn"
     assert filtered_thread_context[1]["is_user"] == True
 
@@ -251,7 +251,7 @@ def test_comment_prompt_format():
     # Thread context: original post -> first_person's reply
     thread_context = [
         {
-            "id": "original_post_id",
+            "tweet_id": "original_post_id",
             "text": "Controversial opinion: tabs are better than spaces.",
             "handle": "divya_venn",
             "username": "divya",
@@ -260,7 +260,7 @@ def test_comment_prompt_format():
             "followers": 5000
         },
         {
-            "id": "first_reply_id",
+            "tweet_id": "first_reply_id",
             "text": "@divya_venn you're absolutely right about this! What's your take on the counterargument though?",
             "handle": "first_person",
             "username": "First Person",
@@ -269,7 +269,7 @@ def test_comment_prompt_format():
             "followers": 25000
         },
         {
-            "id": "comment_id",
+            "tweet_id": "comment_id",
             "text": "@first_person @divya_venn here's my take on the counterargument...",
             "handle": "second_person",
             "username": "Second Person",
@@ -281,7 +281,7 @@ def test_comment_prompt_format():
 
     # The comment we're replying to (same as last in thread_context)
     comment = {
-        "id": "comment_id",
+        "tweet_id": "comment_id",
         "text": "@first_person @divya_venn here's my take on the counterargument...",
         "handle": "second_person",
         "username": "Second Person",
@@ -327,7 +327,7 @@ def test_comment_prompt_with_rory_example():
     # Thread context based on real data
     thread_context = [
         {
-            "id": "1998510228602851514",
+            "tweet_id": "1998510228602851514",
             "text": "Hot take: The Beatles weren't really a band, they were four solo artists who happened to share a name",
             "handle": "divya_venn",
             "username": "divya",
@@ -336,7 +336,7 @@ def test_comment_prompt_with_rory_example():
             "followers": 5000
         },
         {
-            "id": "1998530617500451256",
+            "tweet_id": "1998530617500451256",
             "text": "@divya_venn I disagree - they clearly wrote songs together and collaborated on arrangements",
             "handle": "EyeDual",
             "username": "Eye Dual",
@@ -345,7 +345,7 @@ def test_comment_prompt_with_rory_example():
             "followers": 2500
         },
         {
-            "id": "1998582940796952629",
+            "tweet_id": "1998582940796952629",
             "text": "@EyeDual That's fair! I was being hyperbolic but you're right they did collaborate",
             "handle": "divya_venn",
             "username": "divya",
@@ -354,7 +354,7 @@ def test_comment_prompt_with_rory_example():
             "followers": 5000
         },
         {
-            "id": "1998770703634767906",
+            "tweet_id": "1998770703634767906",
             "text": "@EyeDual @divya_venn Ok, yeah a lot of their songs were basically solo but they agreed to still credit each other. But, I was pretty sure many of them were still a team effort",
             "handle": "Rorywrite",
             "username": "Rory",
@@ -365,7 +365,7 @@ def test_comment_prompt_with_rory_example():
     ]
 
     comment = {
-        "id": "1998770703634767906",
+        "tweet_id": "1998770703634767906",
         "text": "@EyeDual @divya_venn Ok, yeah a lot of their songs were basically solo but they agreed to still credit each other. But, I was pretty sure many of them were still a team effort",
         "handle": "Rorywrite",
         "username": "Rory",
@@ -410,7 +410,7 @@ def test_direct_reply_has_no_intermediate_context():
     # A comment that replies directly to the original post (no intermediate tweets)
     direct_reply_comment = {
         **TEST_COMMENT,
-        "id": "direct_reply_id",
+        "tweet_id": "direct_reply_id",
         "parent_chain": ["1998510228602851514"],  # Only the original post
         "in_reply_to_status_id": "1998510228602851514",
     }
@@ -438,7 +438,7 @@ def test_direct_reply_has_no_intermediate_context():
 
     filtered_thread_context = [
         ctx for ctx in thread_context
-        if ctx["id"] != original_post_id and ctx["id"] != current_comment_id
+        if ctx["tweet_id"] != original_post_id and ctx["tweet_id"] != current_comment_id
     ]
 
     # Should be empty - no intermediate context to show

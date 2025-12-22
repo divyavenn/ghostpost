@@ -27,37 +27,45 @@ class OtherReply(BaseModel):
 
 
 class User(BaseModel):
-    # account info
+    """Account-level user data (can have multiple Twitter profiles)."""
     uid: int | None = None  # Auto-generated on first creation
-    account_type: Literal["trial", "poster", "premium"] = "trial"
     email: str | None = None  # Collected after first login
+    account_type: Literal["trial", "poster", "premium"] = "trial"
 
-    # data from twitter
-    handle: str
-    username: str
-    profile_pic_url: str
-    follower_count: int
-
-    # settings
+    # User-level settings (shared across all Twitter profiles)
     models: list[str] = []
-    relevant_accounts: dict[str, bool] = {}  # handle -> isverified
-    queries: list[str] | list[list[str]] = []  # Can be list of strings (legacy) or list of [query, summary] pairs
-    ideal_num_posts: int = 30  # Target number of tweets to retrieve (will aim for ±10 of this)
-    number_of_generations: int = 2
-    min_impressions_filter: int = 2000  # Minimum impressions required for discovery tweets (auto-adjusted)
-    manual_minimum_impressions: int | None = None  # User override - disables auto-adjustment when set
+    knowledge_base: dict | None = None  # Optional knowledge base data for the user
     intent: str = ""  # User's intent for filtering and query generation
-    intent_filter_examples: list[dict] = []  # Up to 10 examples of posts user replied to, cleared when intent changes
-    intent_filter_last_updated: str | None = None  # ISO 8601 timestamp of when intent was last updated
 
-    # metrics
+
+class TwitterProfile(BaseModel):
+    """Per-Twitter-account profile data."""
+    handle: str  # Primary key
+    user_id: int  # Foreign key to users.uid
+
+    # Profile info from Twitter
+    username: str
+    profile_pic_url: str = ""
+    follower_count: int = 0
+
+    # Per-profile settings
+    ideal_num_posts: int = 30  # Target number of tweets to retrieve
+    number_of_generations: int = 2
+    min_impressions_filter: int = 2000  # Minimum impressions for discovery tweets
+    manual_minimum_impressions: int | None = None  # User override
+    intent_filter_examples: list[dict] = []  # Examples of posts user replied to
+    intent_filter_last_updated: str | None = None  # ISO 8601 timestamp
+
+    # Per-profile metrics
     lifetime_new_follows: int = 0
     lifetime_posts: int = 0
     scrolling_time_saved: int = 0
     scrapes_left: int | None = None
     posts_left: int | None = None
 
-    # seen tweets tracking (to prevent showing duplicate tweets)
+    # Denormalized data (loaded separately)
+    relevant_accounts: dict[str, bool] = {}  # handle -> enabled
+    queries: list[str] | list[list[str]] = []  # Can be list of strings or [query, summary] pairs
     seen_tweets: dict[str, str] = {}  # tweet_id -> timestamp
 
 
@@ -115,7 +123,7 @@ EngagementType = Literal["reply", "quote_tweet"]
 
 
 class PostedTweet(BaseModel):
-    id: str
+    tweet_id: str
     text: str
 
     # performance
@@ -150,14 +158,6 @@ class PostedTweet(BaseModel):
 
     # Timestamps for monitoring
     last_activity_at: str | None = None
-    last_deep_scrape: str | None = None
-    last_shallow_scrape: str | None = None
-
-    # Metrics snapshot for activity detection
-    last_reply_count: int | None = None
-    last_quote_count: int | None = None
-    last_like_count: int | None = None
-    last_retweet_count: int | None = None
 
     # Resurrection info
     resurrected_via: ResurrectionSource = "none"
@@ -175,7 +175,7 @@ class PostedTweet(BaseModel):
 
 class CommentRecord(BaseModel):
     """A comment (reply from someone else) on user's tweet or thread."""
-    id: str
+    tweet_id: str
     text: str
 
     # Commenter info
@@ -209,12 +209,6 @@ class CommentRecord(BaseModel):
     source: TweetSource = "external"
     monitoring_state: MonitoringState = "active"
     last_activity_at: str | None = None
-    last_deep_scrape: str | None = None
-    last_shallow_scrape: str | None = None
-    last_reply_count: int | None = None
-    last_quote_count: int | None = None
-    last_like_count: int | None = None
-    last_retweet_count: int | None = None
     resurrected_via: ResurrectionSource = "none"
     last_scraped_reply_ids: list[str] = Field(default_factory=list)
 

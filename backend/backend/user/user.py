@@ -193,16 +193,11 @@ def write_user_settings(handle: str,
 
     write_user_info(user_info)
 
-    # Handle key deletion for manual override
-    # write_user_info doesn't delete keys, so we need to manipulate the file directly
+    # Handle clearing manual override by explicitly setting to NULL in database
     if delete_manual_override:
-        from backend.utlils.utils import load_user_info_entries, find_user_info, atomic_file_update, USER_INFO_FILE
-        entries = load_user_info_entries()
-        target = find_user_info(entries, handle)
-        if target and "manual_minimum_impressions" in target:
-            del target["manual_minimum_impressions"]
-            atomic_file_update(USER_INFO_FILE, entries)
-            notify(f"🧹 Cleared manual impressions override for {handle}")
+        from backend.utlils.supabase_client import update_twitter_profile
+        update_twitter_profile(handle, {"manual_minimum_impressions": None})
+        notify(f"🧹 Cleared manual impressions override for {handle}")
 
     notify(f"✅ Updated settings for {handle}")
 

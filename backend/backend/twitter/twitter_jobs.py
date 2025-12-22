@@ -809,7 +809,7 @@ async def _generate_reply_for_comment_background(
         models = user_info.get("models", ["claude-3-5-sonnet-20241022"])
         num_generations = user_info.get("number_of_generations", 2)
 
-        comment_id = comment.get("id")
+        comment_id = comment.get("tweet_id")
         if not comment_id:
             return
 
@@ -854,7 +854,8 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
     from backend.browser_automation.twitter.api import deep_scrape_thread, shallow_scrape_thread
     from backend.browser_management.context import cleanup_browser_resources, get_authenticated_context
     from backend.data.twitter.comments_cache import get_comment, get_thread_context, process_scraped_quote_tweets, process_scraped_replies
-    from backend.data.twitter.posted_tweets_cache import get_tweets_by_monitoring_state, read_posted_tweets_cache, write_posted_tweets_cache
+    from backend.data.twitter.posted_tweets_cache import get_tweets_by_monitoring_state
+    from backend.utlils.supabase_client import update_posted_tweet as sb_update_tweet
     from backend.twitter.monitoring import _determine_monitoring_state, _should_promote_to_active
 
     start_time = time.time()
@@ -912,7 +913,7 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
                 details="warm tweets"
             )
 
-            tweet_id = tweet.get("id")
+            tweet_id = tweet.get("tweet_id")
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
@@ -930,34 +931,31 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
                 # Check for promotion
                 should_promote = _should_promote_to_active(tweet, new_metrics, new_reply_ids)
 
-                tweets_map = read_posted_tweets_cache(username)
-                if tweet_id in tweets_map:
-                    now = datetime.now(UTC).isoformat()
-                    tweets_map[tweet_id]["last_shallow_scrape"] = now
-                    tweets_map[tweet_id]["last_reply_count"] = new_metrics["replies"]
-                    tweets_map[tweet_id]["last_like_count"] = new_metrics["likes"]
-                    tweets_map[tweet_id]["last_quote_count"] = new_metrics["quotes"]
-                    tweets_map[tweet_id]["last_retweet_count"] = new_metrics["retweets"]
-                    tweets_map[tweet_id]["replies"] = new_metrics["replies"]
-                    tweets_map[tweet_id]["likes"] = new_metrics["likes"]
-                    tweets_map[tweet_id]["quotes"] = new_metrics["quotes"]
-                    tweets_map[tweet_id]["retweets"] = new_metrics["retweets"]
+                now = datetime.now(UTC).isoformat()
+                updates = {
+                    "replies": new_metrics["replies"],
+                    "likes": new_metrics["likes"],
+                    "quotes": new_metrics["quotes"],
+                    "retweets": new_metrics["retweets"],
+                }
 
-                    if should_promote:
-                        tweets_map[tweet_id]["monitoring_state"] = "active"
-                        tweets_map[tweet_id]["last_activity_at"] = now
-                        tweets_map[tweet_id]["resurrected_via"] = "engagement"
-                        results["promoted_to_active"] += 1
-                        promoted_tweet_ids.add(tweet_id)
-                        notify(f"🔥 Promoted {tweet_id} to active (new engagement)")
-                    else:
-                        # Check for demotion to cold
-                        new_state = _determine_monitoring_state(tweets_map[tweet_id])
-                        if new_state == "cold":
-                            tweets_map[tweet_id]["monitoring_state"] = "cold"
-                            results["demoted_to_cold"] += 1
+                if should_promote:
+                    updates["monitoring_state"] = "active"
+                    updates["last_activity_at"] = now
+                    updates["resurrected_via"] = "engagement"
+                    results["promoted_to_active"] += 1
+                    promoted_tweet_ids.add(tweet_id)
+                    notify(f"🔥 Promoted {tweet_id} to active (new engagement)")
+                else:
+                    # Check for demotion to cold
+                    temp_tweet = dict(tweet)
+                    temp_tweet.update(updates)
+                    new_state = _determine_monitoring_state(temp_tweet)
+                    if new_state == "cold":
+                        updates["monitoring_state"] = "cold"
+                        results["demoted_to_cold"] += 1
 
-                    write_posted_tweets_cache(username, tweets_map)
+                sb_update_tweet(tweet_id, updates)
 
                 await asyncio.sleep(1)
 
@@ -987,7 +985,7 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
                 details="active tweets"
             )
 
-            tweet_id = tweet.get("id")
+            tweet_id = tweet.get("tweet_id")
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
@@ -1029,34 +1027,31 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
                             results["replies_generating"] += 1
 
                 # Update tweet metrics
-                tweets_map = read_posted_tweets_cache(username)
-                if tweet_id in tweets_map:
-                    now = datetime.now(UTC).isoformat()
-                    tweets_map[tweet_id]["last_deep_scrape"] = now
-                    tweets_map[tweet_id]["last_reply_count"] = scrape_result.get("reply_count", 0)
-                    tweets_map[tweet_id]["last_like_count"] = scrape_result.get("like_count", 0)
-                    tweets_map[tweet_id]["last_quote_count"] = scrape_result.get("quote_count", 0)
-                    tweets_map[tweet_id]["last_retweet_count"] = scrape_result.get("retweet_count", 0)
-                    tweets_map[tweet_id]["replies"] = scrape_result.get("reply_count", 0)
-                    tweets_map[tweet_id]["likes"] = scrape_result.get("like_count", 0)
-                    tweets_map[tweet_id]["quotes"] = scrape_result.get("quote_count", 0)
-                    tweets_map[tweet_id]["retweets"] = scrape_result.get("retweet_count", 0)
-                    tweets_map[tweet_id]["last_scraped_reply_ids"] = scrape_result.get("all_reply_ids", [])[:50]
+                now = datetime.now(UTC).isoformat()
+                updates = {
+                    "replies": scrape_result.get("reply_count", 0),
+                    "likes": scrape_result.get("like_count", 0),
+                    "quotes": scrape_result.get("quote_count", 0),
+                    "retweets": scrape_result.get("retweet_count", 0),
+                    "last_scraped_reply_ids": scrape_result.get("all_reply_ids", [])[:50],
+                }
 
-                    # Update activity if new comments or QTs found
-                    if new_comment_ids or new_qt_ids:
-                        tweets_map[tweet_id]["last_activity_at"] = now
+                # Update activity if new comments or QTs found
+                if new_comment_ids or new_qt_ids:
+                    updates["last_activity_at"] = now
 
-                    # Check for demotion
-                    new_state = _determine_monitoring_state(tweets_map[tweet_id])
-                    if new_state != "active":
-                        tweets_map[tweet_id]["monitoring_state"] = new_state
-                        if new_state == "warm":
-                            results["demoted_to_warm"] += 1
-                        else:
-                            results["demoted_to_cold"] += 1
+                # Check for demotion
+                temp_tweet = dict(tweet)
+                temp_tweet.update(updates)
+                new_state = _determine_monitoring_state(temp_tweet)
+                if new_state != "active":
+                    updates["monitoring_state"] = new_state
+                    if new_state == "warm":
+                        results["demoted_to_warm"] += 1
+                    else:
+                        results["demoted_to_cold"] += 1
 
-                    write_posted_tweets_cache(username, tweets_map)
+                sb_update_tweet(tweet_id, updates)
 
                 await asyncio.sleep(2)
 

@@ -8,6 +8,10 @@ import '@fontsource/geist-mono'
 import './index.css'
 import App from './App.tsx'
 import { Login } from './pages/Login.tsx'
+import { AuthCallback } from './pages/AuthCallback.tsx'
+import { ConnectTwitter } from './pages/ConnectTwitter.tsx'
+import { ResetPassword } from './pages/ResetPassword.tsx'
+import { LoginError } from './pages/LoginError.tsx'
 import { Pricing } from './pages/Pricing.tsx'
 import { BillingSuccess } from './pages/BillingSuccess.tsx'
 import { NoModelError } from './components/NoModelError.tsx'
@@ -20,6 +24,10 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/login-error" element={<LoginError />} />
+        <Route path="/auth/callback" element={<AuthCallback />} />
+        <Route path="/connect-twitter" element={<ConnectTwitter />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/billing/success" element={<BillingSuccess />} />
         <Route path="/no-model" element={<NoModelError />} />

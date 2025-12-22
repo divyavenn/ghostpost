@@ -304,6 +304,46 @@ export const api = {
     return response.json();
   },
 
+  // Supabase auth endpoints
+  syncSupabaseUser: async (accessToken: string): Promise<{
+    user_id: number;
+    email: string;
+    account_type: string;
+    is_new: boolean;
+    twitter_handle?: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/auth/supabase/sync`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to sync user' }));
+      throw new Error(error.detail || 'Failed to sync user');
+    }
+    return response.json();
+  },
+
+  getSupabaseUserProfile: async (accessToken: string): Promise<{
+    user_id: number;
+    email: string;
+    account_type: string;
+    twitter_handle?: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/auth/supabase/profile`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to get user profile' }));
+      throw new Error(error.detail || 'Failed to get user profile');
+    }
+    return response.json();
+  },
+
   // Tweet cache endpoints
   getTweetsCache: async (username: string): Promise<ReplyData[]> => {
     const response = await fetch(`${API_BASE_URL}/tweets/${username}`);

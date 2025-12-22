@@ -61,6 +61,13 @@ USE_BROWSERBASE_FOR_SCRAPING = False
 OBELISK_KEY = os.getenv("OBELISK_KEY")
 
 # =============================================================================
+# SUPABASE CONFIGURATION
+# =============================================================================
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_API_KEY = os.getenv("SUPABASE_API_KEY")
+SUPABASE_JWT_KEY = os.getenv("SUPABASE_JWT_KEY")  # From Supabase Dashboard > Settings > API > JWT Signing Key
+
+# =============================================================================
 # STRIPE BILLING CONFIGURATION
 # =============================================================================
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")

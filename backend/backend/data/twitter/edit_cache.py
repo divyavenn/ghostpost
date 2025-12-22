@@ -1,23 +1,18 @@
-"""Functions for reading and writing to the tweet cache."""
+"""Functions for reading and writing to the tweet cache (Supabase Storage)."""
 
 import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
-from backend.config import CACHE_DIR, MAX_TWEET_AGE_HOURS
-from backend.utlils.utils import _cache_key, atomic_file_update, error, notify
+from backend.config import MAX_TWEET_AGE_HOURS
+from backend.utlils.utils import error, notify
 
 USERNAME = "proudlurker"
 
 
-def get_user_tweet_cache(username=USERNAME) -> Path:
-    return CACHE_DIR / f"{_cache_key(username)}_tweets.json"
-
-
-async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path:
+async def write_to_cache(tweets, description: str, *, username=USERNAME) -> None:
     import uuid
 
     from pydantic import ValidationError
@@ -62,9 +57,10 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
             # Still include the tweet but log the error
             all_tweets.append(tweet_data)
 
-    path = get_user_tweet_cache(username)
-    atomic_file_update(path, all_tweets, ".tmp", ensure_ascii=False)
-    # notify(f"💾{description} and wrote to cache")
+    # Write to Supabase Storage
+    from backend.utlils.supabase_client import upload_scraped_tweets
+    upload_scraped_tweets(username, json.dumps(all_tweets, ensure_ascii=False))
+    # notify(f"💾{description} and wrote to Supabase Storage")
 
     # Track newly written tweets in seen_tweets
     from backend.utlils.utils import add_to_seen_tweets
@@ -112,37 +108,37 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
 
             log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id), metadata=metadata)
 
-    return path
-
 
 async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
     from pydantic import ValidationError
 
     from backend.data.twitter.data_validation import ScrapedTweet
+    from backend.utlils.supabase_client import download_scraped_tweets
 
-    path = get_user_tweet_cache(username)
-    # notify(f"💾 Reading tweets from cache ({path.name})")
-    if not path.exists():
+    # Read from Supabase Storage
+    data = download_scraped_tweets(username)
+    if not data:
         return []
+
     try:
-        raw_tweets = json.loads(path.read_text())
-
-        # Validate each tweet
-        validated_tweets = []
-        for idx, tweet in enumerate(raw_tweets):
-            try:
-                validated = ScrapedTweet(**tweet)
-                validated_tweets.append(validated.model_dump())
-            except ValidationError as e:
-                tweet_id = tweet.get("id", f"index_{idx}")
-                error(f"Invalid tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="read_from_cache", username=username)
-                # Include invalid tweet but log the error
-                validated_tweets.append(tweet)
-
-        return validated_tweets
+        raw_tweets = json.loads(data)
     except Exception as exc:
-        error("Error reading JSON file", exception_text=str(exc), function_name="read_from_cache")
+        error("Error parsing JSON from Supabase Storage", exception_text=str(exc), function_name="read_from_cache")
         return []
+
+    # Validate each tweet
+    validated_tweets = []
+    for idx, tweet in enumerate(raw_tweets):
+        try:
+            validated = ScrapedTweet(**tweet)
+            validated_tweets.append(validated.model_dump())
+        except ValidationError as e:
+            tweet_id = tweet.get("id", f"index_{idx}")
+            error(f"Invalid tweet data for tweet {tweet_id}", status_code=500, exception_text=str(e), function_name="read_from_cache", username=username)
+            # Include invalid tweet but log the error
+            validated_tweets.append(tweet)
+
+    return validated_tweets
 
 
 async def purge_unedited_tweets(username: str, only_seen: bool = False) -> int:
@@ -184,8 +180,8 @@ async def purge_unedited_tweets(username: str, only_seen: bool = False) -> int:
 
     # Write back if any were removed
     if removed_count > 0:
-        path = get_user_tweet_cache(username)
-        atomic_file_update(path, kept_tweets, ".tmp", ensure_ascii=False)
+        from backend.utlils.supabase_client import upload_scraped_tweets
+        upload_scraped_tweets(username, json.dumps(kept_tweets, ensure_ascii=False))
         notify(f"🧹 Purged {removed_count} unedited tweet(s) from cache")
 
         # Log deletion for each removed tweet
@@ -249,8 +245,8 @@ async def purge_empty_thread_tweets(username: str) -> int:
 
     # Write back if any were removed
     if removed_count > 0:
-        path = get_user_tweet_cache(username)
-        atomic_file_update(path, kept_tweets, ".tmp", ensure_ascii=False)
+        from backend.utlils.supabase_client import upload_scraped_tweets
+        upload_scraped_tweets(username, json.dumps(kept_tweets, ensure_ascii=False))
         notify(f"🧹 Purged {removed_count} tweet(s) with empty thread from cache")
 
         # Also remove from seen_tweets so they can be re-scraped
@@ -330,8 +326,8 @@ async def cleanup_old_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) ->
 
     # Write back if any were removed
     if removed_count > 0:
-        path = get_user_tweet_cache(username)
-        atomic_file_update(path, kept_tweets, ".tmp", ensure_ascii=False)
+        from backend.utlils.supabase_client import upload_scraped_tweets
+        upload_scraped_tweets(username, json.dumps(kept_tweets, ensure_ascii=False))
         notify(f"🧹 Cleaned {removed_count} tweet(s) older than {hours}h from cache")
 
         # Log deletion for each removed tweet
@@ -391,8 +387,8 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
     tweets = [t for t in tweets if t.get("id") != tweet_id and t.get("tweet_id") != tweet_id]
 
     # Write to cache without logging (to avoid duplicate WRITTEN logs)
-    path = get_user_tweet_cache(username)
-    atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+    from backend.utlils.supabase_client import upload_scraped_tweets
+    upload_scraped_tweets(username, json.dumps(tweets, ensure_ascii=False))
     notify(f"💾 Deleted tweet {tweet_id}")
 
     # Log the deletion only if requested (skip when deleting after posting)
@@ -466,8 +462,8 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str, reply_i
     tweet["edited"] = True
 
     # Write to cache without logging (to avoid duplicate WRITTEN logs)
-    path = get_user_tweet_cache(username)
-    atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+    from backend.utlils.supabase_client import upload_scraped_tweets
+    upload_scraped_tweets(username, json.dumps(tweets, ensure_ascii=False))
     notify(f"💾 Edited reply {reply_index} for tweet {tweet_id}")
 
     # Log the edit with comprehensive metadata including reply index and model
@@ -497,25 +493,10 @@ async def get_single_tweet(username: str, tweet_id: str) -> dict[str, Any] | Non
     return get_tweet_by_id(tweets, tweet_id)
 
 
-def remove_user_cache(username: str, key: str) -> bool:
-    cache_removed = False
-    tweet_cache = CACHE_DIR / f"{_cache_key(username)}_tweets.json"
-    user_dir = tweet_cache.parent
-
-    if tweet_cache.exists():
-        tweet_cache.unlink(missing_ok=True)
-        cache_removed = True
-
-    if user_dir.exists() and user_dir.is_dir():
-        for child in user_dir.iterdir():
-            if child.is_file():
-                child.unlink(missing_ok=True)
-                cache_removed = True
-        try:
-            user_dir.rmdir()
-        except OSError:
-            pass
-    return cache_removed
+def remove_user_cache(username: str) -> bool:
+    """Remove user's scraped tweets from Supabase Storage."""
+    from backend.utlils.supabase_client import delete_scraped_tweets
+    return delete_scraped_tweets(username)
 
 
 # API Router
@@ -617,8 +598,8 @@ async def mark_tweets_seen_endpoint(username: str, payload: MarkSeenRequest) -> 
             marked_count += 1
 
     if marked_count > 0:
-        path = get_user_tweet_cache(username)
-        atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+        from backend.utlils.supabase_client import upload_scraped_tweets
+        upload_scraped_tweets(username, json.dumps(tweets, ensure_ascii=False))
 
     return {"message": f"Marked {marked_count} tweets as seen", "marked_count": marked_count}
 
@@ -648,8 +629,8 @@ async def mark_tweets_unseen_endpoint(username: str, payload: MarkSeenRequest) -
             marked_count += 1
 
     if marked_count > 0:
-        path = get_user_tweet_cache(username)
-        atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
+        from backend.utlils.supabase_client import upload_scraped_tweets
+        upload_scraped_tweets(username, json.dumps(tweets, ensure_ascii=False))
 
     return {"message": f"Marked {marked_count} tweets as unseen", "marked_count": marked_count}
 

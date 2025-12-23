@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import styled from 'styled-components';
-import { LoginLoading } from '../components/LoginLoading';
 import { Background } from '../components/Background';
 import { TextTree } from '../components/TextTree';
 
@@ -89,14 +88,12 @@ const TextContainer = styled.div`
 
 // --- Main Component ---
 export function Login() {
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // --- Auth Logic ---
   const handleLogin = async () => {
     try {
       setError(null);
-      setIsLoggingIn(true);
 
       const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || '';
       const frontendUrl = window.location.origin;
@@ -117,11 +114,8 @@ export function Login() {
     } catch (error) {
       console.error('Login failed:', error);
       setError(`Login failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setIsLoggingIn(false);
     }
   };
-
-  if (isLoggingIn) return <LoginLoading />;
 
   return (
       <Background>

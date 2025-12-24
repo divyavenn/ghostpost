@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import styled, { css } from 'styled-components';
+import { motion, AnimatePresence } from 'framer-motion';
 import { type PostWithComments as CommentGroupData, type CommentWithContext } from '../api/client';
 import { AnimatedText } from './WordStyles';
 import { QuotedTweetDisplay, TweetMediaGrid } from './TweetMediaComponents';
+import { JobProgressButton } from './JobProgressButton';
 
 const Container = styled.div<{ $expanded: boolean }>`
   width: 100%;
@@ -835,6 +837,42 @@ interface CommentDisplayProps {
   regeneratingCommentIds: Set<string>;
 }
 
+// Animation variants for comment cards during Post All
+const commentCardVariants = {
+  normal: {
+    opacity: 1,
+    scale: 1,
+    boxShadow: '0 0 0 0px rgba(14, 165, 233, 0)',
+  },
+  queued: {
+    opacity: [0.7, 0.5, 0.7],
+    scale: 1,
+    transition: {
+      opacity: {
+        repeat: Infinity,
+        duration: 1.5,
+        ease: 'easeInOut',
+      },
+    },
+  },
+  posting: {
+    opacity: 1,
+    scale: 1,
+    boxShadow: [
+      '0 0 0 2px rgba(14, 165, 233, 0.3)',
+      '0 0 0 4px rgba(14, 165, 233, 0.5)',
+      '0 0 0 2px rgba(14, 165, 233, 0.3)',
+    ],
+    transition: {
+      boxShadow: {
+        repeat: Infinity,
+        duration: 0.8,
+        ease: 'easeInOut',
+      },
+    },
+  },
+};
+
 export function CommentDisplay({
   data,
   maxReplies = 2,
@@ -850,6 +888,11 @@ export function CommentDisplay({
   const { post, comments } = data;
   const [isPostingAll, setIsPostingAll] = useState(false);
   const [isPostExpanded, setIsPostExpanded] = useState(false);
+  const [postingProgress, setPostingProgress] = useState<{
+    current: number;
+    total: number;
+    currentCommentId: string | null;
+  } | null>(null);
 
   const formatMetric = (value: number): string => {
     if (value >= 1000000) return `${(value / 1000000).toFixed(1).replace(/\.0$/, '')}M`;
@@ -863,12 +906,17 @@ export function CommentDisplay({
   );
 
   const handlePostAll = async () => {
-    if (commentsWithReplies.length === 0) return;
+    const total = commentsWithReplies.length;
+    if (total === 0) return;
 
     setIsPostingAll(true);
+    setPostingProgress({ current: 0, total, currentCommentId: null });
 
     // Post each comment sequentially and wait for each to complete
-    for (const comment of commentsWithReplies) {
+    for (let i = 0; i < commentsWithReplies.length; i++) {
+      const comment = commentsWithReplies[i];
+      setPostingProgress({ current: i, total, currentCommentId: comment.id });
+
       const reply = comment.generated_replies?.[0];
       if (reply) {
         try {
@@ -880,9 +928,12 @@ export function CommentDisplay({
         // Small delay between posts for rate limiting
         await new Promise(resolve => setTimeout(resolve, 300));
       }
+
+      setPostingProgress({ current: i + 1, total, currentCommentId: null });
     }
 
     setIsPostingAll(false);
+    setPostingProgress(null);
   };
 
   return (
@@ -943,34 +994,64 @@ export function CommentDisplay({
 
       <CommentsScrollArea>
         <CommentsGrid>
-          {comments.map((comment) => (
-            <CommentItem
-              key={comment.id}
-              comment={comment}
-              maxReplies={maxReplies}
-              myProfilePicUrl={myProfilePicUrl}
-              originalPostId={post.id}
-              onPublish={(text, replyIndex) => onPublishReply(comment.id, text, replyIndex)}
-              onSkip={() => onSkipComment(comment.id)}
-              onEditReply={onEditReply ? (newReply, replyIndex) => onEditReply(comment.id, newReply, replyIndex) : undefined}
-              onRegenerate={onRegenerateReply ? () => onRegenerateReply(comment.id) : undefined}
-              isDeleting={skippingCommentIds.has(comment.id)}
-              isPosting={postingCommentIds.has(comment.id)}
-              isRegenerating={regeneratingCommentIds.has(comment.id)}
-            />
-          ))}
+          <AnimatePresence mode="popLayout">
+            {comments.map((comment) => {
+              // Check if this comment is queued in Post All
+              const commentIndexInQueue = commentsWithReplies.findIndex(c => c.id === comment.id);
+              const isQueued = postingProgress !== null && commentIndexInQueue >= postingProgress.current;
+              const isCurrentlyPosting = postingProgress?.currentCommentId === comment.id;
+
+              // Determine animation state
+              const animateState = isCurrentlyPosting
+                ? 'posting'
+                : isQueued
+                  ? 'queued'
+                  : 'normal';
+
+              return (
+                <motion.div
+                  key={comment.id}
+                  variants={commentCardVariants}
+                  animate={animateState}
+                  exit={{ opacity: 0, x: 100, transition: { duration: 0.3 } }}
+                  layout
+                  style={{ borderRadius: '0.75rem' }}
+                >
+                  <CommentItem
+                    comment={comment}
+                    maxReplies={maxReplies}
+                    myProfilePicUrl={myProfilePicUrl}
+                    originalPostId={post.id}
+                    onPublish={(text, replyIndex) => onPublishReply(comment.id, text, replyIndex)}
+                    onSkip={() => onSkipComment(comment.id)}
+                    onEditReply={onEditReply ? (newReply, replyIndex) => onEditReply(comment.id, newReply, replyIndex) : undefined}
+                    onRegenerate={onRegenerateReply ? () => onRegenerateReply(comment.id) : undefined}
+                    isDeleting={skippingCommentIds.has(comment.id)}
+                    isPosting={postingCommentIds.has(comment.id)}
+                    isRegenerating={regeneratingCommentIds.has(comment.id)}
+                  />
+                </motion.div>
+              );
+            })}
+          </AnimatePresence>
         </CommentsGrid>
       </CommentsScrollArea>
 
       {commentsWithReplies.length > 1 && (
         <BottomBar>
-          <PostAllButton
+          <JobProgressButton
+            username=""
+            jobNames={[]}
             onClick={handlePostAll}
-            disabled={isPostingAll || commentsWithReplies.length === 0}
-          >
-            <i className="fa-solid fa-paper-plane" />
-            Post All ({commentsWithReplies.length})
-          </PostAllButton>
+            label={`Post All (${commentsWithReplies.length})`}
+            loadingLabel="Posting..."
+            localProgress={postingProgress ? {
+              current: postingProgress.current,
+              total: postingProgress.total,
+              displayText: `Posting ${postingProgress.current}/${postingProgress.total}`,
+            } : null}
+            disabled={commentsWithReplies.length === 0}
+          />
         </BottomBar>
       )}
     </Container>

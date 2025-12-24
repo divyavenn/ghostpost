@@ -3,6 +3,13 @@ import { motion } from 'framer-motion';
 import { api, type JobStatus } from '../api/client';
 import { AnimatedText } from './WordStyles';
 
+interface LocalProgress {
+  current: number;
+  total: number;
+  /** Optional custom display text, defaults to "current/total" */
+  displayText?: string;
+}
+
 interface JobProgressButtonProps {
   username: string;
   /** Job names to monitor (e.g., ['find_and_reply_to_new_posts']) */
@@ -16,6 +23,8 @@ interface JobProgressButtonProps {
   className?: string;
   /** Polling interval in ms (default: 500) */
   pollInterval?: number;
+  /** Local progress override - when provided, skips backend polling */
+  localProgress?: LocalProgress | null;
 }
 
 export function JobProgressButton({
@@ -28,6 +37,7 @@ export function JobProgressButton({
   disabled = false,
   className = '',
   pollInterval = 500,
+  localProgress = null,
 }: JobProgressButtonProps) {
   const [jobStatuses, setJobStatuses] = useState<Record<string, JobStatus>>({});
   const [_isPolling, setIsPolling] = useState(false);
@@ -49,11 +59,18 @@ export function JobProgressButton({
   }, [jobNames, jobStatuses]);
 
   const activeJob = getActiveJob();
-  // Show as running if we have an active job OR if we just clicked (localLoading)
-  const isRunning = activeJob !== null || localLoading;
+  // Check if we're using local progress mode
+  const isLocalProgress = localProgress !== null;
+  // Show as running if we have local progress, an active job, OR if we just clicked (localLoading)
+  const isRunning = isLocalProgress || activeJob !== null || localLoading;
 
   // Get display text for the button using simplified format
   const getDisplayText = (): string => {
+    // Local progress takes priority
+    if (isLocalProgress) {
+      return localProgress.displayText ?? `${localProgress.current}/${localProgress.total}`;
+    }
+
     if (!activeJob) return label;
 
     const { status } = activeJob;
@@ -70,8 +87,15 @@ export function JobProgressButton({
     return loadingLabel;
   };
 
-  // Get progress percentage from active job
+  // Get progress percentage from active job or local progress
   const getProgress = (): number => {
+    // Local progress takes priority
+    if (isLocalProgress) {
+      return localProgress.total > 0
+        ? (localProgress.current / localProgress.total) * 100
+        : 0;
+    }
+
     if (!activeJob) return 0;
     return activeJob.status.percentage || 0;
   };
@@ -116,9 +140,12 @@ export function JobProgressButton({
     }
   }, [username, jobNames, pollInterval]);
 
-  // Start polling when button is clicked
+  // Start polling when button is clicked (unless using local progress)
   const handleClick = () => {
     onClick();
+    // When using local progress, the parent controls the loading state
+    if (isLocalProgress) return;
+
     // Show loading state immediately
     setLocalLoading(true);
     // Start polling after a short delay to let the job start

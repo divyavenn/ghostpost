@@ -8,6 +8,7 @@ from backend.data.twitter.data_validation import (
     UpdateEmailRequest,
     UpdateModelsRequest,
     UpdateSettingsRequest,
+    UpdateSurveyDataRequest,
 )
 from backend.utlils.utils import notify, read_user_info, write_user_info
 
@@ -247,6 +248,33 @@ async def update_user_email_endpoint(handle: str, payload: UpdateEmailRequest) -
     except Exception as e:
         error("Error updating email", status_code=500, exception_text=str(e), function_name="update_user_email_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error updating email: {str(e)}") from e
+
+
+@router.patch("/{handle}/survey-data")
+async def update_survey_data_endpoint(handle: str, payload: UpdateSurveyDataRequest) -> dict:
+    """Update user survey data (onboarding responses, preferences, etc.)."""
+    from backend.utlils.utils import error, read_user_info, write_user_info
+
+    try:
+        user_info = read_user_info(handle)
+        if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="update_survey_data_endpoint", username=handle)
+            raise HTTPException(status_code=404, detail=f"User {handle} not found")
+
+        # Merge new survey data with existing (allows partial updates)
+        existing_survey_data = user_info.get("survey_data", {})
+        existing_survey_data.update(payload.survey_data)
+        user_info["survey_data"] = existing_survey_data
+        write_user_info(user_info)
+
+        notify(f"✅ Updated survey data for @{handle}")
+
+        return {"message": "Survey data updated successfully", "survey_data": user_info["survey_data"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error("Error updating survey data", status_code=500, exception_text=str(e), function_name="update_survey_data_endpoint", username=handle)
+        raise HTTPException(status_code=500, detail=f"Error updating survey data: {str(e)}") from e
 
 
 @router.get("/{handle}/settings")

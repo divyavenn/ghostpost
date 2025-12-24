@@ -332,7 +332,7 @@ async def twitter_callback(
         _cookie_sessions[session_id]["oauth_complete"] = True
         _cookie_sessions[session_id]["username"] = twitter_handle
         _cookie_sessions[session_id]["status"] = "complete"  # Login complete with OAuth
-        _cookie_sessions[session_id]["oauth_complete_time"] = datetime.datetime.now(datetime.UTC).isoformat()
+        _cookie_sessions[session_id]["oauth_complete_time"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
         notify(f"✅ Login complete for @{twitter_handle} (browser cookies optional)")
 
     notify(f"🔗 Redirecting to: {frontend_url}/login-success?username={twitter_handle}")
@@ -506,7 +506,7 @@ async def import_cookies(payload: CookieImport) -> dict:
     # Convert browser extension format to Playwright storage_state format
     import datetime
     try:
-        storage_state = {"cookies": sanitized_cookies, "origins": [{"origin": "https://x.com", "localStorage": []}], "timestamp": datetime.datetime.now(datetime.UTC).isoformat()}
+        storage_state = {"cookies": sanitized_cookies, "origins": [{"origin": "https://x.com", "localStorage": []}], "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat()}
     except Exception as e:
         error_msg = f"Failed to create storage state for @{username}: {e}"
         notify(f"❌ {error_msg}")

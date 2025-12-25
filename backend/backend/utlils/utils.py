@@ -59,9 +59,9 @@ def notify(msg: str):
         print(msg)
 
 
-def error(msg: str, status_code: int = 500, exception_text: str | None = None, function_name: str | None = None, username: str | None = None, critical: bool = False):
+def error(msg: str, status_code: int = 500, exception_text: str | None = None, function_name: str | None = None, username: str | None = None, critical: bool = False, platform: str = "Twitter"):
     """
-    Log the error to errors.jsonl. If critical, raise a RunTimeError as well (user gets notified/process gets interrupted).
+    Log the error to errors.jsonl using ErrorLog Pydantic model. If critical, raise a RunTimeError as well (user gets notified/process gets interrupted).
 
     Args:
         msg: Error message
@@ -69,8 +69,17 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
         exception_text: The original exception message if called from try-except
         function_name: Name of the function where the error originated
         username: Current user handle
+        critical: Whether to raise RuntimeError and message devs
+        platform: Platform where error occurred (default: "Twitter")
     """
     import inspect
+    from backend.twitter.logging import ErrorLog
+
+    try:
+        from datetime import UTC
+    except ImportError:
+        from datetime import timezone
+        UTC = timezone.utc
 
     # Auto-detect function name if not provided
     if function_name is None:
@@ -78,23 +87,31 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
         if frame and frame.f_back:
             function_name = frame.f_back.f_code.co_name
 
-    timestamp = datetime.utcnow().isoformat() + "Z"
-    # Create error log entry
-    error_entry = {"message": msg, "status_code": status_code, "function_name": function_name or "unknown", "timestamp": timestamp, "user": username or "unknown", "exception": exception_text}
+    # Create ErrorLog Pydantic model
+    error_log = ErrorLog(
+        message=msg,
+        status_code=status_code,
+        calling_function=function_name or "unknown",
+        timestamp=datetime.now(UTC),
+        user_id=username,
+        platform=platform,  # type: ignore
+        raw_exception=exception_text or "",
+    )
 
     # Append to errors.jsonl (create if doesn't exist)
     errors_log_path = CACHE_DIR / "errors.jsonl"
 
     try:
         with open(errors_log_path, "a") as f:
-            f.write(json.dumps(error_entry) + "\n")
+            f.write(error_log.model_dump_json() + "\n")
     except Exception as e:
         # Don't let logging failures prevent error from being raised
         print(f"⚠️ Failed to log error to errors.jsonl: {e}")
 
     if critical:
         from backend.utlils.email import message_devs
-        message_devs(f"❌ Critical error in {function_name} for user {username}: {msg}. timestamp: {timestamp}")
+        timestamp_str = error_log.timestamp.isoformat()
+        message_devs(f"❌ Critical error in {function_name} for user {username}: {msg}. timestamp: {timestamp_str}")
         raise RuntimeError(f"❌ {msg}")
 
 

@@ -22,8 +22,8 @@ from backend.twitter.display_progress import (
     get_job_display_name,
     print_job_complete,
     print_job_start,
-    print_progress_bar,
 )
+from backend.twitter.logging import log_job_complete, log_job_error
 from backend.utlils.utils import error, notify, read_user_info
 
 
@@ -188,14 +188,8 @@ def _update_job_status(
     if status == "running" and not current.get("started_at"):
         job_status[username][job_name]["started_at"] = datetime.now(UTC).isoformat()
 
-    # Print progress bar to console (docker-log friendly)
-    if progress and status == "running":
-        display_phase = f"{phase}: {details}" if details else phase
-        print_progress_bar(
-            job_name, display_phase,
-            progress.get("current", 0), progress.get("total", 0),
-            username, triggered_by
-        )
+    # Progress bars disabled - job logging happens to user log files instead
+    pass
 
 
 async def _reset_job_to_idle(username: str, job_name: str, delay: float = 5.0):
@@ -289,6 +283,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
     notify(f"🚀 [Job 1] Starting OPTIMIZED find_and_reply_to_new_posts for {username}")
 
     start_time = time.time()
+    initiated_time = datetime.now(UTC)
     results = {
         "tweets_scraped": 0,
         "tweets_discovered": 0,
@@ -503,12 +498,15 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "user")
         # Print completion log
         summary = f"{results['tweets_scraped']} tweets, {results['replies_generating']} replies"
         print_job_complete("find_and_reply_to_new_posts", username, triggered_by, summary, duration)
+        log_job_complete(username, "find_and_reply_to_new_posts", triggered_by, initiated_time, results)
         notify(f"✅ [Job 1] Complete: {summary}")
 
         # Reset to idle after delay
         asyncio.create_task(_reset_job_to_idle(username, "find_and_reply_to_new_posts"))
 
     except Exception as e:
+        duration = int(time.time() - start_time)
+        log_job_error(username, "find_and_reply_to_new_posts", triggered_by, initiated_time, str(e), results)
         error(f"find_and_reply_to_new_posts failed: {e}", status_code=500, function_name="find_and_reply_to_new_posts", username=username, critical=False)
         results["errors"].append(str(e))
         _update_job_status(
@@ -672,6 +670,7 @@ async def find_user_activity(username: str, max_tweets: int = 50, triggered_by: 
     from backend.twitter.monitoring import discover_recently_posted, discover_resurrected
 
     start_time = time.time()
+    initiated_time = datetime.now(UTC)
     print_job_start("find_user_activity", username, triggered_by)
     _update_job_status(username, "find_user_activity", "running", "starting", triggered_by=triggered_by)
     notify(f"🚀 [Job 2] Starting find_user_activity for {username}")
@@ -762,6 +761,7 @@ async def find_user_activity(username: str, max_tweets: int = 50, triggered_by: 
         # Print completion log
         summary = f"{results['total_discovered']} discovered, {results['total_comments']} comments"
         print_job_complete("find_user_activity", username, triggered_by, summary, duration)
+        log_job_complete(username, "find_user_activity", triggered_by, initiated_time, results)
         notify(f"✅ [Job 2] Complete: {results['total_discovered']} discovered, {results['total_comments']} comments, {results['total_quote_tweets']} QTs")
 
         # Reset to idle after delay
@@ -776,6 +776,8 @@ async def find_user_activity(username: str, max_tweets: int = 50, triggered_by: 
                 await progress_task
             except asyncio.CancelledError:
                 pass
+        duration = int(time.time() - start_time)
+        log_job_error(username, "find_user_activity", triggered_by, initiated_time, str(e), results)
         error(f"find_user_activity failed: {e}", status_code=500, function_name="find_user_activity", username=username, critical=False)
         results["errors"].append(str(e))
         _update_job_status(
@@ -860,6 +862,7 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
     from backend.twitter.monitoring import _determine_monitoring_state, _should_promote_to_active
 
     start_time = time.time()
+    initiated_time = datetime.now(UTC)
     print_job_start("find_and_reply_to_engagement", username, triggered_by)
     _update_job_status(username, "find_and_reply_to_engagement", "running", "starting", triggered_by=triggered_by)
     notify(f"🚀 [Job 3] Starting find_and_reply_to_engagement for {username}")
@@ -1088,12 +1091,15 @@ async def find_and_reply_to_engagement(username: str, triggered_by: str = "user"
         # Print completion log
         summary = f"{results['active_scraped']} deep, {results['warm_scraped']} shallow, {results['new_comments']} comments"
         print_job_complete("find_and_reply_to_engagement", username, triggered_by, summary, duration)
+        log_job_complete(username, "find_and_reply_to_engagement", triggered_by, initiated_time, results)
         notify(f"✅ [Job 3] Complete: {results['active_scraped']} deep, {results['warm_scraped']} shallow, {results['new_comments']} comments, {results['new_quote_tweets']} QTs, {results['replies_generating']} replies generating")
 
         # Reset to idle after delay
         asyncio.create_task(_reset_job_to_idle(username, "find_and_reply_to_engagement"))
 
     except Exception as e:
+        duration = int(time.time() - start_time)
+        log_job_error(username, "find_and_reply_to_engagement", triggered_by, initiated_time, str(e), results)
         error(f"find_and_reply_to_engagement failed: {e}", status_code=500, function_name="find_and_reply_to_engagement", username=username, critical=False)
         results["errors"].append(str(e))
         _update_job_status(
@@ -1232,11 +1238,14 @@ async def analyze(username: str, triggered_by: str = "user") -> dict:
     Returns:
         Analysis dict with model/prompt preferences and metrics
     """
+    import time
     from collections import Counter
 
     from backend.twitter.logging import TweetAction, read_user_log
     from backend.utlils.utils import write_user_info
 
+    start_time = time.time()
+    initiated_time = datetime.now(UTC)
     print_job_start("analyze", username, triggered_by)
     _update_job_status(username, "analyze", "running", "analyzing", triggered_by=triggered_by)
     notify(f"🚀 [Job 4] Starting analyze for {username}")
@@ -1299,7 +1308,10 @@ async def analyze(username: str, triggered_by: str = "user") -> dict:
     write_user_info(user_info)
 
     _update_job_status(username, "analyze", "complete", "done", triggered_by=triggered_by)
-    print_job_complete("analyze", username, triggered_by, {"analyzed": len(posted_logs)})
+    duration = int(time.time() - start_time)
+    summary = f"{len(posted_logs)} posts analyzed"
+    print_job_complete("analyze", username, triggered_by, summary, duration)
+    log_job_complete(username, "analyze", triggered_by, initiated_time, analysis)
     notify(f"✅ [Job 4] Analysis complete for {username}: {len(posted_logs)} posts analyzed")
 
     return analysis

@@ -98,6 +98,10 @@ def print_progress_bar(
         username: User the job is running for
         triggered_by: "user" or "scheduler"
     """
+    # Progress bars disabled - job logging happens to user log files instead
+    return
+
+    # Original implementation preserved below (unreachable)
     if total <= 0:
         return
 

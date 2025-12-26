@@ -16,7 +16,6 @@ except ImportError:
     from datetime import timezone
     UTC = timezone.utc
 
-from backend.browser_management.context import cleanup_browser_resources, get_authenticated_context
 from backend.config import (
     ACTIVE_MAX_AGE_HOURS,
     ACTIVITY_PROMOTION_THRESHOLD,
@@ -203,23 +202,29 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
 
     notify(f"🔍 [discover_recently_posted] Starting for @{user_handle}")
 
-    playwright = None
-    browser = None
-    context = None
     results = {
         "discovered_tweets": 0,
+        "original_posts": 0,
+        "replies": 0,
+        "comment_backs": 0,
         "new_comments": 0,
         "new_quote_tweets": 0,
         "errors": []
     }
 
     try:
-        playwright, browser, context = await get_authenticated_context(username)
         existing_ids = get_user_tweet_ids(username)
         notify(f"[DEBUG] Existing tweet IDs in cache: {len(existing_ids)}")
 
-        # Scrape user's recent tweets
-        recent_tweets = await scrape_user_recent_tweets(context, user_handle, max_tweets)
+        # Get the newest tweet ID for efficient polling (only fetch tweets since this ID)
+        since_id = None
+        if existing_ids:
+            # Tweet IDs are sortable as strings (they're snowflake IDs)
+            since_id = max(existing_ids)
+            notify(f"[DEBUG] Using since_id={since_id} for efficient polling")
+
+        # Scrape user's recent tweets using API with efficient polling
+        recent_tweets = await scrape_user_recent_tweets(None, user_handle, max_tweets, since_id=since_id)
         notify(f"📊 Found {len(recent_tweets)} recent tweets for @{user_handle}")
 
         skipped_existing = 0
@@ -253,7 +258,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 if in_reply_to and not existing_tweet.get("response_to_thread"):
                     try:
                         original_url = f"https://x.com/i/status/{in_reply_to}"
-                        thread_result = await get_thread(context, original_url, root_id=in_reply_to)
+                        thread_result = await get_thread(None, original_url, root_id=in_reply_to)
                         if thread_result and thread_result.get("thread"):
                             existing_tweet["response_to_thread"] = thread_result["thread"]
                             existing_tweet["responding_to"] = thread_result.get("author_handle", existing_tweet.get("responding_to", ""))
@@ -322,7 +327,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 if in_reply_to:
                     try:
                         original_url = f"https://x.com/i/status/{in_reply_to}"
-                        thread_result = await get_thread(context, original_url, root_id=in_reply_to)
+                        thread_result = await get_thread(None, original_url, root_id=in_reply_to)
 
                         if thread_result:
                             # Get thread text from the original tweet
@@ -394,12 +399,21 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 write_posted_tweets_cache(username, tweets_map)
 
                 results["discovered_tweets"] += 1
-                notify(f"✅ Discovered external tweet {tweet_id} ({initial_state})")
+
+                # Track by post type
+                if post_type == "original":
+                    results["original_posts"] += 1
+                elif post_type == "reply":
+                    results["replies"] += 1
+                elif post_type == "comment_reply":
+                    results["comment_backs"] += 1
+
+                notify(f"✅ Discovered external tweet {tweet_id} ({initial_state}, {post_type})")
 
                 # Deep scrape if active state to get initial replies and QTs
                 if initial_state == "active":
                     try:
-                        scrape_result = await deep_scrape_thread(context, url, tweet_id, user_handle)
+                        scrape_result = await deep_scrape_thread(None, url, tweet_id, user_handle)
 
                         # Process replies
                         scraped_replies = scrape_result.get("replies", [])
@@ -432,9 +446,6 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
     except Exception as e:
         error(f"discover_recently_posted failed: {e}", status_code=500, function_name="discover_recently_posted", username=username, critical=False)
         results["errors"].append(str(e))
-
-    finally:
-        await cleanup_browser_resources(playwright, browser, context)
 
     return results
 
@@ -469,9 +480,6 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
 
     notify(f"🔍 [discover_engagement] Starting for @{user_handle}")
 
-    playwright = None
-    browser = None
-    context = None
     results = {
         "active_scraped": 0,
         "warm_scraped": 0,
@@ -484,7 +492,6 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
     }
 
     try:
-        playwright, browser, context = await get_authenticated_context(username)
 
         # Get active tweets for deep scraping
         active_tweets = get_tweets_by_monitoring_state(username, ["active"])
@@ -497,7 +504,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
-                scrape_result = await deep_scrape_thread(context, url, tweet_id, user_handle)
+                scrape_result = await deep_scrape_thread(None, url, tweet_id, user_handle)
                 results["active_scraped"] += 1
 
                 # Process replies
@@ -558,7 +565,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
-                scrape_result = await shallow_scrape_thread(context, url, tweet_id)
+                scrape_result = await shallow_scrape_thread(None, url, tweet_id)
                 results["warm_scraped"] += 1
 
                 new_metrics = {
@@ -619,23 +626,20 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
         error(f"discover_engagement failed: {e}", status_code=500, function_name="discover_engagement", username=username, critical=False)
         results["errors"].append(str(e))
 
-    finally:
-        await cleanup_browser_resources(playwright, browser, context)
-
     return results
 
 
 async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any]:
     """
-    Job 3: Check for activity on cold tweets via notifications.
+    Job 3: Check for activity on cold tweets via user mentions API.
 
-    Scrapes Twitter notifications to find:
+    Uses Twitter mentions timeline to find:
     - Replies to cold tweets
-    - Likes/retweets on cold tweets that exceed threshold
+    - New engagement on old tweets
 
     For resurrected tweets:
     - Promote to active state
-    - Set resurrected_via = "notification"
+    - Set resurrected_via = "mention"
     - Deep scrape to get new replies
 
     Args:
@@ -651,13 +655,10 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
         read_posted_tweets_cache,
         write_posted_tweets_cache,
     )
-    from backend.browser_automation.twitter.api import deep_scrape_thread
+    from backend.browser_automation.twitter.api import deep_scrape_thread, ensure_access_token, _get_user_mentions
 
     notify(f"🔍 [discover_resurrected] Starting for @{user_handle}")
 
-    playwright = None
-    browser = None
-    context = None
     results = {
         "resurrected_tweets": 0,
         "new_comments": 0,
@@ -666,7 +667,19 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
     }
 
     try:
-        playwright, browser, context = await get_authenticated_context(username)
+        # Get access token
+        access_token = await ensure_access_token(username)
+        if not access_token:
+            error("No access token available", status_code=401, function_name="discover_resurrected", critical=False)
+            return results
+
+        # Get user ID from user_info
+        from backend.utlils.utils import read_user_info
+        user_info = read_user_info(username)
+        user_id = user_info.get("uid")
+        if not user_id:
+            notify(f"⚠️ No user ID found for {username}")
+            return results
 
         # Get cold tweet IDs for matching
         cold_tweets = get_tweets_by_monitoring_state(username, ["cold"])
@@ -674,47 +687,31 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
 
         notify(f"📊 Monitoring {len(cold_tweet_ids)} cold tweets for resurrection")
 
-        # Scrape notifications page
-        page = await context.new_page()
+        # Fetch recent mentions (includes replies to user's tweets)
+        mentions_response = await _get_user_mentions(access_token, str(user_id), max_results=100)
+        mentions = mentions_response.get("data", [])
+
+        notify(f"📊 Found {len(mentions)} recent mentions")
+
         resurrected_ids = set()
 
-        try:
-            await page.goto("https://x.com/notifications", wait_until="domcontentloaded")
-            await asyncio.sleep(3)
-
-            # Look for tweet IDs in notification links
-            # Notifications contain links to tweets that got engagement
-            links = await page.locator("a[href*='/status/']").all()
-
-            for link in links[:50]:  # Limit to first 50 links
-                try:
-                    href = await link.get_attribute("href")
-                    if not href or "/status/" not in href:
-                        continue
-
-                    # Extract tweet ID from URL
-                    parts = href.split("/status/")
-                    if len(parts) < 2:
-                        continue
-
-                    tweet_id = parts[1].split("/")[0].split("?")[0]
-
-                    # Check if this is one of user's cold tweets
-                    if tweet_id in cold_tweet_ids:
-                        resurrected_ids.add(tweet_id)
-
-                except Exception:
-                    continue
-
-            await page.close()
-
-        except Exception as e:
-            notify(f"⚠️ Error scraping notifications: {e}")
-            results["errors"].append(f"Notifications: {e}")
+        # Check each mention to see if it's replying to a cold tweet
+        for mention in mentions:
             try:
-                await page.close()
-            except Exception:
-                pass
+                # Check if this mention is a reply
+                referenced_tweets = mention.get("referenced_tweets", [])
+                for ref in referenced_tweets:
+                    if ref.get("type") == "replied_to":
+                        replied_to_id = ref.get("id")
+
+                        # Check if the replied-to tweet is one of our cold tweets
+                        if replied_to_id in cold_tweet_ids:
+                            resurrected_ids.add(replied_to_id)
+                            notify(f"🔥 Cold tweet {replied_to_id} has new reply!")
+
+            except Exception as e:
+                notify(f"⚠️ Error processing mention: {e}")
+                continue
 
         # Process resurrected tweets
         notify(f"📊 Found {len(resurrected_ids)} potentially resurrected tweets")
@@ -731,7 +728,7 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
                 url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
                 # Deep scrape the resurrected tweet
-                scrape_result = await deep_scrape_thread(context, url, tweet_id, user_handle)
+                scrape_result = await deep_scrape_thread(None, url, tweet_id, user_handle)
 
                 # Process replies
                 scraped_replies = scrape_result.get("replies", [])
@@ -748,7 +745,7 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
                 tweets_map = read_posted_tweets_cache(username)
                 if tweet_id in tweets_map:
                     tweets_map[tweet_id]["monitoring_state"] = "active"
-                    tweets_map[tweet_id]["resurrected_via"] = "notification"
+                    tweets_map[tweet_id]["resurrected_via"] = "mention"
                     tweets_map[tweet_id]["last_activity_at"] = now
                     tweets_map[tweet_id]["last_deep_scrape"] = now
                     tweets_map[tweet_id]["last_reply_count"] = scrape_result.get("reply_count", 0)
@@ -777,9 +774,6 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
     except Exception as e:
         error(f"discover_resurrected failed: {e}", status_code=500, function_name="discover_resurrected", username=username, critical=False)
         results["errors"].append(str(e))
-
-    finally:
-        await cleanup_browser_resources(playwright, browser, context)
 
     return results
 

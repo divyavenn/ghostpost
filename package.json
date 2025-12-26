@@ -3,6 +3,7 @@
     "@types/node": "^24.5.2"
   },
   "dependencies": {
-    "geist": "^1.5.1"
+    "geist": "^1.5.1",
+    "motion-plus": "https://api.motion.dev/registry.tgz?package=motion-plus&version=2.0.2&token=404c84fa2ba8f62d568f7d9f8756425d57d2776f96084fa0c6f2ba13948eda78"
   }
 }

@@ -40,7 +40,7 @@ def get_trigger_icon(triggered_by: str) -> str:
     return "⏰" if triggered_by == "scheduler" else "👤"
 
 
-def print_job_start(job_name: str, username: str, triggered_by: str = "user") -> None:
+def print_job_start(job_name: str, username: str, triggered_by: str = "manual") -> None:
     """Print a job start message."""
     if not DEBUG_LOGS:
         return

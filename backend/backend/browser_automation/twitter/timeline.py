@@ -336,7 +336,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         error(f"Error in background scraping/generation for {username}: {e}", status_code=500, function_name="_scrape_and_generate_background", username=username, critical=False)
 
 
-async def _run_find_and_reply_with_error_handling(username: str, triggered_by: str = "user"):
+async def _run_find_and_reply_with_error_handling(username: str, triggered_by: str = "manual"):
     """
     Wrapper that catches and logs any exceptions from find_and_reply_to_new_posts_with_retry.
     asyncio.create_task() silently swallows exceptions, so we need explicit handling.

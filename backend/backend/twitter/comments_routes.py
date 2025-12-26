@@ -502,8 +502,8 @@ async def start_engagement_monitoring(
     # Run jobs sequentially (activity discovery then engagement monitoring)
     # but use asyncio.create_task so they don't block other endpoints' tasks
     async def run_jobs():
-        await find_user_activity(username, triggered_by="refresh")
-        await find_and_reply_to_engagement(username, triggered_by="refresh")
+        await find_user_activity(username, triggered_by="manual")
+        await find_and_reply_to_engagement(username, triggered_by="manual")
 
     asyncio.create_task(_run_with_error_handling(run_jobs(), "engagement_monitoring", username))
 

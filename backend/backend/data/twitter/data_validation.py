@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -295,12 +295,14 @@ class Cookie(BaseModel):
 class RelevantAccountModel(BaseModel):
     handle: str
     validated: bool
+    user_id: str | None = None  # Twitter user ID (fetched when account is added)
 
 
 class UpdateSettingsRequest(BaseModel):
     # Queries can be plain strings or [query, summary] tuples
     queries: list[str | list[str]] | None = None
-    relevant_accounts: dict[str, bool] | None = None
+    # relevant_accounts: {handle: {"user_id": str | None, "validated": bool}}
+    relevant_accounts: dict[str, dict[str, Any]] | None = None
     ideal_num_posts: int | None = None
     number_of_generations: int | None = None
     min_impressions_filter: int | None = None

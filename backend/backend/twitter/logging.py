@@ -43,18 +43,28 @@ class TwitterPostedReplyDetails(BaseModel):
     final_text: str  # Final edited text that was posted (may differ from generation)
     posted_tweet_id: str  # ID of the posted tweet from Twitter
     original_tweet_id: str  # ID of tweet being replied to
+    
 
-class NewPostDiscoveryResults(BaseModel):
-    """Metrics for find_and_reply_to_new_posts job."""
-    tweets_scraped: int  # Total tweets fetched from API
+class SearchResults(BaseModel):
+    source_type: str  # "query", "account", "home_timeline"
+    source_value: str  # Query text, @handle, or "following"
+    tweets_found: int  # Total tweets fetched from search API
     tweets_discovered: int  # Tweets that passed initial checks
     discovery_tweets_selected: int  # Tweets selected after filtering
     filtered_old: int  # Filtered due to age
     filtered_impressions: int  # Filtered due to low impressions
     filtered_intent: int  # Filtered due to intent mismatch
     filtered_seen: int  # Already seen/replied to
+    filtered_replies: int  # Filtered because reply
+    filtered_retweets: int  # Filtered because retweet
     threads_fetched: int  # Full thread contexts fetched
     replies_generated: int  # Replies generated for selected tweets
+    
+
+class NewPostDiscoveryResults(BaseModel):
+    """Metrics for find_and_reply_to_new_posts job."""
+    total_tweets_found: int  # Total tweets fetched 
+    per_search_results : list[SearchResults]
 
 class UserActivityResults(BaseModel):
     """Metrics for find_user_activity job."""
@@ -86,22 +96,30 @@ class AnalysisResults(BaseModel):
 class TwitterAction(str, Enum):
     # details include tweet_id, author, and thread content of removed post
     DISCOVERED_POST_SKIPPED = "skipped"
-    
+
     # details include a list of all the generations
     # which one was chosen (index, model and prompt that created it),
     # the final, edited version that was actually posted
     # the tweet_id of the post
     REPLY_POSTED = "reply_posted"
     COMMENT_BACK_POSTED = "comment_back_posted"
-    
+
     # details should include metrics for jobs (how many total new posts found via search, how many filtered out at each stage of filtering, how many finally written to cache, # replies generated )
     NEW_POSTS_DISCOVERED = "new_post_discovery"
-    #  (how many original posts, replies, comment_backs discovered) 
+    #  (how many original posts, replies, comment_backs discovered)
     USER_POSTS_DISCOVERED = "user_post_discovery"
     #  (how many users posts for which enagement metrics were updated, how many comments were scraped)
     ENGAGEMENT_DISCOVERED = "engagement_discover"
     # (how many logs processed and what user metrics were updated as result)
     ANALYSIS = "analysis"
+
+    # Legacy aliases for backward compatibility
+    POSTED = "reply_posted"  # Alias for REPLY_POSTED
+    DELETED = "skipped"  # Alias for DISCOVERED_POST_SKIPPED
+
+
+# Backward compatibility alias
+TweetAction = TwitterAction
 
 class TweetLog(BaseModel):
     action: TwitterAction
@@ -127,23 +145,6 @@ def get_user_log_path(username: str) -> Path:
 # ============================================================================
 
 def log_scrape_action(username: str, tweet_count: int, initiated_by: str = "user") -> None:
-    """[DEPRECATED] Legacy function - kept for backward compatibility."""
-    pass
-
-
-def log_scrape_stats(
-    username: str,
-    source_type: str,
-    source_value: str,
-    fetched: int,
-    passed: int,
-    filtered_old: int,
-    filtered_impressions: int,
-    filtered_no_thread: int,
-    filtered_intent: int,
-    filtered_seen: int,
-    filtered_replies: int,
-) -> None:
     """[DEPRECATED] Legacy function - kept for backward compatibility."""
     pass
 
@@ -265,7 +266,7 @@ def log_job_error(
     error(
         f"Job {job_name} failed for @{username}: {error_msg}",
         critical=False,
-        user=username,
+        username=username,
     )
 
 

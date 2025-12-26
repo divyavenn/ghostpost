@@ -99,6 +99,7 @@ class RateLimiter:
         self._configs: dict[str, RateLimitConfig] = {}
         self._last_request_times: dict[str, float] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._rate_limit_reset_times: dict[str, int] = {}  # Track when rate limits reset
 
     def add_bucket(self, bucket: str, config: RateLimitConfig):
         """Add a rate limit bucket."""
@@ -123,12 +124,27 @@ class RateLimiter:
 
         async with self._locks[bucket]:
             now = time.time()
+
+            # Check if we're in a rate-limited state (from a 429 response)
+            if bucket in self._rate_limit_reset_times:
+                reset_time = self._rate_limit_reset_times[bucket]
+                if now < reset_time:
+                    # Still rate limited - wait until reset
+                    wait_time = reset_time - now
+                    if not quiet:
+                        notify(f"⚠️ Rate limited ({display_name}): waiting {wait_time:.0f}s until reset...")
+                    await asyncio.sleep(wait_time)
+                    # Clear the reset time after waiting
+                    del self._rate_limit_reset_times[bucket]
+
+            # Also enforce minimum interval between requests
             elapsed = now - self._last_request_times[bucket]
             if elapsed < min_interval:
                 wait_time = min_interval - elapsed
                 if not quiet:
                     notify(f"⏳ Rate limiting ({display_name}): waiting {wait_time:.1f}s")
                 await asyncio.sleep(wait_time)
+
             self._last_request_times[bucket] = time.time()
 
     def update_last_request(self, bucket: str):
@@ -144,11 +160,19 @@ class RateLimiter:
             reset_timestamp: Unix timestamp when the rate limit resets
             bucket: The bucket that was rate limited
         """
+        # Store the reset time so other concurrent calls know we're rate limited
+        self._rate_limit_reset_times[bucket] = reset_timestamp
+
         display_name = self._configs.get(bucket, RateLimitConfig(0)).name or bucket
         now = int(time.time())
         wait_seconds = max(1, reset_timestamp - now + 1)  # +1 for safety
         notify(f"⚠️ Rate limited ({display_name}). Waiting {wait_seconds}s ({wait_seconds // 60}min) before retry...")
         await asyncio.sleep(wait_seconds)
+
+        # Clear the reset time after waiting
+        if bucket in self._rate_limit_reset_times:
+            del self._rate_limit_reset_times[bucket]
+
         if bucket in self._last_request_times:
             self._last_request_times[bucket] = time.time()
 

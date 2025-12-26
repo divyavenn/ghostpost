@@ -133,7 +133,7 @@ async def run_all_jobs_for_user(username: str):
 
         # Job 1: Find and reply to new posts
         try:
-            await find_and_reply_to_new_posts(username, triggered_by="scheduler")
+            await find_and_reply_to_new_posts(username, triggered_by="scheduled")
         except Exception as e:
             from backend.utlils.utils import error
             error(f"Job 1 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
@@ -141,7 +141,7 @@ async def run_all_jobs_for_user(username: str):
 
         # Job 2: Find user activity
         try:
-            await find_user_activity(username, triggered_by="scheduler")
+            await find_user_activity(username, triggered_by="scheduled")
         except Exception as e:
             from backend.utlils.utils import error
             error(f"Job 2 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
@@ -149,7 +149,7 @@ async def run_all_jobs_for_user(username: str):
 
         # Job 3: Find and reply to engagement
         try:
-            await find_and_reply_to_engagement(username, triggered_by="scheduler")
+            await find_and_reply_to_engagement(username, triggered_by="scheduled")
         except Exception as e:
             from backend.utlils.utils import error
             error(f"Job 3 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
@@ -157,7 +157,7 @@ async def run_all_jobs_for_user(username: str):
 
         # Job 4: Analyze
         try:
-            await analyze(username, triggered_by="scheduler")
+            await analyze(username, triggered_by="scheduled")
         except Exception as e:
             from backend.utlils.utils import error
             error(f"Job 4 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)

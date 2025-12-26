@@ -10,8 +10,11 @@ Rate limits (Basic plan):
 """
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import quote_plus
+
+if TYPE_CHECKING:
+    from backend.twitter.logging import SearchResults
 
 import requests
 
@@ -66,9 +69,7 @@ class ScrapeStats:
     passed: int = 0  # Final count that passed all filters
 
     def log_summary(self) -> None:
-        """Log a formatted summary of the scrape stats to console and file."""
-        from backend.twitter.logging import log_scrape_stats
-
+        """Log a formatted summary of the scrape stats to console."""
         source_display = f"@{self.source_value}" if self.source_type == "account" else self.source_value
         if self.source_type == "home_timeline":
             source_display = "Home Timeline"
@@ -96,22 +97,25 @@ class ScrapeStats:
         # Log to console
         notify(f"📊 [{self.source_type.upper()}] {source_display}: {self.fetched} fetched → {self.passed} passed | Filtered ({total_filtered}): {filter_str}")
 
-        # Log to file if username is provided
-        if self.username:
-            log_scrape_stats(
-                username=self.username,
-                source_type=self.source_type,
-                source_value=self.source_value,
-                fetched=self.fetched,
-                passed=self.passed,
-                filtered_old=self.filtered_old,
-                filtered_impressions=self.filtered_impressions,
-                filtered_no_thread=self.filtered_no_thread,
-                filtered_intent=self.filtered_intent,
-                filtered_seen=self.filtered_seen,
-                filtered_replies=self.filtered_replies,
-                filtered_retweets=self.filtered_retweets,
-            )
+    def to_search_results(self, source_label: str, discovery_tweets_selected: int = 0, threads_fetched: int = 0, replies_generated: int = 0) -> "SearchResults":
+        """Convert ScrapeStats to SearchResults model for structured logging."""
+        from backend.twitter.logging import SearchResults
+
+        return SearchResults(
+            source_type=self.source_type,
+            source_value=source_label,
+            tweets_found=self.fetched,
+            tweets_discovered=self.passed,
+            discovery_tweets_selected=discovery_tweets_selected,
+            filtered_old=self.filtered_old,
+            filtered_impressions=self.filtered_impressions,
+            filtered_intent=self.filtered_intent,
+            filtered_seen=self.filtered_seen,
+            filtered_replies=self.filtered_replies,
+            filtered_retweets=self.filtered_retweets,
+            threads_fetched=threads_fetched,
+            replies_generated=replies_generated,
+        )
 
 
 def _get_headers(access_token: str) -> dict:
@@ -475,6 +479,188 @@ async def _get_tweet_by_id(access_token: str, tweet_id: str, _retry_count: int =
         return {"data": None, "includes": {}, "errors": [{"detail": str(e)}]}
 
 
+async def _get_user_by_username(access_token: str, username: str, _retry_count: int = 0) -> dict:
+    """
+    Look up a user by their username (handle).
+
+    Args:
+        access_token: User's access token
+        username: Twitter handle (without @)
+        _retry_count: Internal retry counter (do not pass)
+
+    Returns:
+        API response dict with user data
+    """
+    await _rate_limiter.wait_if_needed(EndpointType.SEARCH)
+
+    url = f"{API_BASE}/users/by/username/{username}"
+
+    params = {
+        "user.fields": USER_FIELDS,
+    }
+
+    headers = _get_headers(access_token)
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        _rate_limiter.update_last_request(EndpointType.SEARCH)
+
+        if response.status_code == 401:
+            notify("⚠️ _get_user_by_username: Auth failed (401)")
+            return {"data": None}
+
+        if response.status_code == 429:
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.SEARCH)
+                return await _get_user_by_username(access_token, username, _retry_count + 1)
+            else:
+                error("Twitter API rate limit exceeded after retries", status_code=429, function_name="_get_user_by_username", critical=False)
+                return {"data": None}
+
+        if response.status_code >= 400:
+            notify(f"⚠️ _get_user_by_username: API error ({response.status_code})")
+            return {"data": None}
+
+        return response.json()
+
+    except requests.RequestException as e:
+        error(f"Twitter API request failed: {e}", status_code=503, function_name="_get_user_by_username", critical=False)
+        return {"data": None}
+
+
+async def _get_user_mentions(access_token: str, user_id: str, max_results: int = 100, start_time: str | None = None, _retry_count: int = 0) -> dict:
+    """
+    Get mentions of a user (includes replies to their tweets).
+
+    Args:
+        access_token: User's access token
+        user_id: Twitter user ID
+        max_results: Max results per request (5-100, default 100)
+        start_time: Fetch mentions after this time (RFC3339 format)
+        _retry_count: Internal retry counter (do not pass)
+
+    Returns:
+        API response dict with data array and includes
+    """
+    # Wait for rate limiter (USER_MENTION_TIMELINE endpoint: 180 req/15min)
+    await _rate_limiter.wait_if_needed(EndpointType.SEARCH)  # Using SEARCH bucket for now
+
+    url = f"{API_BASE}/users/{user_id}/mentions"
+
+    params = {
+        "max_results": min(max_results, 100),
+        "tweet.fields": TWEET_FIELDS,
+        "user.fields": USER_FIELDS,
+        "expansions": EXPANSIONS,
+        "media.fields": MEDIA_FIELDS,
+    }
+
+    if start_time:
+        params["start_time"] = start_time
+
+    headers = _get_headers(access_token)
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        _rate_limiter.update_last_request(EndpointType.SEARCH)
+
+        if response.status_code == 401:
+            notify("⚠️ _get_user_mentions: Auth failed (401)")
+            return {"data": [], "includes": {}, "meta": {}}
+
+        if response.status_code == 429:
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.SEARCH)
+                return await _get_user_mentions(access_token, user_id, max_results, start_time, _retry_count + 1)
+            else:
+                error("Twitter API rate limit exceeded after retries", status_code=429, function_name="_get_user_mentions", critical=False)
+                return {"data": [], "includes": {}, "meta": {}}
+
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                errors = error_data.get("errors", [{"detail": f"HTTP {response.status_code}"}])
+            except Exception:
+                errors = [{"detail": f"HTTP {response.status_code}: {response.text[:200]}"}]
+            notify(f"⚠️ _get_user_mentions: API error ({response.status_code})")
+            return {"data": [], "includes": {}, "meta": {}, "errors": errors}
+
+        return response.json()
+
+    except requests.RequestException as e:
+        error(f"Twitter API request failed: {e}", status_code=503, function_name="_get_user_mentions", critical=False)
+        return {"data": [], "includes": {}, "meta": {}, "errors": [{"detail": str(e)}]}
+
+
+async def _get_tweets_batch(access_token: str, tweet_ids: list[str], _retry_count: int = 0) -> dict:
+    """
+    Get multiple tweets by IDs in a single API call (up to 100 tweets).
+
+    Args:
+        access_token: User's access token
+        tweet_ids: List of tweet IDs to fetch (max 100)
+        _retry_count: Internal retry counter (do not pass)
+
+    Returns:
+        API response dict with data array and includes
+    """
+    if not tweet_ids:
+        return {"data": [], "includes": {}}
+
+    # Limit to 100 tweets per request (API limit)
+    tweet_ids = tweet_ids[:100]
+
+    # Wait for rate limiter
+    await _rate_limiter.wait_if_needed(EndpointType.TWEET_LOOKUP)
+
+    url = f"{API_BASE}/tweets"
+
+    params = {
+        "ids": ",".join(tweet_ids),
+        "tweet.fields": TWEET_FIELDS,
+        "user.fields": USER_FIELDS,
+        "expansions": EXPANSIONS,
+        "media.fields": MEDIA_FIELDS,
+    }
+
+    headers = _get_headers(access_token)
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        _rate_limiter.update_last_request(EndpointType.TWEET_LOOKUP)
+
+        if response.status_code == 401:
+            notify(f"⚠️ _get_tweets_batch: Auth failed (401)")
+            return {"data": [], "includes": {}, "errors": [{"detail": "Authentication failed"}]}
+
+        if response.status_code == 429:
+            # Rate limited - wait and retry
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.TWEET_LOOKUP)
+                return await _get_tweets_batch(access_token, tweet_ids, _retry_count + 1)
+            else:
+                error("Twitter API rate limit exceeded after retries", status_code=429, function_name="_get_tweets_batch", critical=False)
+                return {"data": [], "includes": {}, "errors": [{"detail": "Rate limit exceeded"}]}
+
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                errors = error_data.get("errors", [{"detail": f"HTTP {response.status_code}"}])
+            except Exception:
+                errors = [{"detail": f"HTTP {response.status_code}: {response.text[:200]}"}]
+            notify(f"⚠️ _get_tweets_batch: API error ({response.status_code})")
+            return {"data": [], "includes": {}, "errors": errors}
+
+        return response.json()
+
+    except requests.RequestException as e:
+        error(f"Twitter API request failed: {e}", status_code=503, function_name="_get_tweets_batch", critical=False)
+        return {"data": [], "includes": {}, "errors": [{"detail": str(e)}]}
+
+
 # ============================================================================
 # Main API functions
 # ============================================================================
@@ -629,29 +815,68 @@ async def fetch_search_raw(query: str, username: str | None = None, min_impressi
 async def fetch_user_timeline_raw(
     username: str,
     target_user: str,
-    max_tweets: int = 50
+    max_tweets: int = 50,
+    since_id: str | None = None,
+    user_id: str | None = None
 ) -> tuple[dict, ScrapeStats]:
     """
     Fetch tweets from a user's timeline WITHOUT thread population.
     No impressions filter applied (curated source).
 
+    Uses same efficient approach as discover_recently_posted:
+    - User Timeline API when possible
+    - Efficient polling with since_id
+    - Falls back to search API if user ID not available
+
     Args:
         username: Username for authentication
         target_user: Handle of user whose timeline to fetch
         max_tweets: Maximum tweets to fetch
+        since_id: Only return tweets after this tweet ID (efficient polling)
+        user_id: Twitter user ID (if known, skips lookup)
 
     Returns:
         Tuple of (raw_tweets dict without thread data, ScrapeStats)
     """
-    query = f"from:{target_user}"
-    # No impressions filter for curated sources (user timelines)
-    return await fetch_search_raw(query, username, min_impressions_filter=0)
+    from backend.utlils.utils import is_tweet_seen
+
+    stats = ScrapeStats(source_type="account", source_value=target_user, username=username)
+
+    # Use the same function as discover_recently_posted
+    # This handles user ID lookup, timeline API, and efficient polling
+    tweets_list = await scrape_user_recent_tweets(None, target_user, max_tweets, since_id=since_id, user_id=user_id)
+
+    stats.fetched = len(tweets_list)
+
+    raw_tweets = {}
+
+    for tweet_dict in tweets_list:
+        tweet_id = tweet_dict.get("id")
+
+        # Skip already seen tweets (unless using since_id which handles this)
+        if not since_id and tweet_id and is_tweet_seen(username, str(tweet_id)):
+            stats.filtered_seen += 1
+            continue
+
+        # Filter by age
+        created_at = tweet_dict.get("created_at", "")
+        if not _is_within_hours(created_at, MAX_TWEET_AGE_HOURS):
+            stats.filtered_old += 1
+            continue
+
+        raw_tweets[tweet_id] = tweet_dict
+
+    stats.passed = len(raw_tweets)
+    stats.log_summary()
+
+    return raw_tweets, stats
 
 
 async def fetch_home_timeline_raw(
     username: str,
     max_tweets: int = 50,
-    min_impressions_filter: int = MIN_IMPRESSIONS_FOR_DISCOVERY
+    min_impressions_filter: int = MIN_IMPRESSIONS_FOR_DISCOVERY,
+    since_id: str | None = None
 ) -> tuple[dict, ScrapeStats]:
     """
     Fetch home timeline WITHOUT thread population or intent filtering.
@@ -661,6 +886,7 @@ async def fetch_home_timeline_raw(
         username: Username for authentication
         max_tweets: Maximum tweets to fetch
         min_impressions_filter: Minimum impressions filter
+        since_id: Only return tweets after this tweet ID (efficient polling)
 
     Returns:
         Tuple of (raw_tweets dict without thread data, ScrapeStats)
@@ -681,8 +907,8 @@ async def fetch_home_timeline_raw(
         error("Could not get user ID for home timeline", status_code=400, function_name="fetch_home_timeline_raw", critical=False)
         return {}, stats
 
-    # Fetch timeline
-    response = await _fetch_home_timeline_raw(access_token, user_id, max_results=min(max_tweets, 100))
+    # Fetch timeline with efficient polling
+    response = await _fetch_home_timeline_raw(access_token, user_id, max_results=min(max_tweets, 100), since_id=since_id)
 
     data = response.get("data", [])
     includes = response.get("includes", {})
@@ -1187,16 +1413,83 @@ async def shallow_scrape_thread(ctx, tweet_url: str, tweet_id: str) -> dict[str,
     return result
 
 
-async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) -> list[dict[str, Any]]:
+async def _get_user_timeline(access_token: str, user_id: str, max_results: int = 100, since_id: str | None = None, _retry_count: int = 0) -> dict:
     """
-    Get user's recent tweets using Twitter API search.
+    Get a user's timeline (tweets, replies, retweets, quotes).
 
-    Same interface as posted_tweets.scrape_user_recent_tweets but uses API.
+    Args:
+        access_token: User's access token
+        user_id: Twitter user ID
+        max_results: Max results per request (5-100, default 100)
+        since_id: Only return tweets after this tweet ID (efficient polling)
+        _retry_count: Internal retry counter (do not pass)
+
+    Returns:
+        API response dict with data array and includes
+    """
+    # Wait for rate limiter (USER_TWEET_TIMELINE: 1500 req/15min with user auth)
+    await _rate_limiter.wait_if_needed(EndpointType.SEARCH)
+
+    url = f"{API_BASE}/users/{user_id}/tweets"
+
+    params = {
+        "max_results": min(max_results, 100),
+        "tweet.fields": TWEET_FIELDS,
+        "user.fields": USER_FIELDS,
+        "expansions": EXPANSIONS,
+        "media.fields": MEDIA_FIELDS,
+    }
+
+    if since_id:
+        params["since_id"] = since_id
+
+    headers = _get_headers(access_token)
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        _rate_limiter.update_last_request(EndpointType.SEARCH)
+
+        if response.status_code == 401:
+            notify("⚠️ _get_user_timeline: Auth failed (401)")
+            return {"data": [], "includes": {}, "meta": {}}
+
+        if response.status_code == 429:
+            reset_time = response.headers.get("x-rate-limit-reset")
+            if reset_time and _retry_count < 3:
+                await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.SEARCH)
+                return await _get_user_timeline(access_token, user_id, max_results, since_id, _retry_count + 1)
+            else:
+                error("Twitter API rate limit exceeded after retries", status_code=429, function_name="_get_user_timeline", critical=False)
+                return {"data": [], "includes": {}, "meta": {}}
+
+        if response.status_code >= 400:
+            try:
+                error_data = response.json()
+                errors = error_data.get("errors", [{"detail": f"HTTP {response.status_code}"}])
+            except Exception:
+                errors = [{"detail": f"HTTP {response.status_code}: {response.text[:200]}"}]
+            notify(f"⚠️ _get_user_timeline: API error ({response.status_code})")
+            return {"data": [], "includes": {}, "meta": {}, "errors": errors}
+
+        return response.json()
+
+    except requests.RequestException as e:
+        error(f"Twitter API request failed: {e}", status_code=503, function_name="_get_user_timeline", critical=False)
+        return {"data": [], "includes": {}, "meta": {}, "errors": [{"detail": str(e)}]}
+
+
+async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50, since_id: str | None = None, user_id: str | None = None) -> list[dict[str, Any]]:
+    """
+    Get user's recent tweets using Twitter API user timeline endpoint.
+
+    Uses efficient polling with since_id to only fetch new tweets.
 
     Args:
         ctx: Browser context (ignored - kept for interface compatibility)
         username: Twitter handle to scrape
         max_tweets: Maximum tweets to collect
+        since_id: Only return tweets after this tweet ID (for efficient polling)
+        user_id: Twitter user ID (if provided, skips lookup)
 
     Returns:
         List of tweet dicts
@@ -1207,10 +1500,35 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
     if not access_token:
         return []
 
-    # Search for user's tweets (including replies)
-    query = f"from:{username}"
+    # Use provided user_id or look it up
+    if not user_id:
+        # Get user ID by handle from cache
+        from backend.utlils.utils import read_user_info
+        user_info = read_user_info(username)
+        user_id = user_info.get("uid") if user_info else None
 
-    notify(f"[API] Fetching recent tweets from @{username} with query: {query}")
+    if not user_id:
+        # Try to look up user ID by username using Twitter API
+        notify(f"[API] Looking up user ID for @{username}")
+        user_lookup = await _get_user_by_username(access_token, username)
+        user_data = user_lookup.get("data")
+
+        if user_data and user_data.get("id"):
+            user_id = user_data.get("id")
+            notify(f"[API] Found user ID {user_id} for @{username}")
+        else:
+            notify(f"⚠️ Could not look up user ID for @{username}, falling back to search")
+            # Fallback to search API
+            query = f"from:{username}"
+            response = await _search_tweets(access_token, query, max_results=min(max_tweets, 100))
+            data = response.get("data", [])
+            includes = response.get("includes", {})
+            user_map = _build_user_map(includes)
+            return [_tweet_to_dict(tweet, user_map, includes) for tweet in data]
+    else:
+        notify(f"[API] Using cached user_id={user_id} for @{username}")
+
+    notify(f"[API] Fetching recent tweets from @{username} (user_id={user_id})" + (f" since_id={since_id}" if since_id else ""))
 
     tweets = []
     next_token = None
@@ -1221,7 +1539,7 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50) ->
         remaining = max_tweets - len(tweets)
         batch_size = min(remaining, 100)
 
-        response = await _search_tweets(access_token, query, max_results=batch_size, next_token=next_token)
+        response = await _get_user_timeline(access_token, str(user_id), max_results=batch_size, since_id=since_id)
 
         data = response.get("data", [])
         includes = response.get("includes", {})
@@ -1352,6 +1670,7 @@ async def _fetch_home_timeline_raw(
     access_token: str,
     user_id: str,
     max_results: int = 100,
+    since_id: str | None = None,
     pagination_token: str | None = None,
     _retry_count: int = 0
 ) -> dict:
@@ -1364,6 +1683,7 @@ async def _fetch_home_timeline_raw(
         access_token: User's OAuth access token
         user_id: User's Twitter ID
         max_results: Max results per request (1-100)
+        since_id: Only return tweets after this tweet ID (efficient polling)
         pagination_token: Pagination token for next page
         _retry_count: Internal retry counter
 
@@ -1381,6 +1701,9 @@ async def _fetch_home_timeline_raw(
         "expansions": EXPANSIONS,
         "media.fields": MEDIA_FIELDS,
     }
+
+    if since_id:
+        params["since_id"] = since_id
 
     if pagination_token:
         params["pagination_token"] = pagination_token

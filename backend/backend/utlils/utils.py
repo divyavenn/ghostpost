@@ -419,6 +419,56 @@ def read_user_info(handle: str) -> dict[str, Any] | None:
     return user_info
 
 
+def get_last_tweet_id(username: str, source_key: str) -> str | None:
+    """
+    Get the last tweet ID for a source (for since_id polling).
+
+    Args:
+        username: Username for authentication
+        source_key: Source key (e.g., "query:philosophy", "account:elonmusk", "home_timeline")
+
+    Returns:
+        Last tweet ID or None if not found
+    """
+    user_info = read_user_info(username)
+    if not user_info:
+        return None
+
+    last_tweet_ids = user_info.get("last_tweet_ids", {})
+    return last_tweet_ids.get(source_key)
+
+
+def update_last_tweet_id(username: str, source_key: str, tweet_id: str) -> None:
+    """
+    Update the last tweet ID for a source (for since_id polling).
+
+    Only updates if the new tweet_id is greater than the existing one
+    (tweet IDs are monotonically increasing).
+
+    Args:
+        username: Username for authentication
+        source_key: Source key (e.g., "query:philosophy", "account:elonmusk", "home_timeline")
+        tweet_id: New last tweet ID
+    """
+    user_info = read_user_info(username)
+    if not user_info:
+        notify(f"⚠️ Could not update last_tweet_id for {username}: user not found")
+        return
+
+    # Initialize last_tweet_ids if it doesn't exist
+    if "last_tweet_ids" not in user_info:
+        user_info["last_tweet_ids"] = {}
+
+    # Only update if new ID is greater (tweet IDs are monotonically increasing)
+    existing_id = user_info["last_tweet_ids"].get(source_key)
+    if existing_id is None or int(tweet_id) > int(existing_id):
+        user_info["last_tweet_ids"][source_key] = tweet_id
+        write_user_info(user_info)
+        notify(f"📝 Updated last_tweet_id for {source_key}: {tweet_id}")
+    else:
+        notify(f"⏭️ Skipped updating last_tweet_id for {source_key} (existing {existing_id} >= new {tweet_id})")
+
+
 # NOTE: Example caching for LLM prompts is now handled by posted_tweets_cache.py
 # Examples are stored with post_type ("reply", "comment_reply", "original")
 # and sorted by engagement score. See:

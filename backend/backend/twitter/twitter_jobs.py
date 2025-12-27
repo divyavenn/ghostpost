@@ -24,7 +24,13 @@ from backend.twitter.display_progress import (
     print_job_start,
 )
 from backend.twitter.logging import log_job_complete, log_job_error
-from backend.utlils.utils import error, notify, read_user_info
+from backend.utlils.utils import (
+    error,
+    notify,
+    read_user_info,
+    get_last_tweet_id,
+    update_last_tweet_id,
+)
 
 
 async def _run_job_with_error_handling(coro, job_name: str, username: str):
@@ -363,7 +369,18 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
         # 1A. Queries
         for query in queries:
             try:
-                raw_tweets, stats = await fetch_search_raw(query, username, min_impressions_filter)
+                # Get last tweet ID for this query (for since_id polling)
+                source_key = f"query:{query}"
+                last_tweet_id = get_last_tweet_id(username, source_key)
+                if last_tweet_id:
+                    notify(f"📍 Using since_id={last_tweet_id} for query: {query}")
+
+                raw_tweets, stats = await fetch_search_raw(query, username, min_impressions_filter, since_id=last_tweet_id)
+
+                # Update last_tweet_id with the newest tweet (if any)
+                if raw_tweets:
+                    newest_tweet_id = max(raw_tweets.keys(), key=lambda x: int(x))
+                    update_last_tweet_id(username, source_key, newest_tweet_id)
 
                 # Track tweets from this query for selection counting
                 query_tweet_ids = []
@@ -388,7 +405,18 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
         # 1B. Home Timeline
         if is_premium:  # Only scrape home timeline for premium users
             try:
-                home_tweets, stats = await fetch_home_timeline_raw(username, ideal_num_posts, min_impressions_filter)
+                # Get last tweet ID for home timeline (for since_id polling)
+                source_key = "home_timeline"
+                last_tweet_id = get_last_tweet_id(username, source_key)
+                if last_tweet_id:
+                    notify(f"📍 Using since_id={last_tweet_id} for home timeline")
+
+                home_tweets, stats = await fetch_home_timeline_raw(username, ideal_num_posts, min_impressions_filter, since_id=last_tweet_id)
+
+                # Update last_tweet_id with the newest tweet (if any)
+                if home_tweets:
+                    newest_tweet_id = max(home_tweets.keys(), key=lambda x: int(x))
+                    update_last_tweet_id(username, source_key, newest_tweet_id)
 
                 home_tweet_ids = []
                 for tweet_id, tweet in home_tweets.items():
@@ -440,7 +468,18 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
 
         for account_handle, account_user_id in relevant_accounts:
             try:
-                raw_tweets, stats = await fetch_user_timeline_raw(username, account_handle, ideal_num_posts, user_id=account_user_id)
+                # Get last tweet ID for this account (for since_id polling)
+                source_key = f"account:{account_handle}"
+                last_tweet_id = get_last_tweet_id(username, source_key)
+                if last_tweet_id:
+                    notify(f"📍 Using since_id={last_tweet_id} for @{account_handle}")
+
+                raw_tweets, stats = await fetch_user_timeline_raw(username, account_handle, ideal_num_posts, since_id=last_tweet_id, user_id=account_user_id)
+
+                # Update last_tweet_id with the newest tweet (if any)
+                if raw_tweets:
+                    newest_tweet_id = max(raw_tweets.keys(), key=lambda x: int(x))
+                    update_last_tweet_id(username, source_key, newest_tweet_id)
 
                 account_tweet_ids = []
                 for tweet_id, tweet in raw_tweets.items():

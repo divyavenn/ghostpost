@@ -60,6 +60,9 @@ class User(BaseModel):
     # seen tweets tracking (to prevent showing duplicate tweets)
     seen_tweets: dict[str, str] = {}  # tweet_id -> timestamp
 
+    # since_id tracking (to only fetch NEW tweets per source)
+    last_tweet_ids: dict[str, str] = {}  # source_key (e.g., "query:philosophy", "account:elonmusk", "home_timeline") -> last_tweet_id
+
     # survey/onboarding data
     survey_data: dict = {}  # Flexible JSON field for survey responses (e.g., interested_socials)
 

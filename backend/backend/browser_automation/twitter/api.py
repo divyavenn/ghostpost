@@ -351,6 +351,7 @@ async def _search_tweets(
     query: str,
     max_results: int = 100,
     next_token: str | None = None,
+    since_id: str | None = None,
     _retry_count: int = 0
 ) -> dict:
     """
@@ -361,6 +362,7 @@ async def _search_tweets(
         query: Search query (can include operators like from:, to:, etc.)
         max_results: Max results per request (10-100)
         next_token: Pagination token
+        since_id: Only return tweets after this tweet ID (efficient polling)
         _retry_count: Internal retry counter (do not pass)
 
     Returns:
@@ -385,6 +387,9 @@ async def _search_tweets(
     if next_token:
         params["next_token"] = next_token
 
+    if since_id:
+        params["since_id"] = since_id
+
     headers = _get_headers(access_token)
 
     try:
@@ -400,7 +405,7 @@ async def _search_tweets(
             reset_time = response.headers.get("x-rate-limit-reset")
             if reset_time and _retry_count < 3:
                 await _rate_limiter.wait_for_reset(int(reset_time), EndpointType.SEARCH)
-                return await _search_tweets(access_token, query, max_results, next_token, _retry_count + 1)
+                return await _search_tweets(access_token, query, max_results, next_token, since_id, _retry_count + 1)
             else:
                 error("Twitter API rate limit exceeded after retries", status_code=429, function_name="_search_tweets", critical=False)
                 return {"data": [], "includes": {}, "meta": {}}
@@ -735,7 +740,12 @@ def _convert_web_query_to_api(query: str) -> str:
     return query
 
 
-async def fetch_search_raw(query: str, username: str | None = None, min_impressions_filter: int = MIN_IMPRESSIONS_FOR_DISCOVERY) -> tuple[dict, ScrapeStats]:
+async def fetch_search_raw(
+    query: str,
+    username: str | None = None,
+    min_impressions_filter: int = MIN_IMPRESSIONS_FOR_DISCOVERY,
+    since_id: str | None = None
+) -> tuple[dict, ScrapeStats]:
     """
     Search for tweets using Twitter API v2 WITHOUT thread population.
 
@@ -746,6 +756,7 @@ async def fetch_search_raw(query: str, username: str | None = None, min_impressi
         query: Search query (supports both web-style and API-style operators)
         username: Username for authentication
         min_impressions_filter: Minimum impressions required for discovery tweets (default: MIN_IMPRESSIONS_FOR_DISCOVERY)
+        since_id: Only return tweets after this tweet ID (efficient polling)
 
     Returns:
         Tuple of (raw_tweets dict without thread data, ScrapeStats)
@@ -781,7 +792,7 @@ async def fetch_search_raw(query: str, username: str | None = None, min_impressi
         return {}, stats
 
     raw_tweets = {}
-    response = await _search_tweets(access_token, query, max_results=100)
+    response = await _search_tweets(access_token, query, max_results=100, since_id=since_id)
 
     data = response.get("data", [])
     includes = response.get("includes", {})
@@ -826,10 +837,10 @@ async def fetch_user_timeline_raw(
     Uses same efficient approach as discover_recently_posted:
     - User Timeline API when possible
     - Efficient polling with since_id
-    - Falls back to search API if user ID not available
+    - Looks up and caches user_id if not provided
 
     Args:
-        username: Username for authentication
+        username: Username for authentication (the user running the job)
         target_user: Handle of user whose timeline to fetch
         max_tweets: Maximum tweets to fetch
         since_id: Only return tweets after this tweet ID (efficient polling)
@@ -841,6 +852,37 @@ async def fetch_user_timeline_raw(
     from backend.utlils.utils import is_tweet_seen
 
     stats = ScrapeStats(source_type="account", source_value=target_user, username=username)
+
+    # If user_id not provided, look it up and cache it
+    if not user_id:
+        access_token = await ensure_access_token(username)
+        if access_token:
+            notify(f"[API] Looking up user ID for @{target_user}")
+            user_lookup = await _get_user_by_username(access_token, target_user)
+            user_data = user_lookup.get("data")
+
+            if user_data and user_data.get("id"):
+                user_id = user_data.get("id")
+                notify(f"[API] Found user ID {user_id} for @{target_user}, caching it")
+
+                # Cache the user_id in authenticated user's settings under relevant_accounts
+                from backend.user.user import read_user_settings, write_user_settings
+                user_settings = read_user_settings(username)
+                if user_settings:
+                    accounts_dict = user_settings.get("relevant_accounts", {})
+                    if target_user in accounts_dict:
+                        account_data = accounts_dict[target_user]
+                        if isinstance(account_data, dict):
+                            account_data["user_id"] = user_id
+                        else:
+                            # Convert old format to new format
+                            accounts_dict[target_user] = {"user_id": user_id, "validated": True}
+                        user_settings["relevant_accounts"] = accounts_dict
+                        write_user_settings(user_settings)
+                        notify(f"[API] Cached user_id {user_id} for @{target_user} in {username}'s settings")
+            else:
+                notify(f"⚠️ Could not look up user ID for @{target_user}, skipping")
+                return {}, stats
 
     # Use the same function as discover_recently_posted
     # This handles user ID lookup, timeline API, and efficient polling
@@ -1517,14 +1559,9 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50, si
             user_id = user_data.get("id")
             notify(f"[API] Found user ID {user_id} for @{username}")
         else:
-            notify(f"⚠️ Could not look up user ID for @{username}, falling back to search")
-            # Fallback to search API
-            query = f"from:{username}"
-            response = await _search_tweets(access_token, query, max_results=min(max_tweets, 100))
-            data = response.get("data", [])
-            includes = response.get("includes", {})
-            user_map = _build_user_map(includes)
-            return [_tweet_to_dict(tweet, user_map, includes) for tweet in data]
+            error(f"Could not look up user ID for @{username}", status_code=404, function_name="scrape_user_recent_tweets", critical=False)
+            notify(f"⚠️ Could not look up user ID for @{username}, returning empty results")
+            return []
     else:
         notify(f"[API] Using cached user_id={user_id} for @{username}")
 

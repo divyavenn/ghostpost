@@ -38,6 +38,7 @@ from backend.utlils.scheduler import router as scheduler_router
 from backend.utlils.scheduler import start_scheduler, stop_scheduler
 from backend.billing.routes import router as billing_router
 from backend.twitter.account_routes import router as account_router
+from backend.desktop.desktop_jobs import router as desktop_router
 
 
 @asynccontextmanager
@@ -83,6 +84,7 @@ app.include_router(comment_replies_router)
 app.include_router(jobs_router)
 app.include_router(billing_router)
 app.include_router(account_router)
+app.include_router(desktop_router)
 
 
 @app.get("/health")

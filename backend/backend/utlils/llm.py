@@ -8,7 +8,7 @@ All LLM calls should go through ask_llm() to ensure consistent:
 - Message formatting (proper system/user roles)
 """
 
-from backend.config import OBELISK_KEY
+from backend.config import CLAUDE_API_KEY, OBELISK_KEY, DIVYA_API_KEY, DIVYA_MODEL_NAME
 from backend.utlils.utils import DEBUG_LOGS, error, notify
 
 
@@ -120,12 +120,140 @@ async def ask_gemini(
         # Gemini response format: {"candidates": [{"content": {"parts": [{"text": "..."}]}}]}
         message = data["candidates"][0]["content"]["parts"][0]["text"]
         if not message:
-            notify(f"⚠️ Gemini returned empty message content. Full response: {data}")
+            error(
+                f"Gemini returned empty message content. Full response: {data}",
+                status_code=500,
+                function_name="ask_gemini",
+                username=username,
+                critical=False
+            )
             return {"error": "Gemini returned empty message content", "raw": data}
         return {"message": message}
     except (KeyError, IndexError) as e:
-        notify(f"⚠️ Unexpected Gemini response structure: {e}. Full response: {data}")
+        error(
+            f"Unexpected Gemini response structure: {e}. Full response: {data}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="ask_gemini",
+            username=username,
+            critical=True
+        )
         return {"error": f"Unexpected Gemini response: {e}", "raw": data}
+
+
+async def ask_claude(
+    system_prompt: str,
+    user_prompt: str,
+    model: str = "claude-opus-4-5-20251101",
+    image_urls: list[str] | None = None,
+    username: str = "unknown",
+    prompt_type: str = "LLM"
+) -> dict:
+    """
+    Call Anthropic Claude API with rate limiting and error handling.
+
+    Args:
+        system_prompt: System instructions
+        user_prompt: User message content
+        model: Claude model name (e.g., "claude-opus-4-5-20251101", "claude-sonnet-4-5-20250514")
+        image_urls: Optional list of image URLs to include
+        username: Username for logging/rate limiting
+        prompt_type: Type of prompt for logging (e.g., "Reply Generation", "Intent Filter")
+
+    Returns:
+        dict with either {"message": str} or {"error": str}
+    """
+    from backend.twitter.rate_limiter import LLM_CLAUDE, call_api
+
+    if not CLAUDE_API_KEY:
+        error("CLAUDE_API_KEY not configured", status_code=500, function_name="ask_claude", username=username, critical=False)
+        return {"error": "CLAUDE_API_KEY not configured"}
+
+    # Anthropic API endpoint
+    url = "https://api.anthropic.com/v1/messages"
+
+    # Build user message content (with optional images)
+    if image_urls and len(image_urls) > 0:
+        # Anthropic format: content array with text and image blocks
+        user_content = [{"type": "text", "text": user_prompt}]
+        for img_url in image_urls:
+            # Note: Anthropic requires base64 encoded images with media type
+            user_content.append({
+                "type": "image",
+                "source": {
+                    "type": "url",
+                    "url": img_url
+                }
+            })
+    else:
+        user_content = user_prompt
+
+    # Print the full prompt to console (debug only)
+    _print_prompt(system_prompt, user_prompt, model, len(image_urls) if image_urls else 0, prompt_type)
+
+    # Anthropic API format
+    payload = {
+        "model": model,
+        "max_tokens": 1024,
+        "system": system_prompt,
+        "messages": [
+            {
+                "role": "user",
+                "content": user_content
+            }
+        ]
+    }
+
+    # Use rate limiter with retry
+    response = await call_api(
+        method="POST",
+        url=url,
+        bucket=LLM_CLAUDE,
+        headers={
+            "x-api-key": CLAUDE_API_KEY,
+            "anthropic-version": "2023-06-01",
+            "Content-Type": "application/json"
+        },
+        json_data=payload,
+        username=username
+    )
+
+    if not response.success:
+        error(
+            f"❌ Error in Claude call ({prompt_type}): {response.error_message}",
+            status_code=response.status_code or 500,
+            function_name="ask_claude",
+            username=username,
+            critical=False
+        )
+        return {"error": response.error_message}
+
+    data = response.data
+
+    # Extract message content from Claude response
+    try:
+        # Claude response format: {"content": [{"type": "text", "text": "..."}]}
+        message = data["content"][0]["text"]
+        if not message:
+            error(
+                f"Claude returned empty message content. Full response: {data}",
+                status_code=500,
+                function_name="ask_claude",
+                username=username,
+                critical=False
+            )
+            return {"error": "Claude returned empty message content", "raw": data}
+        return {"message": message}
+    except (KeyError, IndexError) as e:
+        error(
+            f"Unexpected Claude response structure: {e}. Full response: {data}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="ask_claude",
+            username=username,
+            critical=True
+        )
+        return {"error": f"Unexpected Claude response: {e}", "raw": data}
 
 
 async def ask_llm(
@@ -136,17 +264,32 @@ async def ask_llm(
     username: str = "unknown",
     prompt_type: str = "LLM"
 ) -> dict:
-    
-    #return {"error": "OBELISK_KEY not configured"}
+    """
+    Call OpenAI API with DIVYA fine-tuned model.
+
+    Args:
+        system_prompt: System instructions
+        user_prompt: User message content
+        model: Model name (defaults to "chatgpt-4o", but uses DIVYA_MODEL_NAME from .env)
+        image_urls: Optional list of image URLs to include
+        username: Username for logging/rate limiting
+        prompt_type: Type of prompt for logging
+
+    Returns:
+        dict with either {"message": str} or {"error": str}
+    """
 
     from backend.twitter.rate_limiter import LLM_OBELISK, call_api
 
-    if not OBELISK_KEY:
-        error("OBELISK_KEY not configured", status_code=500, function_name="ask_llm", username=username, critical=False)
-        return {"error": "OBELISK_KEY not configured"}
+    if not DIVYA_API_KEY:
+        error("DIVYA_API_KEY not configured", status_code=500, function_name="ask_llm", username=username, critical=False)
+        return {"error": "DIVYA_API_KEY not configured"}
 
-    url = "https://obelisk.dread.technology/api/chat/completions"
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
+    # Use DIVYA_MODEL_NAME from .env instead of the model parameter
+    actual_model = DIVYA_MODEL_NAME or model
+
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {DIVYA_API_KEY}", "Content-Type": "application/json"}
 
     # Build user message content (with optional images)
     if image_urls and len(image_urls) > 0:
@@ -156,11 +299,8 @@ async def ask_llm(
     else:
         user_content = user_prompt
 
-    # Print the full prompt to console (debug only)
-    _print_prompt(system_prompt, user_prompt, model, len(image_urls) if image_urls else 0, prompt_type)
-
     payload = {
-        "model": model,
+        "model": actual_model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content}
@@ -191,11 +331,24 @@ async def ask_llm(
 
     # Extract message content
     try:
-        message = data["choices"][0]["message"]["content"]
-        if not message:
-            notify(f"⚠️ LLM returned empty message content. Full response: {data}")
+        if not data:
+            error(
+                f"LLM returned empty message content. Full response: {data}",
+                status_code=500,
+                function_name="ask_llm",
+                username=username,
+                critical=False
+            )
             return {"error": "LLM returned empty message content", "raw": data}
+        message = data["choices"][0]["message"]["content"]
         return {"message": message}
     except (KeyError, IndexError) as e:
-        notify(f"⚠️ Unexpected LLM response structure: {e}. Full response: {data}")
+        error(
+            f"Unexpected LLM response structure: {e}. Full response: {data}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="ask_llm",
+            username=username,
+            critical=True
+        )
         return {"error": f"Unexpected LLM response: {e}", "raw": data}

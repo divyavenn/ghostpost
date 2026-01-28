@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter
 from pydantic import BaseModel, ValidationError
 
-from backend.config import OBELISK_KEY
+from backend.config import DIVYA_API_KEY
 from backend.data.twitter.data_validation import ScrapedTweet
 
 from ..browser_automation.twitter.timeline import USERNAME
@@ -98,26 +98,26 @@ def build_reply_examples_context(username: str, target_account: str | None = Non
 
 
 async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", target_handle: str | None = None, prompt_variant: str = "toned_down", username: str = "unknown") -> dict:
-    """Generate a tweet reply using the unified LLM caller with Gemini fallback."""
-    from backend.utlils.llm import ask_llm, ask_gemini
+    """Generate a tweet reply using the unified LLM caller with Claude fallback."""
+    from backend.utlils.llm import ask_llm, ask_claude
 
     # Build system prompt personalized with target handle using specified variant
     prompt_builder = get_prompt_builder(prompt_variant)
     system_prompt = prompt_builder(target_handle)
 
-    # If no model specified, use Gemini directly (user has no model configured)
+    # If no model specified, use Claude directly (user has no model configured)
     if not model or model == "":
-        notify(f"ℹ️ No model configured, using Gemini")
-        return await ask_gemini(
+        notify(f"ℹ️ No model configured, using Claude")
+        return await ask_claude(
             system_prompt=system_prompt,
             user_prompt=prompt,
-            model="gemini-2.0-flash-exp",
+            model="claude-opus-4-5-20251101",
             image_urls=image_urls,
             username=username,
             prompt_type="TWEET REPLY"
         )
 
-    # Try Obelisk first
+    # Try DIVYA model (OpenAI fine-tuned) first
     response = await ask_llm(
         system_prompt=system_prompt,
         user_prompt=prompt,
@@ -127,19 +127,19 @@ async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nak
         prompt_type="TWEET REPLY"
     )
 
-    # If Obelisk failed, fallback to Gemini
+    # If DIVYA model failed, fallback to Claude
     if "error" in response:
-        notify(f"⚠️ Obelisk failed, falling back to Gemini: {response.get('error')}")
-        response = await ask_gemini(
+        notify(f"⚠️ DIVYA model failed, falling back to Claude: {response.get('error')}")
+        response = await ask_claude(
             system_prompt=system_prompt,
             user_prompt=prompt,
-            model="gemini-2.0-flash-exp",
+            model="claude-opus-4-5-20251101",
             image_urls=image_urls,
             username=username,
             prompt_type="TWEET REPLY"
         )
         if "message" in response:
-            notify(f"✅ Gemini fallback successful")
+            notify(f"✅ Claude fallback successful")
 
     return response
 
@@ -337,8 +337,8 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     from backend.config import GEMINI_API_KEY
 
     # Check if at least one API key is configured
-    if not OBELISK_KEY and not GEMINI_API_KEY:
-        error("❌ Neither OBELISK_KEY nor GEMINI_API_KEY environment variable is set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
+    if not DIVYA_API_KEY and not GEMINI_API_KEY:
+        error("❌ Neither DIVYA_API_KEY nor GEMINI_API_KEY environment variable is set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
 
     # Purge tweets with empty thread content from cache and seen_tweets
     # so they can be re-scraped with proper thread data
@@ -459,8 +459,8 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     from backend.config import GEMINI_API_KEY
 
     # Check if at least one API key is configured
-    if not OBELISK_KEY and not GEMINI_API_KEY:
-        error("Neither Obelisk nor Gemini API key configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
+    if not DIVYA_API_KEY and not GEMINI_API_KEY:
+        error("Neither DIVYA nor Gemini API key configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Read tweets from cache
     tweets = await read_from_cache(username=username)

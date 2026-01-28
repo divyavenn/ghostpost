@@ -64,53 +64,12 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> Path
 
     path = get_user_tweet_cache(username)
     atomic_file_update(path, all_tweets, ".tmp", ensure_ascii=False)
-    # notify(f"💾{description} and wrote to cache")
+    notify(f"💾 {description} and wrote to cache: {path.name}")
 
     # Track newly written tweets in seen_tweets
     from backend.utlils.utils import add_to_seen_tweets
-    tweet_ids_to_track = []
-    for tweet in tweets:
-        tweet_id = tweet.get("id") or tweet.get("tweet_id")
-        if tweet_id:
-            tweet_ids_to_track.append(str(tweet_id))
-
-    if tweet_ids_to_track:
-        add_to_seen_tweets(username, tweet_ids_to_track)
-
-    # Log each tweet being written
-    for tweet in tweets:
-        tweet_id = tweet.get("id") or tweet.get("tweet_id")
-        cache_id = tweet.get("cache_id")
-        if tweet_id and cache_id:
-            metadata = {"cache_id": cache_id}
-
-            # If this tweet has generated_replies, include first 250 chars of original tweet + all replies with model info
-            # generated_replies is now an array of tuples: [(reply_text, model_name), ...]
-            generated_replies = tweet.get("generated_replies")
-            if generated_replies:
-                thread = tweet.get("thread", [])
-                # Join thread parts and get first 250 characters
-                original_text = " ".join(thread) if isinstance(thread, list) else str(thread)
-                original_text_preview = original_text[:250]
-
-                metadata["original_tweet_preview"] = original_text_preview
-
-                # Include model information for each reply
-                replies_with_models = []
-                for idx, reply_data in enumerate(generated_replies):
-                    # Handle tuple format: (reply_text, model_name)
-                    if isinstance(reply_data, tuple) and len(reply_data) >= 2:
-                        reply_text, model_name = reply_data[0], reply_data[1]
-                    else:
-                        # Fallback for any legacy format
-                        reply_text = reply_data
-                        model_name = "unknown"
-
-                    replies_with_models.append({"reply_index": idx, "model": model_name, "text": reply_text})
-
-                metadata["generated_replies"] = replies_with_models
-
-            log_tweet_action(username, TweetAction.WRITTEN, str(tweet_id), metadata=metadata)
+    # Pass the actual tweet dicts (not just IDs) so add_to_seen_tweets can access created_at
+    add_to_seen_tweets(username, tweets)
 
     return path
 
@@ -377,7 +336,7 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
     # Find the tweet to get its cache_id and reply before deletion
     tweet_to_delete = None
     for t in tweets:
-        if t.get("id") == tweet_id or t.get("tweet_id") == tweet_id:
+        if t.get("id") == tweet_id or t.get("tweet_id") == tweet_id or t.get("cache_id") == tweet_id:
             tweet_to_delete = t
             break
 
@@ -388,7 +347,7 @@ async def delete_tweet(username: str, tweet_id: str, log_deletion: bool = True) 
     deleted_reply = tweet_to_delete.get("reply", "")
 
     # Remove the tweet
-    tweets = [t for t in tweets if t.get("id") != tweet_id and t.get("tweet_id") != tweet_id]
+    tweets = [t for t in tweets if t.get("id") != tweet_id and t.get("tweet_id") != tweet_id and t.get("cache_id") != tweet_id]
 
     # Write to cache without logging (to avoid duplicate WRITTEN logs)
     path = get_user_tweet_cache(username)
@@ -470,10 +429,6 @@ async def edit_tweet_reply(username: str, tweet_id: str, new_reply: str, reply_i
     atomic_file_update(path, tweets, ".tmp", ensure_ascii=False)
     notify(f"💾 Edited reply {reply_index} for tweet {tweet_id}")
 
-    # Log the edit with comprehensive metadata including reply index and model
-    metadata = {"cache_id": cache_id, "reply_index": reply_index, "model": model_name, "new_reply": new_reply, "diff": "".join(diff), "replying_to_tweet_id": original_tweet_id}
-
-    log_tweet_action(username, TweetAction.EDITED, tweet_id, metadata=metadata)
     return True
 
 
@@ -529,9 +484,31 @@ class EditReplyRequest(BaseModel):
 
 @router.get("/{username}")
 async def get_tweets(username: str) -> list[dict[str, Any]]:
-    """Get all cached tweets for a given username."""
+    """Get all cached tweets for a given username, excluding tweets we've already seen."""
+    from backend.utlils.utils import read_user_info
+
     tweets = await read_from_cache(username)
-    return tweets
+
+    # Filter out tweets we've already seen (includes replied-to tweets)
+    user_info = read_user_info(username)
+    if not user_info:
+        return tweets
+
+    seen_tweets = user_info.get("seen_tweets", {})
+    already_seen_ids = set(seen_tweets.keys())
+
+    filtered_tweets = []
+    for tweet in tweets:
+        tweet_id = tweet.get("id") or tweet.get("tweet_id")
+        if tweet_id and str(tweet_id) not in already_seen_ids:
+            filtered_tweets.append(tweet)
+
+    if len(already_seen_ids) > 0:
+        skipped = len(tweets) - len(filtered_tweets)
+        if skipped > 0:
+            notify(f"📋 Filtered out {skipped} tweets that were already seen")
+
+    return filtered_tweets
 
 
 @router.delete("/{username}/{tweet_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -77,6 +77,8 @@ function App() {
     onAction: () => void;
   } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Track if find_and_reply_to_new_posts job is running (for showing "generating replies" animation)
+  const [isFindNewPostsJobRunning, setIsFindNewPostsJobRunning] = useState(false);
   // Key to trigger resetting "seen" tracking in DiscoveredTab (incremented on purge)
   const [resetSeenKey, setResetSeenKey] = useState(0);
   const postedTweetsOffsetRef = useRef(0);
@@ -434,7 +436,7 @@ function App() {
         prompt_variant: promptVariant,
         media: foundComment.media || [],
         parent_chain: foundComment.parent_chain || [],
-        response_to_thread: [foundComment.text || ''],
+        response_to_thread: [foundComment.text].filter((text): text is string => text != null),
         responding_to: foundComment.handle || '',
         replying_to_pfp: foundComment.author_profile_pic_url || '',
         original_tweet_url: foundComment.url || '',
@@ -628,6 +630,9 @@ function App() {
         const status = translateJobStatusToLoadingStatus(job);
         console.log('[Polling] Job status:', job.status, job.phase, '| Translated:', status.type);
 
+        // Update isJobRunning state for "generating replies" animation
+        setIsFindNewPostsJobRunning(job.status === 'running');
+
         // Update status based on current scraping phase
         if (status.type === 'account') {
           console.log('[Polling] Setting phase to scraping (account)');
@@ -655,6 +660,7 @@ function App() {
           // This prevents stale 'idle' status from triggering premature completion
           console.log('[Polling] Status complete, stopping polling');
           setLoadingStatusData({ type: 'complete', value: '' });
+          setIsFindNewPostsJobRunning(false);
 
           // Stop polling
           clearInterval(pollInterval);
@@ -1017,10 +1023,10 @@ function App() {
         prompt_variant: promptVariant,
         media: tweet.media || [],
         parent_chain: tweet.thread_ids || [],
-        response_to_thread: tweet.thread?.map(t => t.text) || [],
-        responding_to: tweet.thread?.[0]?.handle || '',
-        replying_to_pfp: tweet.thread?.[0]?.author_profile_pic_url || tweet.author_profile_pic_url || '',
-        original_tweet_url: tweet.thread?.[0]?.url || tweet.url || '',
+        response_to_thread: tweet.thread || [],
+        responding_to: tweet.handle || '',
+        replying_to_pfp: tweet.author_profile_pic_url || '',
+        original_tweet_url: tweet.url || '',
       });
 
       // Success! Remove from posting queue UI
@@ -1397,6 +1403,7 @@ function App() {
                 onRegenerate={handleRegenerate}
                 onTweetsSeen={handleMarkTweetsSeen}
                 resetSeenKey={resetSeenKey}
+                isJobRunning={isFindNewPostsJobRunning}
               />
             )}
 

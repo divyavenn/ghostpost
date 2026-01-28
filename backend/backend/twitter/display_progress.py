@@ -96,7 +96,7 @@ def print_progress_bar(
         current: Current progress count
         total: Total items to process
         username: User the job is running for
-        triggered_by: "user" or "scheduler"
+        triggered_by: "manual" or "scheduled"
     """
     # Progress bars disabled - job logging happens to user log files instead
     return

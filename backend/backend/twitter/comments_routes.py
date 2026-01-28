@@ -45,7 +45,9 @@ class PostCommentReplyRequest(BaseModel):
 @router.get("/{username}/grouped")
 async def get_comments_grouped_by_post(
     username: str,
-    status: str | None = Query(default="pending", description="Filter by status: pending, replied, skipped")
+    status: str | None = Query(default="pending", description="Filter by status: pending, replied, skipped"),
+    limit: int = Query(default=1000, ge=1, le=5000, description="Maximum number of comments to process"),
+    offset: int = Query(default=0, ge=0, description="Number of comments to skip")
 ) -> dict:
     """
     Get comments grouped by the parent post they're replying to.
@@ -53,14 +55,15 @@ async def get_comments_grouped_by_post(
     Returns a list of posts with their associated comments.
     Each post includes all comments on that post with generated replies.
     """
-    from backend.data.twitter.comments_cache import get_comments_list, get_thread_context
+    from backend.data.twitter.comments_cache import get_comments_list, get_thread_context, read_comments_cache
     from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
 
-    # Get all comments with the specified status
-    comments = get_comments_list(username, limit=1000, offset=0, status_filter=status)
+    # Load caches ONCE at the start for performance (prevents N+1 query anti-pattern)
+    posted_tweets_cache = read_posted_tweets_cache(username)
+    comments_cache = read_comments_cache(username)
 
-    # Get posted tweets for lookup
-    posted_tweets = read_posted_tweets_cache(username)
+    # Get comments with pagination (use query parameters instead of hardcoded values)
+    comments = get_comments_list(username, limit=limit, offset=offset, status_filter=status)
 
     # Group comments by the user's tweet/comment that was replied to
     # This could be a posted tweet OR a comment by the user that got a reply
@@ -76,14 +79,14 @@ async def get_comments_grouped_by_post(
         user_post_id = in_reply_to
 
         # Check if immediate parent is user's posted tweet
-        if user_post_id and user_post_id in posted_tweets:
+        if user_post_id and user_post_id in posted_tweets_cache:
             # Direct reply to user's posted tweet - use it
             pass
         elif parent_chain:
             # Find the last user-owned item in the chain (closest to this comment)
             # Walk backwards through parent_chain to find user's tweet/comment
             for pid in reversed(parent_chain):
-                if pid in posted_tweets:
+                if pid in posted_tweets_cache:
                     user_post_id = pid
                     break
             else:
@@ -98,7 +101,7 @@ async def get_comments_grouped_by_post(
         # Initialize group if not exists
         if user_post_id not in grouped:
             # Get the post data
-            post_data = posted_tweets.get(user_post_id)
+            post_data = posted_tweets_cache.get(user_post_id)
             if not post_data or not isinstance(post_data, dict):
                 # Post not found in cache, skip these comments
                 continue
@@ -124,7 +127,13 @@ async def get_comments_grouped_by_post(
             }
 
         # Add comment to group with its thread context
-        thread_context = get_thread_context(comment["id"], username)
+        # Pass pre-loaded caches to avoid N+1 query (reading cache files 1000+ times)
+        thread_context = get_thread_context(
+            comment["id"],
+            username,
+            posted_tweets=posted_tweets_cache,
+            comments=comments_cache
+        )
         grouped[user_post_id]["comments"].append({
             **comment,
             "thread_context": thread_context
@@ -310,7 +319,7 @@ async def post_comment_reply(
         # Log the comment reply action
         log_tweet_action(
             username=username,
-            action=TweetAction.COMMENT_REPLY_POSTED,
+            action=TweetAction.COMMENT_BACK_POSTED,
             tweet_id=comment_id,
             metadata={
                 "comment_id": comment_id,
@@ -348,18 +357,6 @@ async def post_comment_reply(
     except HTTPException as e:
         # Handle deleted tweet - remove from cache and return informative response
         if e.status_code == 410 and e.detail == "TWEET_DELETED":
-            # Log the deletion
-            log_tweet_action(
-                username=username,
-                action=TweetAction.COMMENT_DELETED,
-                tweet_id=comment_id,
-                metadata={
-                    "comment_id": comment_id,
-                    "comment_text": comment.get("text", ""),
-                    "comment_author": comment.get("handle", ""),
-                    "reason": "tweet_deleted_on_twitter"
-                }
-            )
             # Remove from cache since it no longer exists
             delete_comment(username, comment_id)
             # Return a proper response instead of raising
@@ -413,20 +410,6 @@ async def skip_comment(username: str, comment_id: str) -> dict:
     success = delete_comment(username, comment_id)
     if not success:
         raise HTTPException(status_code=404, detail="Comment not found")
-
-    # Log the skip action
-    log_tweet_action(
-        username=username,
-        action=TweetAction.COMMENT_SKIPPED,
-        tweet_id=comment_id,
-        metadata={
-            "comment_id": comment_id,
-            "comment_text": comment.get("text", "") if comment else "",
-            "comment_author": comment.get("handle", "") if comment else "",
-            "original_posted_tweet_id": posted_tweet_id,
-            "original_posted_tweet_text": posted_tweet_text,
-        }
-    )
 
     return {
         "message": "Comment skipped",
@@ -501,9 +484,11 @@ async def start_engagement_monitoring(
 
     # Run jobs sequentially (activity discovery then engagement monitoring)
     # but use asyncio.create_task so they don't block other endpoints' tasks
+    from backend.twitter.bread_accounts import run_with_bread_account
+
     async def run_jobs():
-        await find_user_activity(username, triggered_by="manual")
-        await find_and_reply_to_engagement(username, triggered_by="manual")
+        await run_with_bread_account(find_user_activity, username, triggered_by="manual")
+        await run_with_bread_account(find_and_reply_to_engagement, username, triggered_by="manual")
 
     asyncio.create_task(_run_with_error_handling(run_jobs(), "engagement_monitoring", username))
 
@@ -533,8 +518,13 @@ async def run_discover_recently_posted(
     user_handle = user_info.get("handle", username)
 
     # Run in background with asyncio.create_task for parallel execution
+    from backend.twitter.bread_accounts import run_with_bread_account
+
+    async def job_wrapper(username: str, ctx):
+        return await discover_recently_posted(username, user_handle, max_tweets, ctx)
+
     asyncio.create_task(_run_with_error_handling(
-        discover_recently_posted(username, user_handle, max_tweets),
+        run_with_bread_account(job_wrapper, username),
         "discover_recently_posted", username
     ))
 
@@ -562,8 +552,13 @@ async def run_discover_engagement(
     user_handle = user_info.get("handle", username)
 
     # Run in background with asyncio.create_task for parallel execution
+    from backend.twitter.bread_accounts import run_with_bread_account
+
+    async def job_wrapper(username: str, ctx):
+        return await discover_engagement(username, user_handle, ctx)
+
     asyncio.create_task(_run_with_error_handling(
-        discover_engagement(username, user_handle),
+        run_with_bread_account(job_wrapper, username),
         "discover_engagement", username
     ))
 
@@ -590,8 +585,13 @@ async def run_discover_resurrected(
     user_handle = user_info.get("handle", username)
 
     # Run in background with asyncio.create_task for parallel execution
+    from backend.twitter.bread_accounts import run_with_bread_account
+
+    async def job_wrapper(username: str, ctx):
+        return await discover_resurrected(username, user_handle, ctx)
+
     asyncio.create_task(_run_with_error_handling(
-        discover_resurrected(username, user_handle),
+        run_with_bread_account(job_wrapper, username),
         "discover_resurrected", username
     ))
 

@@ -45,6 +45,7 @@ export function JobProgressButton({
 
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mountedRef = useRef(true);
+  const pollingStartTimeRef = useRef<number | null>(null); // Track when polling started
 
   // Get the currently active job (running or most recently completed)
   const getActiveJob = useCallback((): { name: string; status: JobStatus } | null => {
@@ -71,7 +72,11 @@ export function JobProgressButton({
       return localProgress.displayText ?? `${localProgress.current}/${localProgress.total}`;
     }
 
-    if (!activeJob) return label;
+    if (!activeJob) {
+      // If we just clicked, show loading label immediately
+      if (localLoading) return loadingLabel;
+      return label;
+    }
 
     const { status } = activeJob;
     const { phase, details } = status;
@@ -96,8 +101,14 @@ export function JobProgressButton({
         : 0;
     }
 
-    if (!activeJob) return 0;
-    return activeJob.status.percentage || 0;
+    if (!activeJob) {
+      // Show small initial progress when just clicked for immediate feedback
+      if (localLoading) return 1;
+      return 0;
+    }
+    const percentage = activeJob.status.percentage || 0;
+    console.log('[JobProgressButton] Progress:', percentage, 'Status:', activeJob.status);
+    return percentage;
   };
 
   // Poll job status
@@ -113,6 +124,7 @@ export function JobProgressButton({
         const jobKey = jobName as keyof typeof allStatus.jobs;
         if (allStatus.jobs[jobKey]) {
           newStatuses[jobName] = allStatus.jobs[jobKey];
+          console.log('[JobProgressButton] Polled status for', jobName, ':', allStatus.jobs[jobKey]);
         }
       }
       setJobStatuses(newStatuses);
@@ -122,15 +134,30 @@ export function JobProgressButton({
         (s) => s.status === 'running'
       );
 
+      // Calculate time elapsed since polling started
+      const timeElapsed = pollingStartTimeRef.current
+        ? Date.now() - pollingStartTimeRef.current
+        : 0;
+      const gracePeriod = 5000; // Keep polling for 5 seconds even if no jobs found
+
       if (stillRunning) {
-        // We have a real running job, clear local loading
+        // We have a real running job, clear local loading and grace period
         setLocalLoading(false);
+        // Clear grace period since we've confirmed the job is running
+        pollingStartTimeRef.current = null;
         // Continue polling
         pollTimeoutRef.current = setTimeout(pollJobStatus, pollInterval);
+      } else if (pollingStartTimeRef.current && timeElapsed < gracePeriod) {
+        // No jobs running YET, but still within grace period
+        // Keep polling to give backend time to start the job
+        console.log(`[JobProgressButton] No jobs running yet, but within grace period (${timeElapsed}ms < ${gracePeriod}ms), continuing poll`);
+        pollTimeoutRef.current = setTimeout(pollJobStatus, pollInterval);
       } else {
-        // No jobs running, clear all loading states
+        // No jobs running and grace period expired, stop polling
+        console.log('[JobProgressButton] No jobs running and grace period expired, stopping poll');
         setLocalLoading(false);
         setIsPolling(false);
+        pollingStartTimeRef.current = null;
       }
     } catch (error) {
       console.error('Failed to poll job status:', error);
@@ -151,6 +178,8 @@ export function JobProgressButton({
     // Start polling after a short delay to let the job start
     if (username && username.trim() !== '') {
       setIsPolling(true);
+      // Set polling start time for grace period tracking
+      pollingStartTimeRef.current = Date.now();
       setTimeout(() => {
         pollJobStatus();
       }, 300); // Slightly longer delay to let job register

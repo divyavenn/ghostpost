@@ -33,11 +33,10 @@ Usage:
         print(f"Failed: {response.error_message}")
 
 Configured buckets:
-    - TWITTER_SEARCH: 60 req/15min
-    - TWITTER_TWEET_LOOKUP: 300 req/15min
-    - TWITTER_USER_LOOKUP: 100 req/15min
-    - TWITTER_POST: 100 req/24hr
-    - LLM_OBELISK: 60 req/min
+    - TWITTER_* buckets: No local throttling - Twitter API enforces limits via 429
+    - LLM_OBELISK: 60 req/min (time throttled) - Now using OpenAI with DIVYA fine-tuned model
+    - LLM_GEMINI: 60 req/min (time throttled)
+    - LLM_CLAUDE: 60 req/min (time throttled)
 
 
 """
@@ -55,15 +54,25 @@ T = TypeVar("T")
 @dataclass
 class RateLimitConfig:
     """Configuration for a rate limit bucket."""
-    requests_per_window: int
     window_seconds: int = 15 * 60  # 15 minutes default
+    requests_per_window: int | None = None  # Optional: if set, enforces time-based throttling
     name: str = ""  # Display name for logging
     max_retries: int = 3  # Default max retries for this bucket
     base_delay: float = 1.0  # Base delay for exponential backoff
+    # Optional quota tracking (for cumulative limits like daily post caps)
+    user_quota_per_window: int | None = None  # Max requests per user in window (e.g., 100 posts/day)
+    app_quota_per_window: int | None = None   # Max requests for entire app in window (e.g., 1667 posts/day)
 
     @property
     def min_interval(self) -> float:
-        """Minimum seconds between requests."""
+        """
+        Minimum seconds between requests.
+
+        If requests_per_window is None, returns 0 (no time throttling).
+        Otherwise, enforces time-based spacing.
+        """
+        if self.requests_per_window is None:
+            return 0  # No time throttling
         return self.window_seconds / self.requests_per_window
 
 
@@ -100,20 +109,108 @@ class RateLimiter:
         self._last_request_times: dict[str, float] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._rate_limit_reset_times: dict[str, int] = {}  # Track when rate limits reset
+        # Quota tracking: store timestamps of requests in sliding window
+        self._user_request_history: dict[str, dict[str, list[float]]] = {}  # {bucket: {username: [timestamps]}}
+        self._app_request_history: dict[str, list[float]] = {}  # {bucket: [timestamps]}
 
     def add_bucket(self, bucket: str, config: RateLimitConfig):
         """Add a rate limit bucket."""
         self._configs[bucket] = config
         self._last_request_times[bucket] = 0
         self._locks[bucket] = asyncio.Lock()
+        # Initialize quota tracking if enabled
+        if config.user_quota_per_window is not None:
+            self._user_request_history[bucket] = {}
+        if config.app_quota_per_window is not None:
+            self._app_request_history[bucket] = []
 
-    async def wait_if_needed(self, bucket: str, quiet: bool = False):
+    def _cleanup_old_requests(self, bucket: str, window_seconds: int):
+        """Remove request timestamps older than the window."""
+        now = time.time()
+        cutoff = now - window_seconds
+
+        # Clean up user request history
+        if bucket in self._user_request_history:
+            for username in list(self._user_request_history[bucket].keys()):
+                # Filter out old timestamps
+                self._user_request_history[bucket][username] = [
+                    ts for ts in self._user_request_history[bucket][username] if ts > cutoff
+                ]
+                # Remove empty user entries
+                if not self._user_request_history[bucket][username]:
+                    del self._user_request_history[bucket][username]
+
+        # Clean up app request history
+        if bucket in self._app_request_history:
+            self._app_request_history[bucket] = [
+                ts for ts in self._app_request_history[bucket] if ts > cutoff
+            ]
+
+    def _check_quota(self, bucket: str, username: str | None) -> tuple[bool, str | None, int | None]:
+        """
+        Check if request would exceed per-user or per-app quota.
+
+        Returns:
+            (can_proceed, error_message, reset_timestamp)
+            reset_timestamp is when the oldest request expires (quota will be available)
+        """
+        config = self._configs.get(bucket)
+        if not config:
+            return True, None, None
+
+        # Clean up old requests first
+        self._cleanup_old_requests(bucket, config.window_seconds)
+
+        # Check per-user quota
+        if config.user_quota_per_window is not None and username:
+            if bucket in self._user_request_history:
+                user_requests = self._user_request_history[bucket].get(username, [])
+                if len(user_requests) >= config.user_quota_per_window:
+                    # Calculate when oldest request will expire
+                    oldest_request = min(user_requests)
+                    reset_time = int(oldest_request + config.window_seconds)
+                    return False, f"User {username} has exceeded quota: {len(user_requests)}/{config.user_quota_per_window} in {config.window_seconds}s window", reset_time
+
+        # Check per-app quota
+        if config.app_quota_per_window is not None:
+            if bucket in self._app_request_history:
+                app_requests = self._app_request_history[bucket]
+                if len(app_requests) >= config.app_quota_per_window:
+                    # Calculate when oldest request will expire
+                    oldest_request = min(app_requests)
+                    reset_time = int(oldest_request + config.window_seconds)
+                    return False, f"App has exceeded quota: {len(app_requests)}/{config.app_quota_per_window} in {config.window_seconds}s window", reset_time
+
+        return True, None, None
+
+    def _record_request(self, bucket: str, username: str | None):
+        """Record a request for quota tracking."""
+        now = time.time()
+        config = self._configs.get(bucket)
+        if not config:
+            return
+
+        # Record for per-user quota
+        if config.user_quota_per_window is not None and username:
+            if bucket in self._user_request_history:
+                if username not in self._user_request_history[bucket]:
+                    self._user_request_history[bucket][username] = []
+                self._user_request_history[bucket][username].append(now)
+
+        # Record for per-app quota
+        if config.app_quota_per_window is not None:
+            if bucket in self._app_request_history:
+                self._app_request_history[bucket].append(now)
+
+    async def wait_if_needed(self, bucket: str, username: str | None = None, quiet: bool = False, max_quota_wait: int = 300):
         """
         Wait if we need to respect the rate limit for this bucket.
 
         Args:
             bucket: The bucket name
+            username: Username for per-user quota tracking (optional)
             quiet: If True, don't log the wait message
+            max_quota_wait: Maximum seconds to wait for quota to become available (default: 5 minutes)
         """
         if bucket not in self._configs:
             return  # No rate limit configured for this bucket
@@ -123,19 +220,44 @@ class RateLimiter:
         display_name = config.name or bucket
 
         async with self._locks[bucket]:
+            # Check per-user and per-app quotas
+            can_proceed, quota_error, quota_reset_time = self._check_quota(bucket, username)
+            if not can_proceed and quota_reset_time:
+                now = time.time()
+                wait_time = quota_reset_time - now
+
+                if wait_time <= max_quota_wait:
+                    # Wait time is reasonable - wait until quota available
+                    if not quiet:
+                        notify(f"⏳ LOCAL quota limit reached ({display_name}): {quota_error}")
+                        notify(f"   Waiting {wait_time:.0f}s ({wait_time/60:.1f}min) until quota window resets...")
+                    await asyncio.sleep(wait_time)
+                    # After waiting, clean up and continue (quota should be available now)
+                    self._cleanup_old_requests(bucket, config.window_seconds)
+                else:
+                    # Wait time is too long - set reset time and raise exception
+                    # The retry logic will handle this with wait_for_reset
+                    self._rate_limit_reset_times[bucket] = quota_reset_time
+                    notify(f"⚠️ LOCAL quota limit reached ({display_name}): {quota_error}")
+                    notify(f"   Wait time too long ({wait_time/3600:.1f} hours) - will retry after window resets")
+                    from backend.utlils.utils import error
+                    error(f"{quota_error} - reset in {wait_time:.0f}s", status_code=429,
+                          function_name="wait_if_needed", username=username or "unknown", critical=False)
+                    raise Exception(f"{quota_error} - quota resets in {wait_time/3600:.1f} hours")
+
             now = time.time()
 
-            # Check if we're in a rate-limited state (from a 429 response)
+            # Check if we're in a rate-limited state (from a 429 response or quota exceeded)
             if bucket in self._rate_limit_reset_times:
                 reset_time = self._rate_limit_reset_times[bucket]
                 if now < reset_time:
                     # Still rate limited - wait until reset
                     wait_time = reset_time - now
                     if not quiet:
-                        notify(f"⚠️ Rate limited ({display_name}): waiting {wait_time:.0f}s until reset...")
+                        notify(f"⚠️ Twitter API 429 response ({display_name}): waiting {wait_time:.0f}s ({wait_time/60:.1f}min) until reset...")
                     await asyncio.sleep(wait_time)
-                    # Clear the reset time after waiting
-                    del self._rate_limit_reset_times[bucket]
+                # Clear the reset time after waiting (or if it's already expired)
+                self._rate_limit_reset_times.pop(bucket, None)
 
             # Also enforce minimum interval between requests
             elapsed = now - self._last_request_times[bucket]
@@ -146,6 +268,9 @@ class RateLimiter:
                 await asyncio.sleep(wait_time)
 
             self._last_request_times[bucket] = time.time()
+
+            # Record this request for quota tracking
+            self._record_request(bucket, username)
 
     def update_last_request(self, bucket: str):
         """Update the last request timestamp for a bucket."""
@@ -160,20 +285,22 @@ class RateLimiter:
             reset_timestamp: Unix timestamp when the rate limit resets
             bucket: The bucket that was rate limited
         """
-        # Store the reset time so other concurrent calls know we're rate limited
-        self._rate_limit_reset_times[bucket] = reset_timestamp
-
         display_name = self._configs.get(bucket, RateLimitConfig(0)).name or bucket
         now = int(time.time())
         wait_seconds = max(1, reset_timestamp - now + 1)  # +1 for safety
+
+        # Store the reset time so other concurrent calls know we're rate limited
+        # Acquire lock briefly to set the shared state
+        async with self._locks[bucket]:
+            self._rate_limit_reset_times[bucket] = reset_timestamp
+
         notify(f"⚠️ Rate limited ({display_name}). Waiting {wait_seconds}s ({wait_seconds // 60}min) before retry...")
         await asyncio.sleep(wait_seconds)
 
         # Clear the reset time after waiting
-        if bucket in self._rate_limit_reset_times:
-            del self._rate_limit_reset_times[bucket]
-
-        if bucket in self._last_request_times:
+        # Acquire lock again to modify shared state
+        async with self._locks[bucket]:
+            self._rate_limit_reset_times.pop(bucket, None)
             self._last_request_times[bucket] = time.time()
 
     async def call_with_retry(
@@ -209,7 +336,7 @@ class RateLimiter:
 
         for attempt in range(retries + 1):
             # Wait for rate limit before making request
-            await self.wait_if_needed(bucket, quiet=quiet)
+            await self.wait_if_needed(bucket, username=username, quiet=quiet)
 
             try:
                 response = await api_call()
@@ -274,59 +401,106 @@ class RateLimiter:
 TWITTER_SEARCH = "twitter_search"
 TWITTER_TWEET_LOOKUP = "twitter_tweet_lookup"
 TWITTER_HOME_TIMELINE = "twitter_home_timeline"
+TWITTER_USER_TIMELINE = "twitter_user_timeline"
+TWITTER_USER_MENTIONS = "twitter_user_mentions"
 TWITTER_USER_LOOKUP = "twitter_user_lookup"
 TWITTER_POST = "twitter_post"
 
 # LLM API buckets
 LLM_OBELISK = "llm_obelisk"
 LLM_GEMINI = "llm_gemini"
+LLM_CLAUDE = "llm_claude"
 
 
 def create_rate_limiter() -> RateLimiter:
     """Create a rate limiter pre-configured for all API endpoints.
 
     Rate limits from X API Basic tier (https://docs.x.com/x-api/fundamentals/rate-limits):
-    - Search: 60 req / 15 min (throttled)
-    - Tweet Lookup: 15 req / 15 min (throttled)
-    - User Lookup: 100 req / 24 hours (daily quota)
-    - Post Tweet: 100 req / 24 hours (daily quota)
+    Per User Auth (OAuth):
+    - Search (GET /2/tweets/search/recent): 60 req / 15 min
+    - Tweet Lookup (GET /2/tweets): 15 req / 15 min
+    - User Timeline (GET /2/users/:id/tweets): 5 req / 15 min
+    - Home Timeline (GET /2/users/:id/timelines/reverse_chronological): 5 req / 15 min
+    - User Mentions (GET /2/users/:id/mentions): 10 req / 15 min
+    - User Lookup (GET /2/users/by/username/:username): 100 req / 24 hours
+    - Post Tweet (POST /2/tweets): 100 req / 24 hours per user, 1667 req / 24 hours per app
 
-    For throttled endpoints: we space requests to stay within the window limit.
-    For daily quotas: we use a reasonable interval to avoid spam, not the full quota-based delay.
+    Uses quota tracking to enforce both per-user and per-app limits.
     """
     limiter = RateLimiter()
 
-    # Twitter API - Throttled endpoints (per 15-minute window)
-    limiter.add_bucket(TWITTER_SEARCH, RateLimitConfig(60, name="Twitter Search"))           # 60 req/15min = 15s interval
-    limiter.add_bucket(TWITTER_TWEET_LOOKUP, RateLimitConfig(15, name="Twitter Tweet"))      # 15 req/15min = 60s interval
-    limiter.add_bucket(TWITTER_HOME_TIMELINE, RateLimitConfig(15, name="Twitter Home"))      # 15 req/15min = 60s interval
-
-    # Twitter API - Daily quota endpoints (100 req / 24 hours)
-    # Use reasonable intervals to avoid spam, not quota-based delays
-    limiter.add_bucket(TWITTER_USER_LOOKUP, RateLimitConfig(
-        10,  # 10 req per minute = 6s interval (reasonable pacing)
-        window_seconds=60,
-        name="Twitter User"
+    # Twitter API - Throttled endpoints (per 15-minute window) - Basic Tier
+    # Using quota tracking to enforce limits
+    limiter.add_bucket(TWITTER_SEARCH, RateLimitConfig(
+        window_seconds=15 * 60,
+        name="Twitter Search",
+        user_quota_per_window=60,   # 60 requests per user per 15 min
+        app_quota_per_window=60     # 60 requests per app per 15 min
     ))
+    limiter.add_bucket(TWITTER_TWEET_LOOKUP, RateLimitConfig(
+        window_seconds=15 * 60,
+        name="Twitter Tweet Lookup",
+        user_quota_per_window=15,   # 15 requests per user per 15 min
+        app_quota_per_window=15     # 15 requests per app per 15 min
+    ))
+    limiter.add_bucket(TWITTER_HOME_TIMELINE, RateLimitConfig(
+        window_seconds=15 * 60,
+        name="Twitter Home Timeline",
+        user_quota_per_window=5,    # 5 requests per user per 15 min
+        app_quota_per_window=None   # No per-app limit documented
+    ))
+    limiter.add_bucket(TWITTER_USER_TIMELINE, RateLimitConfig(
+        window_seconds=15 * 60,
+        name="Twitter User Timeline",
+        user_quota_per_window=5,    # 5 requests per user per 15 min
+        app_quota_per_window=10     # 10 requests per app per 15 min
+    ))
+    limiter.add_bucket(TWITTER_USER_MENTIONS, RateLimitConfig(
+        window_seconds=15 * 60,
+        name="Twitter User Mentions",
+        user_quota_per_window=10,   # 10 requests per user per 15 min
+        app_quota_per_window=15     # 15 requests per app per 15 min
+    ))
+
+    # Twitter API - Daily quota endpoints - Basic Tier
+    # Using quota tracking to enforce limits
+    limiter.add_bucket(TWITTER_USER_LOOKUP, RateLimitConfig(
+        window_seconds=24 * 60 * 60,  # 24 hour window
+        name="Twitter User Lookup",
+        user_quota_per_window=100,  # 100 requests per user per 24 hours
+        app_quota_per_window=500    # 500 requests per app per 24 hours
+    ))
+
+    # Post Tweet - uses quota tracking for per-user and per-app limits
+    # Basic tier: 100 posts/24hr per user, 1667 posts/24hr per app
     limiter.add_bucket(TWITTER_POST, RateLimitConfig(
-        2,  # 2 posts per minute = 30s interval (avoid spam detection)
-        window_seconds=60,
+        window_seconds=24 * 60 * 60,  # 24 hour window
         name="Twitter Post",
-        max_retries=2
+        max_retries=2,
+        user_quota_per_window=100,   # 100 posts per user per 24 hours
+        app_quota_per_window=1667    # 1667 posts per app per 24 hours
     ))
 
     # LLM API endpoints (generous limits - adjust as needed)
+    # Using time-based throttling for LLMs (no quota tracking needed)
     limiter.add_bucket(LLM_OBELISK, RateLimitConfig(
-        60,  # 60 requests per minute
         window_seconds=60,  # 1 minute window
-        name="Obelisk LLM",
-        max_retries=0,  # No retries - fail fast and fallback to Gemini
+        requests_per_window=60,  # 60 requests per minute
+        name="OpenAI (DIVYA) LLM",
+        max_retries=0,  # No retries - fail fast and fallback to Claude
         base_delay=2.0  # Longer base delay for LLM calls
     ))
     limiter.add_bucket(LLM_GEMINI, RateLimitConfig(
-        60,  # 60 requests per minute (Gemini has generous free tier limits)
         window_seconds=60,  # 1 minute window
+        requests_per_window=60,  # 60 requests per minute
         name="Gemini LLM",
+        max_retries=3,
+        base_delay=2.0  # Longer base delay for LLM calls
+    ))
+    limiter.add_bucket(LLM_CLAUDE, RateLimitConfig(
+        window_seconds=60,  # 1 minute window
+        requests_per_window=60,  # 60 requests per minute
+        name="Claude LLM",
         max_retries=3,
         base_delay=2.0  # Longer base delay for LLM calls
     ))
@@ -351,6 +525,8 @@ class EndpointType:
     TWEET_LOOKUP = TWITTER_TWEET_LOOKUP
     USER_LOOKUP = TWITTER_USER_LOOKUP
     HOME_TIMELINE = TWITTER_HOME_TIMELINE
+    USER_TIMELINE = TWITTER_USER_TIMELINE
+    USER_MENTIONS = TWITTER_USER_MENTIONS
 
 
 # =============================================================================

@@ -14,8 +14,6 @@ from backend.config import (
     MAX_TWEET_AGE_HOURS,
     TOKEN_FILE,
     USER_INFO_FILE,
-)
-from backend.config import (
     DEFAULT_TWITTER_USERNAME as USERNAME,
 )
 
@@ -140,12 +138,14 @@ def get_user_interactions_log(username: str | None = None) -> Path:
 
 
 def _archive_interactions_log(username: str, key: str) -> Path | None:
+    from backend.utlils.date_utils import now_utc
+
     log_path = get_user_interactions_log(username)
     if not log_path.exists() or not log_path.is_file():
         return None
 
     ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    timestamp = now_utc().strftime("%Y%m%dT%H%M%SZ")
     archive_path = ARCHIVE_DIR / f"{key}_{timestamp}_{log_path.name}"
     if archive_path.exists():
         archive_path = ARCHIVE_DIR / f"{key}_{time.time_ns()}_{log_path.name}"
@@ -182,13 +182,22 @@ def remove_entry_from_map(path: Path, username: str, tmp_suffix: str) -> bool:
     return True
 
 
-async def store_browser_state(username: str, context) -> None:
+async def store_browser_state(username: str, context, account_type: str = "user") -> None:
+    """
+    Store browser state for user or bread account.
+
+    Args:
+        username: Username/handle to store state for
+        context: Playwright browser context
+        account_type: Either "user" or "bread" to determine storage location
+    """
     from pydantic import ValidationError
 
     from backend.data.twitter.data_validation import BrowserState
+    from backend.utlils.date_utils import utc_iso_string
 
     state = await context.storage_state()
-    path = BROWSER_STATE_FILE
+    path = BREAD_STATE_FILE if account_type == "bread" else BROWSER_STATE_FILE
     cache: dict[str, Any] = {}
     if path.exists():
         try:
@@ -196,31 +205,32 @@ async def store_browser_state(username: str, context) -> None:
             if isinstance(cached, dict):
                 cache = cached
         except Exception as e:
-            error("Failed to read existing browser state file", status_code=500, exception_text=str(e), function_name="store_browser_state")
+            error(f"Failed to read existing {account_type} browser state file", status_code=500, exception_text=str(e), function_name="store_browser_state")
 
     # Add timestamp to track when the state was last updated
-    state["timestamp"] = datetime.utcnow().isoformat() + "Z"
+    state["timestamp"] = utc_iso_string()
 
     # Validate browser state before storing
     try:
         validated = BrowserState(**state)
         cache[username] = validated.model_dump()
     except ValidationError as e:
-        error(f"Invalid browser state data for {username}", status_code=500, exception_text=str(e), function_name="store_browser_state", username=username)
+        error(f"Invalid {account_type} browser state data for {username}", status_code=500, exception_text=str(e), function_name="store_browser_state", username=username)
         # Store anyway but log the validation error
         cache[username] = state
 
     atomic_file_update(path, cache)
-    notify(f"✅ Browser state saved for {username}")
+    notify(f"✅ {account_type.capitalize()} browser state saved for {username}")
 
 
-async def read_browser_state(browser, username: str, validate_session: bool = False) -> tuple[Any, Any] | None:
+async def read_browser_state(browser, username: str, account_type: str = "user", validate_session: bool = False) -> tuple[Any, Any] | None:
     """
-    Read and restore browser state for a user.
+    Read and restore browser state for a user or bread account.
 
     Args:
         browser: Playwright browser instance
         username: Twitter username/handle
+        account_type: Either "user" or "bread" to determine storage location
         validate_session: If True, verify session is still valid by checking Twitter
 
     Returns:
@@ -230,7 +240,7 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
 
     from backend.data.twitter.data_validation import BrowserState
 
-    path = BROWSER_STATE_FILE
+    path = BREAD_STATE_FILE if account_type == "bread" else BROWSER_STATE_FILE
     if not path.exists():
         return None
 
@@ -238,19 +248,19 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
         cache = json.loads(path.read_text())
     except Exception as e:
         path.unlink(missing_ok=True)
-        error("Could not parse browser state cache", status_code=500, exception_text=str(e), function_name="read_browser_state")
-        notify("⚠️ Could not parse browser state cache; starting fresh")
+        error(f"Could not parse {account_type} browser state cache", status_code=500, exception_text=str(e), function_name="read_browser_state")
+        notify(f"⚠️ Could not parse {account_type} browser state cache; starting fresh")
         return None
 
     if not isinstance(cache, dict):
         path.unlink(missing_ok=True)
-        error("Invalid browser state cache format: expected dict", status_code=500, function_name="read_browser_state")
-        notify("⚠️ Invalid browser state cache format; starting fresh")
+        error(f"Invalid {account_type} browser state cache format: expected dict", status_code=500, function_name="read_browser_state")
+        notify(f"⚠️ Invalid {account_type} browser state cache format; starting fresh")
         return None
 
     state = cache.get(username)
     if not state:
-        notify(f"⚠️ No saved browser state for {username}")
+        notify(f"⚠️ No saved {account_type} browser state for {username}")
         return None
 
     # Validate browser state
@@ -258,22 +268,22 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
         validated = BrowserState(**state)
         state = validated.model_dump()
     except ValidationError as e:
-        error(f"Invalid browser state data for {username}", status_code=500, exception_text=str(e), function_name="read_browser_state", username=username)
+        error(f"Invalid {account_type} browser state data for {username}", status_code=500, exception_text=str(e), function_name="read_browser_state", username=username)
         # Continue with invalid state but log the error
 
     # Check for auth_token cookie validity
     if not cookie_still_valid(state):
         cache.pop(username, None)
         atomic_file_update(path, cache)
-        notify(f"🔐 Relogging for {username} (missing/expired cookie)")
+        notify(f"🔐 Relogging for {username} ({account_type} - missing/expired cookie)")
         return None
 
     # Restore browser context with saved state
     ctx = await browser.new_context(storage_state=state)
-    notify(f"✅ Retrieved browser state for {username}")
+    notify(f"✅ Retrieved {account_type} browser state for {username}")
 
-    # Optional: Validate session is still authenticated
-    if validate_session:
+    # Optional: Validate session is still authenticated (only for user accounts)
+    if validate_session and account_type == "user":
         page = await ctx.new_page()
         try:
             await page.goto("https://twitter.com/home", timeout=10000)
@@ -299,6 +309,57 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
             await page.close()
 
     return browser, ctx
+
+
+# =============================================================================
+# Bread Account Browser State Management
+# =============================================================================
+
+# Bread accounts use separate storage from user accounts
+BREAD_STATE_FILE = CACHE_DIR / "bread_storage_state.json"
+
+
+async def store_bread_browser_state(bread_username: str, context) -> None:
+    """
+    DEPRECATED: Use store_browser_state(..., account_type='bread') instead.
+
+    Legacy wrapper for backward compatibility.
+    Bread accounts are burner accounts used for automated scraping
+    to avoid consuming user API quotas.
+
+    Args:
+        bread_username: Bread account username
+        context: Playwright browser context
+    """
+    import warnings
+    warnings.warn(
+        "store_bread_browser_state is deprecated. Use store_browser_state(..., account_type='bread') instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return await store_browser_state(bread_username, context, account_type="bread")
+
+
+async def read_bread_browser_state(browser, bread_username: str) -> tuple[Any, Any] | None:
+    """
+    DEPRECATED: Use read_browser_state(..., account_type='bread') instead.
+
+    Legacy wrapper for backward compatibility.
+
+    Args:
+        browser: Playwright browser instance
+        bread_username: Bread account username
+
+    Returns:
+        Tuple of (browser, context) if session exists and is valid, None otherwise
+    """
+    import warnings
+    warnings.warn(
+        "read_bread_browser_state is deprecated. Use read_browser_state(..., account_type='bread') instead.",
+        DeprecationWarning,
+        stacklevel=2
+    )
+    return await read_browser_state(browser, bread_username, account_type="bread")
 
 
 def load_user_info_entries() -> list[dict[str, Any]]:
@@ -547,15 +608,16 @@ def store_token(username: str, refresh_token: str, access_token: str | None = No
     """Persist the refresh token and optionally access token with expiration to a shared JSON map."""
     from pydantic import ValidationError
 
+    from backend.config import TOKEN_EXPIRY_BUFFER_SECONDS
     from backend.data.twitter.data_validation import Token
 
     tokens = read_tokens()
     path = TOKEN_FILE
 
-    # Calculate expiration timestamp (with 60 second buffer)
+    # Calculate expiration timestamp (with buffer from config)
     expires_at = None
     if access_token and expires_in:
-        expires_at = time.time() + expires_in - 60
+        expires_at = time.time() + expires_in - TOKEN_EXPIRY_BUFFER_SECONDS
 
     token_data = {"refresh_token": refresh_token, "access_token": access_token, "expires_at": expires_at}
 
@@ -592,13 +654,6 @@ def invalidate_user_token(username: str):
         notify(f"🔒 Invalidated OAuth token for {username} - re-authentication required")
 
 
-def _cache_key(username: str | None) -> str:
-    key = (username or "default").strip()
-    key = key or "default"
-    sanitized = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in key)
-    return sanitized or "default"
-
-
 def log_background_task(username: str, task_type: str, tweets_scraped: int = 0, replies_generated: int = 0, **extra_data):
     """
     Log background task execution to append-only log file.
@@ -610,10 +665,12 @@ def log_background_task(username: str, task_type: str, tweets_scraped: int = 0, 
         replies_generated: Number of replies generated
         **extra_data: Any additional data to log
     """
+    from backend.utlils.date_utils import utc_iso_string
+
     log_file = CACHE_DIR / "background_tasks.jsonl"
 
     # Create log entry
-    log_entry = {"timestamp": datetime.utcnow().isoformat() + "Z", "username": username, "task_type": task_type, "tweets_scraped": tweets_scraped, "replies_generated": replies_generated, **extra_data}
+    log_entry = {"timestamp": utc_iso_string(), "username": username, "task_type": task_type, "tweets_scraped": tweets_scraped, "replies_generated": replies_generated, **extra_data}
 
     try:
         # Append to log file (create if doesn't exist)
@@ -627,14 +684,23 @@ def log_background_task(username: str, task_type: str, tweets_scraped: int = 0, 
         notify(f"⚠️ Failed to log background task: {e}")
 
 
-def add_to_seen_tweets(username: str, tweet_ids: list[str]) -> None:
+def add_to_seen_tweets(username: str, tweets: list[dict]) -> None:
     """
-    Add tweet IDs to the seen_tweets map in user_info with current timestamp.
+    Add tweet IDs to the seen_tweets map in user_info with the tweet's posted time.
 
     Args:
         username: Twitter handle of the user
-        tweet_ids: List of tweet IDs to mark as seen
+        tweets: List of tweet dicts (must contain 'id' and 'created_at' fields)
     """
+    from backend.utlils.date_utils import utc_iso_string
+    from datetime import datetime
+
+    try:  # Python 3.11+
+        from datetime import UTC
+    except ImportError:
+        from datetime import timezone
+        UTC = timezone.utc
+
     user_info = read_user_info(username)
     if not user_info:
         notify(f"⚠️ Cannot add to seen_tweets: user {username} not found")
@@ -645,16 +711,29 @@ def add_to_seen_tweets(username: str, tweet_ids: list[str]) -> None:
     if not isinstance(seen_tweets, dict):
         seen_tweets = {}
 
-    # Add new tweet IDs with current timestamp
-    current_time = datetime.utcnow().isoformat() + "Z"
-    for tweet_id in tweet_ids:
-        if tweet_id:
-            seen_tweets[str(tweet_id)] = current_time
+    # Add new tweet IDs with their posted time (created_at)
+    added_count = 0
+    for tweet in tweets:
+        tweet_id = tweet.get("id") or tweet.get("tweet_id")
+        if not tweet_id:
+            continue
+
+        # Use tweet's posted time (created_at), fallback to current time
+        created_at = tweet.get("created_at")
+        if created_at:
+            # Store the tweet's posted time as-is (should already be ISO format)
+            seen_tweets[str(tweet_id)] = created_at
+        else:
+            # Fallback: use current time if created_at missing
+            seen_tweets[str(tweet_id)] = utc_iso_string()
+            notify(f"⚠️ Tweet {tweet_id} missing created_at, using current time")
+
+        added_count += 1
 
     # Update user_info
     user_info["seen_tweets"] = seen_tweets
     write_user_info(user_info)
-    notify(f"👁️ Added {len(tweet_ids)} tweet(s) to seen_tweets for {username}")
+    notify(f"👁️ Added {added_count} tweet(s) to seen_tweets for {username}")
 
 
 def remove_from_seen_tweets(username: str, tweet_ids: list[str]) -> int:
@@ -695,9 +774,13 @@ def cleanup_seen_tweets(username: str, hours: int = MAX_TWEET_AGE_HOURS) -> int:
     """
     Remove tweet IDs older than specified hours from seen_tweets map.
 
+    Purges tweets based on their posted time (created_at), not when we saw them.
+    This aligns with the scraping window - tweets older than the window will never
+    be surfaced again, so no need to track them as "seen".
+
     Args:
         username: Twitter handle of the user
-        hours: Age threshold in hours (default: MAX_TWEET_AGE_HOURS)
+        hours: Age threshold in hours (default: MAX_TWEET_AGE_HOURS = 24)
 
     Returns:
         Number of tweet IDs removed

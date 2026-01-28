@@ -58,7 +58,7 @@ class User(BaseModel):
     posts_left: int | None = None
 
     # seen tweets tracking (to prevent showing duplicate tweets)
-    seen_tweets: dict[str, str] = {}  # tweet_id -> timestamp
+    seen_tweets: dict[str, str] = {}  # tweet_id -> tweet's posted time (created_at ISO timestamp)
 
     # since_id tracking (to only fetch NEW tweets per source)
     last_tweet_ids: dict[str, str] = {}  # source_key (e.g., "query:philosophy", "account:elonmusk", "home_timeline") -> last_tweet_id

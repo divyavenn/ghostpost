@@ -63,8 +63,9 @@ class SearchResults(BaseModel):
 
 class NewPostDiscoveryResults(BaseModel):
     """Metrics for find_and_reply_to_new_posts job."""
-    total_tweets_found: int  # Total tweets fetched 
+    total_tweets_found: int  # Total tweets fetched
     per_search_results : list[SearchResults]
+    tweets_skipped_already_seen: int = 0  # Tweets filtered during Phase 4 because already in seen_tweets
 
 class UserActivityResults(BaseModel):
     """Metrics for find_user_activity job."""
@@ -110,6 +111,7 @@ class TwitterAction(str, Enum):
     USER_POSTS_DISCOVERED = "user_post_discovery"
     #  (how many users posts for which enagement metrics were updated, how many comments were scraped)
     ENGAGEMENT_DISCOVERED = "engagement_discover"
+   
     # (how many logs processed and what user metrics were updated as result)
     ANALYSIS = "analysis"
 

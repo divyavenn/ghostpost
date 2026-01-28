@@ -124,6 +124,7 @@ async def run_all_jobs_for_user(username: str):
         find_and_reply_to_engagement,
         analyze
     )
+    from backend.twitter.bread_accounts import run_with_bread_account
 
     try:
         notify(f"🤖 [Scheduler] Starting all jobs for user: {username}")
@@ -131,31 +132,43 @@ async def run_all_jobs_for_user(username: str):
         # Step 0: Cleanup expired browser sessions to prevent resource leaks
         await cleanup_expired_browser_sessions()
 
-        # Job 1: Find and reply to new posts
+        # Job 1: Find and reply to new posts (with bread account)
         try:
-            await find_and_reply_to_new_posts(username, triggered_by="scheduled")
+            await run_with_bread_account(
+                find_and_reply_to_new_posts,
+                username,
+                triggered_by="scheduled"
+            )
         except Exception as e:
             from backend.utlils.utils import error
             error(f"Job 1 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
             notify(f"❌ [Scheduler] Job 1 (find_and_reply_to_new_posts) failed for {username}: {e}")
 
-        # Job 2: Find user activity
+        # Job 2: Find user activity (with bread account)
         try:
-            await find_user_activity(username, triggered_by="scheduled")
+            await run_with_bread_account(
+                find_user_activity,
+                username,
+                triggered_by="scheduled"
+            )
         except Exception as e:
             from backend.utlils.utils import error
             error(f"Job 2 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
             notify(f"❌ [Scheduler] Job 2 (find_user_activity) failed for {username}: {e}")
 
-        # Job 3: Find and reply to engagement
+        # Job 3: Find and reply to engagement (with bread account)
         try:
-            await find_and_reply_to_engagement(username, triggered_by="scheduled")
+            await run_with_bread_account(
+                find_and_reply_to_engagement,
+                username,
+                triggered_by="scheduled"
+            )
         except Exception as e:
             from backend.utlils.utils import error
             error(f"Job 3 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
             notify(f"❌ [Scheduler] Job 3 (find_and_reply_to_engagement) failed for {username}: {e}")
 
-        # Job 4: Analyze
+        # Job 4: Analyze (no browser context needed)
         try:
             await analyze(username, triggered_by="scheduled")
         except Exception as e:

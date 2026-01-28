@@ -538,8 +538,8 @@ async def add_to_queue(payload: AddToQueueRequest, username: str = Query(...)) -
 
         if payload.response_to in comments_map:
             comments_map[payload.response_to]["post_pending"] = True
-            # Get the parent tweet ID (what the comment is replying to)
-            tweet_id_to_reply = comments_map[payload.response_to].get("in_reply_to_status_id") or payload.response_to
+            # For comment replies, reply to the comment itself (not its parent)
+            tweet_id_to_reply = payload.response_to
             write_comments_cache(username, comments_map)
 
     # Add to user's post_queue (persisted state)

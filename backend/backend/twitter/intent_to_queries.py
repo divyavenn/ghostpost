@@ -42,34 +42,35 @@ async def generate_queries_from_intent(intent: str, username: str) -> list[tuple
         User Intent: "{intent}"
 
         For each query, consider:
-        1. **Topics**: Main themes and subjects
-        2. **Entities**: Specific organizations, funds, companies, communities
-        3. **Must-have terms**: Required keywords that must appear
-        4. **Should-have terms**: Synonyms, hashtags, related terms (optional but helpful)
-        5. **Negatives**: Spam terms, irrelevant content to exclude
-        6. **Author types**: Who typically tweets about this (VCs, founders, engineers, etc.)
+        1. **Topics**: Main themes and subjects (use broad topic keywords)
+        2. **Entities**: Only include specific entities if they are central to the intent
+        3. **Core terms**: 2-3 most important keywords (use OR for synonyms)
+        4. **Negatives**: Only spam/crypto/bot filters - avoid topic exclusions
 
-        Generate queries that are:
-        - Specific enough to filter noise
-        - Broad enough to catch relevant content
-        - Using Twitter search operators correctly
-        - Focused on high-quality discussions
+        IMPORTANT - Generate queries that are:
+        - **BROAD**: Cast a wide net - use OR operators liberally for synonyms
+        - **SIMPLE**: Use 2-4 keywords max, not 6-8
+        - **INCLUSIVE**: Avoid overly restrictive filters
+        - **Topic-focused**: Target the general topic area, not hyper-specific niches
+
+        BAD (too specific): "early stage startup (founder OR founding) (hiring OR recruiting) (engineer OR developer) -filter:links -filter:replies lang:en"
+        GOOD (appropriately broad): "(startup OR founder) (hiring OR recruiting) -crypto lang:en"
 
         Return a JSON array of objects. Each object should have:
         - "query": Full Twitter search query with operators
         - "summary": 1-2 word description (e.g., "Seed Funding", "YC Startups", "Tech Hiring")
 
         Query syntax to use:
-        - Use quotes for exact phrases: "raising seed"
-        - Use OR for alternatives: (VC OR "venture capital")
-        - Use - to exclude: -giveaway -crypto
-        - Include filters: -filter:links -filter:replies lang:en
+        - Use quotes for exact phrases (sparingly): "raising seed"
+        - Use OR for alternatives generously: (VC OR "venture capital" OR investor)
+        - Use - to exclude only spam: -crypto -giveaway -bot
+        - Keep filters minimal: lang:en (avoid -filter:links and -filter:replies unless necessary)
 
-        Example format:
+        Example format (NOTE: These are appropriately broad):
         [
-        {{"query": "early stage startup (founder OR founding) (hiring OR recruiting) -filter:links -filter:replies lang:en", "summary": "Tech Hiring"}},
-        {{"query": "pre-seed OR preseed (raising OR fundraising) -giveaway -crypto -filter:links lang:en", "summary": "Seed Funding"}},
-        {{"query": "YC OR \\"Y Combinator\\" (batch OR portfolio) -filter:replies lang:en", "summary": "YC Startups"}}
+        {{"query": "(startup OR founder) hiring -crypto lang:en", "summary": "Startup Hiring"}},
+        {{"query": "(fundraising OR raising OR funding) (seed OR series) -crypto lang:en", "summary": "Funding Rounds"}},
+        {{"query": "(relationship OR dating OR love) (psychology OR philosophy) lang:en", "summary": "Relationships"}}
         ]
 
         Generate queries now as a JSON array:"""

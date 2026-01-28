@@ -169,7 +169,7 @@ def _update_intent_filter_examples(username: str, limit: int = 10) -> None:
     notify(f"📚 Updated intent filter examples ({len(examples)}) for @{username}")
 
 
-async def discover_recently_posted(username: str, user_handle: str, max_tweets: int = 50) -> dict[str, Any]:
+async def discover_recently_posted(username: str, user_handle: str, max_tweets: int = 50, ctx=None) -> dict[str, Any]:
     """
     Job 1: Discover user's recently posted tweets not tracked by the app.
 
@@ -198,7 +198,8 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
         update_monitoring_state,
         write_posted_tweets_cache,
     )
-    from backend.browser_automation.twitter.api import scrape_user_recent_tweets, get_thread, deep_scrape_thread
+    from backend.browser_automation.twitter.api import scrape_user_recent_tweets
+    from backend.twitter.twitter_router import get_thread, deep_scrape_thread
 
     notify(f"🔍 [discover_recently_posted] Starting for @{user_handle}")
 
@@ -224,7 +225,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
             notify(f"[DEBUG] Using since_id={since_id} for efficient polling")
 
         # Scrape user's recent tweets using API with efficient polling
-        recent_tweets = await scrape_user_recent_tweets(None, user_handle, max_tweets, since_id=since_id)
+        recent_tweets = await scrape_user_recent_tweets(ctx, user_handle, max_tweets, since_id=since_id)
         notify(f"📊 Found {len(recent_tweets)} recent tweets for @{user_handle}")
 
         skipped_existing = 0
@@ -258,7 +259,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 if in_reply_to and not existing_tweet.get("response_to_thread"):
                     try:
                         original_url = f"https://x.com/i/status/{in_reply_to}"
-                        thread_result = await get_thread(None, original_url, root_id=in_reply_to)
+                        thread_result = await get_thread(ctx, original_url, root_id=in_reply_to)
                         if thread_result and thread_result.get("thread"):
                             existing_tweet["response_to_thread"] = thread_result["thread"]
                             existing_tweet["responding_to"] = thread_result.get("author_handle", existing_tweet.get("responding_to", ""))
@@ -327,7 +328,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 if in_reply_to:
                     try:
                         original_url = f"https://x.com/i/status/{in_reply_to}"
-                        thread_result = await get_thread(None, original_url, root_id=in_reply_to)
+                        thread_result = await get_thread(ctx, original_url, root_id=in_reply_to)
 
                         if thread_result:
                             # Get thread text from the original tweet
@@ -413,7 +414,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 # Deep scrape if active state to get initial replies and QTs
                 if initial_state == "active":
                     try:
-                        scrape_result = await deep_scrape_thread(None, url, tweet_id, user_handle)
+                        scrape_result = await deep_scrape_thread(ctx, url, tweet_id, user_handle)
 
                         # Process replies
                         scraped_replies = scrape_result.get("replies", [])
@@ -450,7 +451,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
     return results
 
 
-async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]:
+async def discover_engagement(username: str, user_handle: str, ctx=None) -> dict[str, Any]:
     """
     Job 2: Monitor active/warm tweets for new engagement.
 
@@ -466,6 +467,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
     Args:
         username: User's cache key
         user_handle: User's Twitter handle
+        ctx: Browser context for scraping (optional)
 
     Returns:
         Summary dict with counts
@@ -504,7 +506,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
-                scrape_result = await deep_scrape_thread(None, url, tweet_id, user_handle)
+                scrape_result = await deep_scrape_thread(ctx, url, tweet_id, user_handle)
                 results["active_scraped"] += 1
 
                 # Process replies
@@ -565,7 +567,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
             url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
             try:
-                scrape_result = await shallow_scrape_thread(None, url, tweet_id)
+                scrape_result = await shallow_scrape_thread(ctx, url, tweet_id)
                 results["warm_scraped"] += 1
 
                 new_metrics = {
@@ -629,7 +631,7 @@ async def discover_engagement(username: str, user_handle: str) -> dict[str, Any]
     return results
 
 
-async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any]:
+async def discover_resurrected(username: str, user_handle: str, ctx=None) -> dict[str, Any]:
     """
     Job 3: Check for activity on cold tweets via user mentions API.
 
@@ -673,13 +675,23 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
             error("No access token available", status_code=401, function_name="discover_resurrected", critical=False)
             return results
 
-        # Get user ID from user_info
-        from backend.utlils.utils import read_user_info
+        # Get Twitter user ID from user_info
+        from backend.utlils.utils import read_user_info, write_user_info
+        from backend.browser_automation.twitter.api import _get_authenticated_user_id
         user_info = read_user_info(username)
-        user_id = user_info.get("uid")
+        user_id = user_info.get("twitter_user_id")
+
+        # If not set, fetch it and save
         if not user_id:
-            notify(f"⚠️ No user ID found for {username}")
-            return results
+            notify(f"⚠️ No Twitter user ID cached for {username}, fetching...")
+            user_id = await _get_authenticated_user_id(access_token)
+            if user_id:
+                user_info["twitter_user_id"] = user_id
+                write_user_info(user_info)
+                notify(f"✅ Cached Twitter user ID: {user_id}")
+            else:
+                notify(f"⚠️ Could not fetch Twitter user ID for {username}")
+                return results
 
         # Get cold tweet IDs for matching
         cold_tweets = get_tweets_by_monitoring_state(username, ["cold"])
@@ -728,7 +740,7 @@ async def discover_resurrected(username: str, user_handle: str) -> dict[str, Any
                 url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
 
                 # Deep scrape the resurrected tweet
-                scrape_result = await deep_scrape_thread(None, url, tweet_id, user_handle)
+                scrape_result = await deep_scrape_thread(ctx, url, tweet_id, user_handle)
 
                 # Process replies
                 scraped_replies = scrape_result.get("replies", [])

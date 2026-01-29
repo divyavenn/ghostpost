@@ -115,6 +115,119 @@ async def log_in(username: str, password: str, browser=None):
     return browser, ctx
 
 
+async def log_in_bread_account(username: str, password: str, browser=None):
+    """
+    Log in a bread account using password authentication.
+    Stores session to bread_storage_state.json (separate from user sessions).
+
+    Bread accounts are burner accounts used for automated scraping to avoid
+    consuming user API quotas or risking user account TOS violations.
+
+    Args:
+        username: Bread account username
+        password: Bread account password
+        browser: Optional existing browser instance (should already be headless)
+
+    Returns:
+        Tuple of (browser, context)
+
+    Raises:
+        Exception: If login fails (timeout, incorrect credentials, etc.)
+    """
+    from backend.utlils.utils import notify, store_browser_state, error
+
+    # Browser should already be created by BreadAccountContext
+    # but create if needed for testing (visible for debugging)
+    if browser is None:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=False)
+
+    ctx = await browser.new_context()
+    page = await ctx.new_page()
+
+    try:
+        notify(f"🔐 Logging in bread account: {username}")
+        await page.goto("https://x.com/i/flow/login?lang=en")
+        await asyncio.sleep(2)
+
+        # Fill username
+        notify(f"   → Entering username...")
+        await page.fill('input[name="text"]', username)
+        await page.press('input[name="text"]', "Enter")
+
+        # Wait for next screen - could be password or phone verification
+        await asyncio.sleep(3)
+
+        # Try to find password field (may need to wait for it)
+        notify(f"   → Waiting for password field...")
+        try:
+            await page.wait_for_selector('input[name="password"]', timeout=15000)
+            notify(f"   → Password field found, entering password...")
+            await page.fill('input[name="password"]', password)
+            await page.press('input[name="password"]', "Enter")
+        except Exception as e:
+            # Password field not found - may need manual intervention or different flow
+            notify(f"   ⚠️  Password field not found - checking page state...")
+            notify(f"   Current URL: {page.url}")
+
+            # Check if we're on a verification page
+            page_content = await page.content()
+            if "verification" in page_content.lower() or "verify" in page_content.lower():
+                notify(f"   ⚠️  Twitter is asking for verification")
+                notify(f"   ⏳ Waiting 60 seconds for manual verification...")
+
+                # Wait for user to complete verification manually
+                await asyncio.sleep(60)
+
+                # Try again to find password field
+                try:
+                    await page.wait_for_selector('input[name="password"]', timeout=5000)
+                    notify(f"   → Password field found after verification, continuing...")
+                    await page.fill('input[name="password"]', password)
+                    await page.press('input[name="password"]', "Enter")
+                except Exception:
+                    # Still not found - wait for home page directly
+                    notify(f"   → Password field still not found, waiting for login completion...")
+                    try:
+                        await page.wait_for_url("https://x.com/home", timeout=30_000)
+                        notify(f"   ✅ Login completed manually!")
+                        await store_browser_state(username, ctx, account_type="bread")
+                        notify(f"✅ Bread account {username} logged in successfully")
+                        return browser, ctx
+                    except Exception:
+                        raise Exception(f"Manual verification timeout. Current URL: {page.url}")
+            else:
+                raise Exception(f"Password field not found. Current URL: {page.url}. May need verification.")
+
+        # Wait for successful redirect to home
+        notify(f"   → Waiting for login to complete...")
+        await page.wait_for_url("https://x.com/home", timeout=60_000)
+
+        # Save bread account session
+        await store_browser_state(username, ctx, account_type="bread")
+        notify(f"✅ Bread account {username} logged in successfully")
+
+        return browser, ctx
+
+    except Exception as e:
+        # Cleanup on failure
+        try:
+            await page.close()
+            await ctx.close()
+        except Exception:
+            pass
+
+        error(
+            f"Failed to login bread account {username}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="log_in_bread_account",
+            username=username,
+            critical=False
+        )
+        raise
+
+
 async def get_home(browser=None, username=None):
     from backend.utlils.utils import read_browser_state
 
@@ -193,7 +306,7 @@ async def gather_trending(usernames, queries, username=None, query_summary_map=N
 
 
 async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, max_tweets=None):
-    from backend.data.twitter.edit_cache import cleanup_old_tweets, purge_unedited_tweets, write_to_cache
+    from backend.data.twitter.edit_cache import purge_unedited_tweets, write_to_cache
     from backend.user.user import read_user_settings
     from backend.utlils.utils import read_user_info
 
@@ -238,12 +351,9 @@ async def read_tweets(username=USERNAME, relevant_accounts=None, queries=None, m
     if max_tweets is None:
         max_tweets = user_settings.get("max_tweets_retrieve", MAX_TWEETS_RETRIEVE)
 
-    # NOTE: We no longer auto-purge unedited tweets before scraping.
-    # Instead, the user is prompted via modal after scraping completes.
-    # Only clean up OLD tweets (beyond age threshold) - these are stale regardless
-    await cleanup_old_tweets(username, hours=MAX_TWEET_AGE_HOURS)
-
-    # Clean up old seen_tweets entries
+    # NOTE: We no longer auto-purge tweets from cache automatically.
+    # Tweets are only deleted when user explicitly purges via UI or after successful posting.
+    # Only clean up old seen_tweets entries (IDs in the map, not the actual tweets)
     from backend.utlils.utils import cleanup_seen_tweets, is_tweet_seen
     cleanup_seen_tweets(username, hours=MAX_TWEET_AGE_HOURS)
 
@@ -336,7 +446,7 @@ async def _scrape_and_generate_background(username: str, relevant_accounts: list
         error(f"Error in background scraping/generation for {username}: {e}", status_code=500, function_name="_scrape_and_generate_background", username=username, critical=False)
 
 
-async def _run_find_and_reply_with_error_handling(username: str, triggered_by: str = "user"):
+async def _run_find_and_reply_with_error_handling(username: str, triggered_by: str = "manual"):
     """
     Wrapper that catches and logs any exceptions from find_and_reply_to_new_posts_with_retry.
     asyncio.create_task() silently swallows exceptions, so we need explicit handling.
@@ -346,7 +456,12 @@ async def _run_find_and_reply_with_error_handling(username: str, triggered_by: s
     """
     try:
         from backend.twitter.twitter_jobs import find_and_reply_to_new_posts_with_retry
-        await find_and_reply_to_new_posts_with_retry(username, triggered_by)
+        from backend.twitter.bread_accounts import run_with_bread_account
+        await run_with_bread_account(
+            find_and_reply_to_new_posts_with_retry,
+            username,
+            triggered_by=triggered_by
+        )
     except Exception as e:
         import traceback
         error_msg = f"find_and_reply_to_new_posts_with_retry crashed: {e}\n{traceback.format_exc()}"
@@ -382,7 +497,7 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
         notify(f"📋 [API] User {username} has account type: {account_type}")
 
         # Use asyncio.create_task with error handling wrapper for true parallel execution
-        asyncio.create_task(_run_find_and_reply_with_error_handling(username, "user"))
+        asyncio.create_task(_run_find_and_reply_with_error_handling(username, "manual"))
 
         notify(f"✅ [API] Background job scheduled for {username}")
 

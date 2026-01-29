@@ -230,15 +230,29 @@ def get_user_replied_comment_ids(username: str) -> set[str]:
     return replied_to_ids
 
 
-def get_thread_context(tweet_id: str, username: str) -> list[dict[str, Any]]:
+def get_thread_context(
+    tweet_id: str,
+    username: str,
+    posted_tweets: dict[str, Any] | None = None,
+    comments: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
     """
     Get full thread context for a tweet/comment.
     Returns ordered list from root -> current tweet.
+
+    Args:
+        tweet_id: The tweet/comment ID to get context for
+        username: User's Twitter handle
+        posted_tweets: Optional pre-loaded posted tweets cache (for performance)
+        comments: Optional pre-loaded comments cache (for performance)
     """
     from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
 
-    posted_tweets = read_posted_tweets_cache(username)
-    comments = read_comments_cache(username)
+    # Load caches only if not provided (for backward compatibility)
+    if posted_tweets is None:
+        posted_tweets = read_posted_tweets_cache(username)
+    if comments is None:
+        comments = read_comments_cache(username)
     user_tweet_ids = set(k for k in posted_tweets.keys() if k != "_order")
 
     tweet = posted_tweets.get(tweet_id) or comments.get(tweet_id)

@@ -8,7 +8,7 @@ This module provides a two-stage filtering system:
 
 from dotenv import load_dotenv
 
-from backend.twitter.logging import TweetAction, read_user_log
+from backend.twitter.logging import TwitterAction, read_user_log
 from backend.utlils.utils import error, notify, read_user_info
 
 # Load environment variables
@@ -35,7 +35,7 @@ def get_recent_reply_examples(username: str, limit: int = 5) -> tuple[list[dict]
         action = entry.get("action")
         metadata = entry.get("metadata", {})
 
-        if action == TweetAction.POSTED.value and len(replied_to) < limit:
+        if action == TwitterAction.REPLY_POSTED.value and len(replied_to) < limit:
             # This is a post the user replied to
             original_tweet = metadata.get("original_tweet_text", "")
             original_handle = metadata.get("original_handle", "")
@@ -45,7 +45,7 @@ def get_recent_reply_examples(username: str, limit: int = 5) -> tuple[list[dict]
                     "text": original_tweet[:500],  # Truncate long tweets
                 })
 
-        elif action == TweetAction.DELETED.value and len(skipped) < limit:
+        elif action == TwitterAction.DISCOVERED_POST_SKIPPED.value and len(skipped) < limit:
             # This is a post the user skipped (deleted from cache)
             original_tweet = metadata.get("original_tweet_text", "")
             original_handle = metadata.get("original_handle", "")

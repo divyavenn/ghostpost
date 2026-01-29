@@ -8,6 +8,9 @@ from backend.config import (
     AUTH_COOKIE,
     CACHE_DIR,
     MAX_TWEET_AGE_HOURS,
+    TOKEN_FILE,
+    USER_INFO_FILE,
+    DEFAULT_TWITTER_USERNAME as USERNAME,
 )
 
 # Ensure cache directory exists (for any legacy files)
@@ -48,9 +51,9 @@ def notify(msg: str):
     print(msg)
 
 
-def error(msg: str, status_code: int = 500, exception_text: str | None = None, function_name: str | None = None, username: str | None = None, user_id: str | None = None, critical: bool = False):
+def error(msg: str, status_code: int = 500, exception_text: str | None = None, function_name: str | None = None, username: str | None = None, user_id: str | None = None, critical: bool = False, platform: str = "Twitter"):
     """
-    Log the error to Supabase. If critical, raise a RuntimeError as well.
+    Log the error to Supabase using ErrorLog Pydantic model. If critical, raise a RuntimeError as well.
 
     Args:
         msg: Error message
@@ -60,8 +63,17 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
         username: Twitter handle (profile_handle) for the error context
         user_id: Supabase user UUID (use when twitter profile doesn't exist yet)
         critical: If True, raise RuntimeError and notify devs
+        critical: Whether to raise RuntimeError and message devs
+        platform: Platform where error occurred (default: "Twitter")
     """
     import inspect
+    from backend.twitter.logging import ErrorLog
+
+    try:
+        from datetime import UTC
+    except ImportError:
+        from datetime import timezone
+        UTC = timezone.utc
 
     from backend.utlils.supabase_client import log_error as sb_log_error
 
@@ -71,6 +83,23 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
         if frame and frame.f_back:
             function_name = frame.f_back.f_code.co_name
 
+    # Create ErrorLog Pydantic model
+    error_log = ErrorLog(
+        message=msg,
+        status_code=status_code,
+        calling_function=function_name or "unknown",
+        timestamp=datetime.now(UTC),
+        user_id=username,
+        platform=platform,  # type: ignore
+        raw_exception=exception_text or "",
+    )
+
+    # Append to errors.jsonl (create if doesn't exist)
+    errors_log_path = CACHE_DIR / "errors.jsonl"
+
+    try:
+        with open(errors_log_path, "a") as f:
+            f.write(error_log.model_dump_json() + "\n")
     timestamp = datetime.utcnow().isoformat() + "Z"
 
     try:
@@ -87,7 +116,8 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
 
     if critical:
         from backend.utlils.email import message_devs
-        message_devs(f"❌ Critical error in {function_name} for user {username}: {msg}. timestamp: {timestamp}")
+        timestamp_str = error_log.timestamp.isoformat()
+        message_devs(f"❌ Critical error in {function_name} for user {username}: {msg}. timestamp: {timestamp_str}")
         raise RuntimeError(f"❌ {msg}")
 
 
@@ -114,15 +144,68 @@ def get_user_interactions_log(username: str) -> Path:
     return CACHE_DIR / f"{_cache_key(username)}_log.json"
 
 
+def _archive_interactions_log(username: str, key: str) -> Path | None:
+    from backend.utlils.date_utils import now_utc
+
+    log_path = get_user_interactions_log(username)
+    if not log_path.exists() or not log_path.is_file():
+        return None
+
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = now_utc().strftime("%Y%m%dT%H%M%SZ")
+    archive_path = ARCHIVE_DIR / f"{key}_{timestamp}_{log_path.name}"
+    if archive_path.exists():
+        archive_path = ARCHIVE_DIR / f"{key}_{time.time_ns()}_{log_path.name}"
+
+    log_path.rename(archive_path)
+    return archive_path
+
+
+def atomic_file_update(path: Path, data: Any, tmp_suffix: str = ".tmp", *, ensure_ascii: bool = False) -> None:
+    if data:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(tmp_suffix)
+        tmp_path.write_text(json.dumps(data, indent=2, ensure_ascii=ensure_ascii))
+        tmp_path.replace(path)
+    else:
+        path.unlink(missing_ok=True)
+
+
+def remove_entry_from_map(path: Path, username: str, tmp_suffix: str) -> bool:
+    if not path.exists():
+        return False
+
+    try:
+        data = json.loads(path.read_text())
+    except Exception:
+        path.unlink(missing_ok=True)
+        return False
+
+    if not isinstance(data, dict) or username not in data:
+        return False
+
+    data.pop(username, None)
+    atomic_file_update(path, data, tmp_suffix)
+    return True
+
 # =============================================================================
 # BROWSER STATE FUNCTIONS
 # =============================================================================
 
-async def store_browser_state(username: str, context) -> None:
+async def store_browser_state(username: str, context, account_type: str = "user") -> None:
+    """
+    Store browser state for user or bread account.
+
+    Args:
+        username: Username/handle to store state for
+        context: Playwright browser context
+        account_type: Either "user" or "bread" to determine storage location
+    """
     from pydantic import ValidationError
 
     from backend.data.twitter.data_validation import BrowserState
     from backend.utlils.supabase_client import store_browser_state as sb_store_browser_state
+    from backend.utlils.date_utils import utc_iso_string
 
     state = await context.storage_state()
     state["timestamp"] = datetime.utcnow().isoformat() + "Z"
@@ -148,7 +231,7 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
     state = sb_get_browser_state(username)
 
     if not state:
-        notify(f"⚠️ No saved browser state for {username}")
+        notify(f"⚠️ No saved {account_type} browser state for {username}")
         return None
 
     # Validate browser state
@@ -166,10 +249,10 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
 
     # Restore browser context with saved state
     ctx = await browser.new_context(storage_state=state)
-    notify(f"✅ Retrieved browser state for {username}")
+    notify(f"✅ Retrieved {account_type} browser state for {username}")
 
-    # Optional: Validate session is still authenticated
-    if validate_session:
+    # Optional: Validate session is still authenticated (only for user accounts)
+    if validate_session and account_type == "user":
         page = await ctx.new_page()
         try:
             await page.goto("https://twitter.com/home", timeout=10000)
@@ -398,7 +481,7 @@ def store_token(username: str, refresh_token: str, access_token: str | None = No
     """Persist the refresh token and optionally access token with expiration."""
     from backend.utlils.supabase_client import store_token as sb_store_token
 
-    # Calculate expiration timestamp (with 60 second buffer)
+    # Calculate expiration timestamp (with buffer from config)
     expires_at = None
     if access_token and expires_in:
         expires_at = time.time() + expires_in - 60

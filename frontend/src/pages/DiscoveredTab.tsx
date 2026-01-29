@@ -16,6 +16,7 @@ interface DiscoveredTabProps {
   onRegenerate: (tweetId: string) => void;
   onTweetsSeen?: (tweetIds: string[]) => void;
   resetSeenKey?: number;  // Increment to clear seen tracking (after purge)
+  isJobRunning?: boolean;  // Whether find_and_reply_to_new_posts job is running
 }
 
 // Distribute tweets evenly between columns based on array index
@@ -39,6 +40,7 @@ export function DiscoveredTab({
   onRegenerate,
   onTweetsSeen,
   resetSeenKey,
+  isJobRunning = false,
 }: DiscoveredTabProps) {
   // Track which tweets have been seen in this session (debounce)
   const seenIdsRef = useRef<Set<string>>(new Set());
@@ -147,6 +149,7 @@ export function DiscoveredTab({
                   isDeleting={deletingTweetIds.has(tweet.id)}
                   isPosting={postingTweetIds.has(tweet.id)}
                   isRegenerating={regeneratingTweetIds.has(tweet.id)}
+                  isJobRunning={isJobRunning}
                 />
               </div>
             </AnimatedListItem>
@@ -174,6 +177,7 @@ export function DiscoveredTab({
                   isDeleting={deletingTweetIds.has(tweet.id)}
                   isPosting={postingTweetIds.has(tweet.id)}
                   isRegenerating={regeneratingTweetIds.has(tweet.id)}
+                  isJobRunning={isJobRunning}
                 />
               </div>
             </AnimatedListItem>

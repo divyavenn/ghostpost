@@ -9,7 +9,7 @@ import asyncio
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from backend.config import OBELISK_KEY
+from backend.config import DIVYA_API_KEY
 from backend.utlils.utils import error, notify, read_user_info
 
 # Prompt variants for comment replies - can add more for A/B testing
@@ -251,13 +251,26 @@ def build_comment_prompt(comment: dict, thread_context: list[dict], user_handle:
 
 
 async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", commenter_handle: str | None = None, prompt_variant: str = "default", username: str = "unknown") -> dict:
-    """Generate a comment reply using the unified LLM caller."""
-    from backend.utlils.llm import ask_llm
+    """Generate a comment reply using the unified LLM caller with Claude fallback."""
+    from backend.utlils.llm import ask_llm, ask_claude
 
     # Build system prompt personalized with commenter handle
     system_prompt = build_comment_reply_system_prompt(commenter_handle)
 
-    return await ask_llm(
+    # If no model specified, use Claude directly (user has no model configured)
+    if not model or model == "":
+        notify(f"ℹ️ No model configured, using Claude")
+        return await ask_claude(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model="claude-opus-4-5-20251101",
+            image_urls=image_urls,
+            username=username,
+            prompt_type="COMMENT REPLY"
+        )
+
+    # Try DIVYA model (OpenAI fine-tuned) first
+    response = await ask_llm(
         system_prompt=system_prompt,
         user_prompt=prompt,
         model=model,
@@ -265,6 +278,22 @@ async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model
         username=username,
         prompt_type="COMMENT REPLY"
     )
+
+    # If DIVYA model failed, fallback to Claude
+    if "error" in response:
+        notify(f"⚠️ DIVYA model failed, falling back to Claude: {response.get('error')}")
+        response = await ask_claude(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model="claude-opus-4-5-20251101",
+            image_urls=image_urls,
+            username=username,
+            prompt_type="COMMENT REPLY"
+        )
+        if "message" in response:
+            notify(f"✅ Claude fallback successful")
+
+    return response
 
 
 async def generate_replies_for_comment(
@@ -370,14 +399,18 @@ async def generate_comment_replies(
         get_thread_context,
         update_comment_generated_replies,
     )
+    from backend.config import GEMINI_API_KEY
 
-    if not OBELISK_KEY:
-        error("OBELISK_KEY not configured", status_code=500, function_name="generate_comment_replies", username=username, critical=True)
-        raise ValueError("OBELISK_KEY not configured")
+    # Check if at least one API key is configured
+    if not DIVYA_API_KEY and not GEMINI_API_KEY:
+        error("Neither DIVYA_API_KEY nor GEMINI_API_KEY configured", status_code=500, function_name="generate_comment_replies", username=username, critical=True)
+        raise ValueError("Neither DIVYA_API_KEY nor GEMINI_API_KEY configured")
 
     user_info = read_user_info(username)
-    models = user_info.get("models", ["claude-3-5-sonnet-20241022"]) if user_info else ["claude-3-5-sonnet-20241022"]
-    num_generations = user_info.get("number_of_generations", 2) if user_info else 2
+    # If models not configured, use None to trigger Gemini
+    models = user_info.get("models", [None]) if user_info and user_info.get("models") else [None]
+    # Always generate only 1 reply for comments (UI only shows one option)
+    num_generations = 1
 
     results = {
         "processed": 0,
@@ -501,7 +534,6 @@ async def edit_comment_reply_endpoint(
         update_comment_generated_replies,
     )
     from backend.data.twitter.posted_tweets_cache import read_posted_tweets_cache
-    from backend.twitter.logging import TweetAction, log_tweet_action
 
     comment = get_comment(username, comment_id)
     if not comment:
@@ -545,23 +577,6 @@ async def edit_comment_reply_endpoint(
 
     update_comment_generated_replies(username, comment_id, generated_replies)
 
-    # Log the edit action
-    log_tweet_action(
-        username=username,
-        action=TweetAction.COMMENT_REPLY_EDITED,
-        tweet_id=comment_id,
-        metadata={
-            "comment_id": comment_id,
-            "comment_text": comment.get("text", ""),
-            "comment_author": comment.get("handle", ""),
-            "reply_index": payload.reply_index,
-            "old_reply": old_text,
-            "new_reply": payload.new_reply,
-            "original_posted_tweet_id": posted_tweet_id,
-            "original_posted_tweet_text": posted_tweet_text,
-        }
-    )
-
     return {
         "message": "Reply edited successfully",
         "comment_id": comment_id,
@@ -581,9 +596,11 @@ async def regenerate_single_comment_reply_endpoint(
         get_thread_context,
         update_comment_generated_replies,
     )
+    from backend.config import GEMINI_API_KEY
 
-    if not OBELISK_KEY:
-        error("OBELISK_KEY not configured", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
+    # Check if at least one API key is configured
+    if not DIVYA_API_KEY and not GEMINI_API_KEY:
+        error("Neither DIVYA_API_KEY nor GEMINI_API_KEY configured", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
 
     comment = get_comment(username, comment_id)
     if not comment:
@@ -594,8 +611,10 @@ async def regenerate_single_comment_reply_endpoint(
         error(f"No thread context for comment {comment_id}", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
 
     user_info = read_user_info(username)
-    models = user_info.get("models", ["claude-3-5-sonnet-20241022"]) if user_info else ["claude-3-5-sonnet-20241022"]
-    num_generations = user_info.get("number_of_generations", 2) if user_info else 2
+    # If models not configured, use None to trigger Gemini
+    models = user_info.get("models", [None]) if user_info and user_info.get("models") else [None]
+    # Always generate only 1 reply for comments (UI only shows one option)
+    num_generations = 1
 
     replies = await generate_replies_for_comment(
         comment=comment,

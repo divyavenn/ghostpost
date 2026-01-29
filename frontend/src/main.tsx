@@ -14,6 +14,7 @@ import { ResetPassword } from './pages/ResetPassword.tsx'
 import { LoginError } from './pages/LoginError.tsx'
 import { Pricing } from './pages/Pricing.tsx'
 import { BillingSuccess } from './pages/BillingSuccess.tsx'
+import { Onboarding } from './pages/Onboarding.tsx'
 import { NoModelError } from './components/NoModelError.tsx'
 import { LoginLoading } from './components/LoginLoading.tsx'
 import { LoginSuccess } from './components/LoginSuccess.tsx'
@@ -24,6 +25,7 @@ createRoot(document.getElementById('root')!).render(
       <Routes>
         <Route path="/" element={<App />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/login-error" element={<LoginError />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
         <Route path="/connect-twitter" element={<ConnectTwitter />} />

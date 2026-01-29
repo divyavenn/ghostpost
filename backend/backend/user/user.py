@@ -8,6 +8,7 @@ from backend.data.twitter.data_validation import (
     UpdateEmailRequest,
     UpdateModelsRequest,
     UpdateSettingsRequest,
+    UpdateSurveyDataRequest,
 )
 from backend.utlils.utils import notify, read_user_info, write_user_info
 
@@ -111,12 +112,13 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
     # Frontend handles both formats
     queries = user_info.get("queries", [])
 
-    # relevant_accounts is a dict: {handle: validated}
+    # relevant_accounts format: {handle: {"user_id": str | None, "validated": bool}}
+    # (legacy format: {handle: validated} is also supported for migration)
     relevant_accounts = user_info.get("relevant_accounts", {})
 
     return {
         "queries": queries,  # Return queries with summaries intact
-        "relevant_accounts": relevant_accounts,
+        "relevant_accounts": relevant_accounts,  # Pass through as-is
         "ideal_num_posts": user_info.get("ideal_num_posts", 30),
         "number_of_generations": user_info.get("number_of_generations", 1),
         "min_impressions_filter": user_info.get("min_impressions_filter", 2000),
@@ -128,7 +130,7 @@ def read_user_settings(handle: str) -> dict[str, Any] | None:
 
 def write_user_settings(handle: str,
                         queries: list | None = None,  # Can be list of strings or [query, summary] pairs
-                        relevant_accounts: dict[str, bool] | None = None,
+                        relevant_accounts: dict[str, bool | dict[str, Any]] | None = None,  # New: {handle: {"user_id": ..., "validated": ...}}, Old: {handle: bool}
                         ideal_num_posts: int | None = None,
                         number_of_generations: int | None = None,
                         min_impressions_filter: int | None = None,
@@ -150,7 +152,9 @@ def write_user_settings(handle: str,
         # Store as-is to preserve format
         user_info["queries"] = queries
     if relevant_accounts is not None:
-        # Store as dict {handle: validated}
+        # Store as dict - supports both formats:
+        # New: {handle: {"user_id": str | None, "validated": bool}}
+        # Old: {handle: bool} (for migration)
         user_info["relevant_accounts"] = relevant_accounts
     if ideal_num_posts is not None:
         user_info["ideal_num_posts"] = ideal_num_posts
@@ -242,6 +246,33 @@ async def update_user_email_endpoint(handle: str, payload: UpdateEmailRequest) -
     except Exception as e:
         error("Error updating email", status_code=500, exception_text=str(e), function_name="update_user_email_endpoint", username=handle)
         raise HTTPException(status_code=500, detail=f"Error updating email: {str(e)}") from e
+
+
+@router.patch("/{handle}/survey-data")
+async def update_survey_data_endpoint(handle: str, payload: UpdateSurveyDataRequest) -> dict:
+    """Update user survey data (onboarding responses, preferences, etc.)."""
+    from backend.utlils.utils import error, read_user_info, write_user_info
+
+    try:
+        user_info = read_user_info(handle)
+        if not user_info:
+            error(f"User {handle} not found", status_code=404, function_name="update_survey_data_endpoint", username=handle)
+            raise HTTPException(status_code=404, detail=f"User {handle} not found")
+
+        # Merge new survey data with existing (allows partial updates)
+        existing_survey_data = user_info.get("survey_data", {})
+        existing_survey_data.update(payload.survey_data)
+        user_info["survey_data"] = existing_survey_data
+        write_user_info(user_info)
+
+        notify(f"✅ Updated survey data for @{handle}")
+
+        return {"message": "Survey data updated successfully", "survey_data": user_info["survey_data"]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        error("Error updating survey data", status_code=500, exception_text=str(e), function_name="update_survey_data_endpoint", username=handle)
+        raise HTTPException(status_code=500, detail=f"Error updating survey data: {str(e)}") from e
 
 
 @router.get("/{handle}/settings")
@@ -360,8 +391,10 @@ async def update_settings_endpoint(handle: str, payload: UpdateSettingsRequest) 
 
 @router.post("/{handle}/settings/account")
 async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> dict:
-    """Add a new account to relevant_accounts."""
-    from backend.utlils.utils import error, read_user_info, write_user_info
+    """Add a new account to relevant_accounts. Verifies account exists and fetches user_id."""
+    from backend.browser_automation.twitter.api import _get_user_by_username
+    from backend.twitter.authentication import ensure_access_token
+    from backend.utlils.utils import error, notify, read_user_info, write_user_info
 
     try:
         user_info = read_user_info(handle)
@@ -375,8 +408,32 @@ async def add_account_endpoint(handle: str, account: RelevantAccountModel) -> di
         if account.handle in relevant_accounts:
             return {"message": "Account already added", "settings": read_user_settings(handle)}
 
-        # Add new account
-        relevant_accounts[account.handle] = account.validated
+        # Verify account exists via Twitter API and get user_id
+        user_id = None
+        try:
+            access_token = await ensure_access_token(handle)
+            if access_token:
+                notify(f"[API] Verifying account @{account.handle} exists...")
+                user_lookup = await _get_user_by_username(access_token, account.handle)
+                user_data = user_lookup.get("data")
+
+                if user_data and user_data.get("id"):
+                    user_id = user_data.get("id")
+                    notify(f"[API] ✓ Account @{account.handle} verified (user_id={user_id})")
+                else:
+                    error(f"Account @{account.handle} not found on Twitter", status_code=404, function_name="add_account_endpoint", username=handle)
+                    raise HTTPException(status_code=404, detail=f"Account @{account.handle} not found on Twitter")
+        except HTTPException:
+            raise
+        except Exception as e:
+            notify(f"⚠️ Could not verify account @{account.handle}: {e}")
+            # Continue without user_id if verification fails (will be looked up when needed)
+
+        # Add new account with user_id
+        relevant_accounts[account.handle] = {
+            "user_id": user_id,
+            "validated": account.validated
+        }
         user_info["relevant_accounts"] = relevant_accounts
         write_user_info(user_info)
 
@@ -406,8 +463,18 @@ async def update_account_validation_endpoint(handle: str, account: str, validate
             error(f"Account @{account} not found", status_code=404, function_name="update_account_validation_endpoint", username=handle)
             raise HTTPException(status_code=404, detail=f"Account @{account} not found")
 
-        # Update validation status
-        relevant_accounts[account] = validated
+        # Update validation status (handle both old boolean format and new dict format)
+        account_data = relevant_accounts[account]
+        if isinstance(account_data, dict):
+            # New format: {"user_id": ..., "validated": ...}
+            account_data["validated"] = validated
+        else:
+            # Old format: boolean -> migrate to new format
+            relevant_accounts[account] = {
+                "user_id": None,
+                "validated": validated
+            }
+
         user_info["relevant_accounts"] = relevant_accounts
         write_user_info(user_info)
 

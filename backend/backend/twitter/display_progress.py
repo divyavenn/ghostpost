@@ -40,7 +40,7 @@ def get_trigger_icon(triggered_by: str) -> str:
     return "⏰" if triggered_by == "scheduler" else "👤"
 
 
-def print_job_start(job_name: str, username: str, triggered_by: str = "user") -> None:
+def print_job_start(job_name: str, username: str, triggered_by: str = "manual") -> None:
     """Print a job start message."""
     if not DEBUG_LOGS:
         return
@@ -96,8 +96,12 @@ def print_progress_bar(
         current: Current progress count
         total: Total items to process
         username: User the job is running for
-        triggered_by: "user" or "scheduler"
+        triggered_by: "manual" or "scheduled"
     """
+    # Progress bars disabled - job logging happens to user log files instead
+    return
+
+    # Original implementation preserved below (unreachable)
     if total <= 0:
         return
 

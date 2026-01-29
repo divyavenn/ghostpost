@@ -93,6 +93,23 @@ class ReplyTweet(BaseModel):
     reply_index: int | None = None
 
 
+class AddToQueueRequest(BaseModel):
+    """Request to add a tweet to the posting queue."""
+    type: str  # "reply" or "comment_reply"
+    response_to: str  # ID of tweet/comment being replied to
+    reply: str  # The reply text
+    reply_index: int | None = None
+    model: str | None = None
+    prompt_variant: str | None = None
+    # Context for display
+    media: list[dict] = []
+    parent_chain: list[str] = []
+    response_to_thread: list[str] = []
+    responding_to: str = ""
+    replying_to_pfp: str = ""
+    original_tweet_url: str = ""
+
+
 async def post(username, payload: dict, cache_id: str | None = None, reply_index: int | None = None, post_type: str = "reply") -> dict:
     """
     Post a tweet via Twitter API.
@@ -514,6 +531,318 @@ async def delete_posted_tweet(tweet_id: str, username: str = Query(...)) -> dict
         # Other error
         error("Twitter API error when deleting tweet", status_code=response.status_code or 500, exception_text=response.error_message, function_name="delete_posted_tweet", username=username, critical=True)
         raise HTTPException(status_code=response.status_code or 500, detail=f"Twitter API error: {response.error_message}")
+
+
+@router.post("/queue")
+async def add_to_queue(payload: AddToQueueRequest, username: str = Query(...)) -> dict:
+    """Add a tweet to the posting queue and immediately process it.
+
+    Flow:
+    1. Add to queue (persisted in case of browser close)
+    2. Mark source as post_pending=true
+    3. Post to Twitter
+    4. On success: remove from queue, delete from source cache
+    5. On failure: remove from queue, clear post_pending (item reappears)
+
+    Args:
+        payload: The queue item with reply text and context
+        username: The user's handle
+
+    Returns:
+        Success/failure with posted tweet info or error
+    """
+    import json
+    from datetime import datetime, timezone
+
+    from backend.data.twitter.edit_cache import delete_tweet, get_user_tweet_cache
+    from backend.utlils.utils import read_user_info, write_user_info
+
+    # Validate type
+    if payload.type not in ("reply", "comment_reply"):
+        raise HTTPException(status_code=400, detail="Invalid type. Must be 'reply' or 'comment_reply'")
+
+    # Get cache_id for reply type (needed for post function)
+    cache_id = None
+    tweet_id_to_reply = payload.response_to
+
+    if payload.type == "reply":
+        # Mark in tweets cache and get cache_id
+        cache_path = get_user_tweet_cache(username)
+        if cache_path.exists():
+            with open(cache_path, encoding="utf-8") as f:
+                tweets = json.load(f)
+
+            for tweet in tweets:
+                if tweet.get("id") == payload.response_to or tweet.get("cache_id") == payload.response_to:
+                    tweet["post_pending"] = True
+                    cache_id = tweet.get("cache_id")
+                    tweet_id_to_reply = tweet.get("id")  # Use the actual tweet ID
+                    break
+
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(tweets, f, indent=2)
+    else:
+        # Mark in comments cache
+        from backend.data.twitter.comments_cache import read_comments_cache, write_comments_cache
+        comments_map = read_comments_cache(username)
+
+        if payload.response_to in comments_map:
+            comments_map[payload.response_to]["post_pending"] = True
+            # For comment replies, reply to the comment itself (not its parent)
+            tweet_id_to_reply = payload.response_to
+            write_comments_cache(username, comments_map)
+
+    # Add to user's post_queue (persisted state)
+    user_info = read_user_info(username)
+    if not user_info:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    post_queue = user_info.get("post_queue", [])
+
+    # Check if already in queue (prevent duplicates)
+    for item in post_queue:
+        if item.get("response_to") == payload.response_to:
+            return {"message": "Already in queue", "queued": False, "status": "duplicate"}
+
+    # Create queue item
+    queue_item = {
+        "type": payload.type,
+        "response_to": payload.response_to,
+        "reply": payload.reply,
+        "reply_index": payload.reply_index,
+        "model": payload.model,
+        "prompt_variant": payload.prompt_variant,
+        "media": payload.media,
+        "parent_chain": payload.parent_chain,
+        "response_to_thread": payload.response_to_thread,
+        "responding_to": payload.responding_to,
+        "replying_to_pfp": payload.replying_to_pfp,
+        "original_tweet_url": payload.original_tweet_url,
+        "queued_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    post_queue.append(queue_item)
+    user_info["post_queue"] = post_queue
+    write_user_info(user_info)
+
+    # Now immediately process the post
+    try:
+        # Build payload for Twitter API
+        twitter_payload = {
+            "text": payload.reply,
+            "reply": {"in_reply_to_tweet_id": tweet_id_to_reply}
+        }
+
+        # Determine post type
+        post_type = "comment_reply" if payload.type == "comment_reply" else "reply"
+
+        # Post to Twitter
+        result = await post(username, twitter_payload, cache_id=cache_id, reply_index=payload.reply_index, post_type=post_type)
+
+        # Success! Remove from queue
+        user_info = read_user_info(username)
+        if user_info:
+            user_info["post_queue"] = [q for q in user_info.get("post_queue", []) if q.get("response_to") != payload.response_to]
+            write_user_info(user_info)
+
+        # Delete from source cache
+        if payload.type == "reply":
+            await delete_tweet(username, payload.response_to, log_deletion=False)
+        else:
+            from backend.data.twitter.comments_cache import delete_comment
+            delete_comment(username, payload.response_to)
+
+        # Auto-like the tweet we replied to (for replies to others)
+        if post_type == "reply":
+            try:
+                await like_tweet(username, tweet_id_to_reply)
+            except Exception:
+                pass  # Liking is not critical
+
+        return {
+            "message": "Posted successfully",
+            "status": "posted",
+            "posted_tweet_id": result.get("posted_tweet_id"),
+            "data": result
+        }
+
+    except HTTPException as e:
+        # Posting failed - remove from queue and clear post_pending
+        user_info = read_user_info(username)
+        if user_info:
+            user_info["post_queue"] = [q for q in user_info.get("post_queue", []) if q.get("response_to") != payload.response_to]
+            write_user_info(user_info)
+
+        # Clear post_pending flag
+        if payload.type == "reply":
+            cache_path = get_user_tweet_cache(username)
+            if cache_path.exists():
+                with open(cache_path, encoding="utf-8") as f:
+                    tweets = json.load(f)
+                for tweet in tweets:
+                    if tweet.get("id") == payload.response_to or tweet.get("cache_id") == payload.response_to:
+                        tweet["post_pending"] = False
+                        break
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(tweets, f, indent=2)
+        else:
+            from backend.data.twitter.comments_cache import read_comments_cache, write_comments_cache
+            comments_map = read_comments_cache(username)
+            if payload.response_to in comments_map:
+                comments_map[payload.response_to]["post_pending"] = False
+                write_comments_cache(username, comments_map)
+
+        # Re-raise the exception for the frontend
+        raise
+
+    except Exception as e:
+        # Unexpected error - same cleanup
+        user_info = read_user_info(username)
+        if user_info:
+            user_info["post_queue"] = [q for q in user_info.get("post_queue", []) if q.get("response_to") != payload.response_to]
+            write_user_info(user_info)
+
+        # Clear post_pending flag
+        if payload.type == "reply":
+            cache_path = get_user_tweet_cache(username)
+            if cache_path.exists():
+                with open(cache_path, encoding="utf-8") as f:
+                    tweets = json.load(f)
+                for tweet in tweets:
+                    if tweet.get("id") == payload.response_to or tweet.get("cache_id") == payload.response_to:
+                        tweet["post_pending"] = False
+                        break
+                with open(cache_path, "w", encoding="utf-8") as f:
+                    json.dump(tweets, f, indent=2)
+        else:
+            from backend.data.twitter.comments_cache import read_comments_cache, write_comments_cache
+            comments_map = read_comments_cache(username)
+            if payload.response_to in comments_map:
+                comments_map[payload.response_to]["post_pending"] = False
+                write_comments_cache(username, comments_map)
+
+        error(f"Unexpected error posting tweet: {e}", status_code=500, exception_text=str(e),
+              function_name="add_to_queue", username=username, critical=True)
+
+
+@router.get("/queue")
+async def get_queue(username: str = Query(...)) -> dict:
+    """Get the user's posting queue.
+
+    Returns:
+        List of pending posts in the queue
+    """
+    from backend.utlils.utils import read_user_info
+
+    user_info = read_user_info(username)
+    if not user_info:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    post_queue = user_info.get("post_queue", [])
+
+    return {"queue": post_queue, "count": len(post_queue)}
+
+
+@router.delete("/queue/{response_to}")
+async def remove_from_queue(response_to: str, username: str = Query(...)) -> dict:
+    """Remove an item from the posting queue (e.g., on failure or cancel).
+
+    Also clears post_pending flag on the source tweet/comment.
+
+    Args:
+        response_to: The ID of the tweet/comment that was being replied to
+        username: The user's handle
+
+    Returns:
+        Success message
+    """
+    import json
+
+    from backend.utlils.utils import read_user_info, write_user_info
+
+    user_info = read_user_info(username)
+    if not user_info:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    post_queue = user_info.get("post_queue", [])
+
+    # Find and remove the item
+    removed_item = None
+    new_queue = []
+    for item in post_queue:
+        if item.get("response_to") == response_to:
+            removed_item = item
+        else:
+            new_queue.append(item)
+
+    if not removed_item:
+        return {"message": "Item not found in queue", "removed": False}
+
+    user_info["post_queue"] = new_queue
+    write_user_info(user_info)
+
+    # Clear post_pending flag on source
+    if removed_item.get("type") == "reply":
+        from backend.data.twitter.edit_cache import get_user_tweet_cache
+        cache_path = get_user_tweet_cache(username)
+        if cache_path.exists():
+            with open(cache_path, encoding="utf-8") as f:
+                tweets = json.load(f)
+
+            for tweet in tweets:
+                if tweet.get("id") == response_to or tweet.get("cache_id") == response_to:
+                    tweet["post_pending"] = False
+                    break
+
+            with open(cache_path, "w", encoding="utf-8") as f:
+                json.dump(tweets, f, indent=2)
+    else:
+        from backend.data.twitter.comments_cache import read_comments_cache, write_comments_cache
+        comments_map = read_comments_cache(username)
+        if response_to in comments_map:
+            comments_map[response_to]["post_pending"] = False
+            write_comments_cache(username, comments_map)
+
+    return {"message": "Removed from queue", "removed": True, "item": removed_item}
+
+
+@router.get("/pending")
+async def get_pending_posts(username: str = Query(...)) -> dict:
+    """Get pending posts formatted for display in PostedTab.
+
+    Returns posts in a format similar to PostedTweet so they can be displayed
+    in the PostingInProgress component.
+
+    Returns:
+        List of pending posts with display-ready data
+    """
+    from backend.utlils.utils import read_user_info
+
+    user_info = read_user_info(username)
+    if not user_info:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    post_queue = user_info.get("post_queue", [])
+
+    # Format for frontend display
+    pending_posts = []
+    for item in post_queue:
+        pending_post = {
+            "id": f"pending-{item.get('response_to')}",
+            "originalTweetId": item.get("response_to"),
+            "text": item.get("reply", ""),
+            "respondingTo": item.get("responding_to", ""),
+            "originalTweetUrl": item.get("original_tweet_url", ""),
+            "originalThreadText": item.get("response_to_thread", []),
+            "source": "discovered" if item.get("type") == "reply" else "comments",
+            "startedAt": item.get("queued_at", ""),
+            "replyingToPfp": item.get("replying_to_pfp", ""),
+            "parentChain": item.get("parent_chain", []),
+            "media": item.get("media", []),
+        }
+        pending_posts.append(pending_post)
+
+    return {"pending_posts": pending_posts, "count": len(pending_posts)}
 
 
 # --- example usage ---

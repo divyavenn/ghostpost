@@ -109,211 +109,133 @@ def get_users_with_valid_browser_sessions() -> list[str]:
         return []
 
 
-async def auto_scrape_for_user(username: str):
+async def run_all_jobs_for_user(username: str):
     """
-    Automatically scrape tweets, generate replies, and clean up old tweets for a single user.
+    Run all background jobs for a single user (called by scheduler).
+
+    Jobs run in sequence:
+    1. find_and_reply_to_new_posts - Discover new posts and generate replies
+    2. find_user_activity - Discover user's external posts and resurrect cold tweets
+    3. find_and_reply_to_engagement - Monitor engagement and generate comment replies
+    4. analyze - Analyze posting history and update preferences
 
     Args:
         username: Twitter handle of the user
     """
-    import time
-
-    from backend.data.twitter.edit_cache import purge_unedited_tweets
-    from backend.utlils.utils import read_user_info, write_user_info
-
-    start_time = time.time()
+    from backend.twitter.twitter_jobs import (
+        find_and_reply_to_new_posts,
+        find_user_activity,
+        find_and_reply_to_engagement,
+        analyze
+    )
+    from backend.twitter.bread_accounts import run_with_bread_account
 
     try:
-        notify(f"🤖 [Auto-scrape] Starting for user: {username}")
+        notify(f"🤖 [Scheduler] Starting all jobs for user: {username}")
 
         # Step 0: Cleanup expired browser sessions to prevent resource leaks
         await cleanup_expired_browser_sessions()
 
-        # Step 1: Purge unedited tweets
-        notify(f"🗑️ [Auto-scrape] Purging unedited tweets for {username}...")
-        purged_count = await purge_unedited_tweets(username)
-        if purged_count > 0:
-            notify(f"✅ [Auto-scrape] Purged {purged_count} unedited tweet(s) for {username}")
-        else:
-            notify(f"✅ [Auto-scrape] No unedited tweets to purge for {username}")
+        # Job 1: Find and reply to new posts (with bread account)
+        try:
+            await run_with_bread_account(
+                find_and_reply_to_new_posts,
+                username,
+                triggered_by="scheduled"
+            )
+        except Exception as e:
+            from backend.utlils.utils import error
+            error(f"Job 1 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
+            notify(f"❌ [Scheduler] Job 1 (find_and_reply_to_new_posts) failed for {username}: {e}")
 
-        # Step 2: Scrape new tweets
-        notify(f"🔍 [Auto-scrape] Scraping tweets for {username}...")
-        tweets = await read_tweets(username=username)
-        notify(f"✅ [Auto-scrape] Scraped {len(tweets)} tweets for {username}")
+        # Job 2: Find user activity (with bread account)
+        try:
+            await run_with_bread_account(
+                find_user_activity,
+                username,
+                triggered_by="scheduled"
+            )
+        except Exception as e:
+            from backend.utlils.utils import error
+            error(f"Job 2 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
+            notify(f"❌ [Scheduler] Job 2 (find_user_activity) failed for {username}: {e}")
 
-        # Step 3: Generate replies for new tweets
-        notify(f"💬 [Auto-scrape] Generating replies for {username}...")
-        result = await generate_replies(username=username, overwrite=False)
-        reply_count = sum(1 for t in result if t.get('reply'))
-        notify(f"✅ [Auto-scrape] Generated {reply_count} new replies for {username}")
+        # Job 3: Find and reply to engagement (with bread account)
+        try:
+            await run_with_bread_account(
+                find_and_reply_to_engagement,
+                username,
+                triggered_by="scheduled"
+            )
+        except Exception as e:
+            from backend.utlils.utils import error
+            error(f"Job 3 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
+            notify(f"❌ [Scheduler] Job 3 (find_and_reply_to_engagement) failed for {username}: {e}")
 
-        # Log the scraping action (auto-initiated)
-        log_scrape_action(username, len(tweets), initiated_by="auto")
+        # Job 4: Analyze (no browser context needed)
+        try:
+            await analyze(username, triggered_by="scheduled")
+        except Exception as e:
+            from backend.utlils.utils import error
+            error(f"Job 4 failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
+            notify(f"❌ [Scheduler] Job 4 (analyze) failed for {username}: {e}")
 
-        # Log to background tasks log
-        log_background_task(username=username, task_type="tweet_scraping", tweets_scraped=len(tweets), replies_generated=reply_count, initiated_by="auto")
-
-        notify(f"🎉 [Auto-scrape] Completed for {username}")
+        notify(f"🎉 [Scheduler] Completed all jobs for {username}")
 
     except Exception as e:
         from backend.utlils.utils import error
-        error(f"Auto-scrape failed for {username}", status_code=500, exception_text=str(e), function_name="auto_scrape_for_user", username=username)
-        notify(f"❌ [Auto-scrape] Failed for {username}: {e}")
-
-    finally:
-        # Update scrolling_time_saved regardless of success/failure
-        elapsed_seconds = int(time.time() - start_time)
-        try:
-            user_info = read_user_info(username)
-            if user_info:
-                current_time_saved = user_info.get("scrolling_time_saved", 0)
-                user_info["scrolling_time_saved"] = current_time_saved + elapsed_seconds
-                write_user_info(user_info)
-                notify(f"⏱️ Added {elapsed_seconds}s to scrolling time for @{username} (total: {user_info['scrolling_time_saved']}s)")
-        except Exception as e:
-            from backend.utlils.utils import error
-            error("Failed to update scrolling time", status_code=500, exception_text=str(e), function_name="auto_scrape_for_user", username=username)
-            notify(f"⚠️ Failed to update scrolling time for {username}: {e}")
+        error(f"Scheduler jobs failed for {username}", status_code=500, exception_text=str(e), function_name="run_all_jobs_for_user", username=username)
+        notify(f"❌ [Scheduler] Failed for {username}: {e}")
 
 
-async def auto_scrape_all_users():
+async def run_all_jobs_all_users():
     """
-    Run automatic scraping for all users with valid browser sessions.
+    Run all background jobs for all users with valid OAuth sessions.
     This is the main job function called by the scheduler.
+
+    Runs all 4 jobs in sequence for each user:
+    1. find_and_reply_to_new_posts
+    2. find_user_activity
+    3. find_and_reply_to_engagement
+    4. analyze
 
     Auth exceptions (OAuthTokenExpired, BrowserSessionExpired) are caught per-user
     to gracefully stop processing for that user without affecting others.
     """
     from backend.utlils.utils import AuthenticationError
 
-    notify("🚀 [Auto-scrape] Starting scheduled scraping for all users...")
+    notify("🚀 [Scheduler] Starting all background jobs for all users...")
 
     try:
-        # Get only users with valid browser sessions
+        # Get only users with valid OAuth sessions
         users = get_users_with_valid_sessions()
 
         if not users:
-            notify("⚠️ [Auto-scrape] No users with valid browser sessions found")
+            notify("⚠️ [Scheduler] No users with valid OAuth sessions found")
             return
 
-        notify(f"👥 [Auto-scrape] Found {len(users)} user(s) with valid sessions: {', '.join(users)}")
+        notify(f"👥 [Scheduler] Found {len(users)} user(s) with valid sessions: {', '.join(users)}")
 
         # Process each user
         for username in users:
             try:
-                await auto_scrape_for_user(username)
+                await run_all_jobs_for_user(username)
             except AuthenticationError as auth_err:
                 # Auth failed mid-job - stop processing this user, continue with others
-                notify(f"🔐 [Auto-scrape] Auth expired for {username}, stopping job: {auth_err}")
+                notify(f"🔐 [Scheduler] Auth expired for {username}, stopping job: {auth_err}")
                 continue
             except Exception as e:
                 from backend.utlils.utils import error
-                error("Error processing auto-scrape", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users", username=username)
-                notify(f"❌ [Auto-scrape] Error processing {username}: {e}")
+                error("Error processing scheduled jobs", status_code=500, exception_text=str(e), function_name="run_all_jobs_all_users", username=username)
+                notify(f"❌ [Scheduler] Error processing {username}: {e}")
                 continue
 
-        notify(f"✅ [Auto-scrape] Completed batch scraping for {len(users)} user(s)")
+        notify(f"✅ [Scheduler] Completed all jobs for {len(users)} user(s)")
 
     except Exception as e:
         from backend.utlils.utils import error
-        error("Fatal error in batch scraping", status_code=500, exception_text=str(e), function_name="auto_scrape_all_users")
-        notify(f"❌ [Auto-scrape] Fatal error in batch scraping: {e}")
-
-
-async def engagement_monitoring_for_user(username: str):
-    """
-    Run engagement monitoring for a single user.
-    Discovers comments on posted tweets and generates replies.
-
-    Args:
-        username: Twitter handle of the user
-    """
-    from backend.twitter.comment_replies import generate_comment_replies
-    from backend.twitter.monitoring import run_engagement_monitoring
-    from backend.utlils.utils import read_user_info
-
-    try:
-        notify(f"🔍 [Engagement] Starting monitoring for user: {username}")
-
-        user_info = read_user_info(username)
-        if not user_info:
-            notify(f"⚠️ [Engagement] No user info found for {username}")
-            return
-
-        user_handle = user_info.get("handle", username)
-
-        # Run engagement monitoring jobs
-        result = await run_engagement_monitoring(username, user_handle)
-
-        new_comments = result.get("total_new_comments", 0)
-        notify(f"📊 [Engagement] Found {new_comments} new comment(s) for @{user_handle}")
-
-        # Generate replies for new comments
-        if new_comments > 0:
-            notify("💬 [Engagement] Generating replies for new comments...")
-            gen_result = await generate_comment_replies(username)
-            processed = gen_result.get("processed", 0)
-            total_replies = gen_result.get("total_replies_generated", 0)
-            notify(f"✅ [Engagement] Processed {processed} comment(s), generated {total_replies} replies")
-
-        # Log to background tasks
-        log_background_task(
-            username=username,
-            task_type="engagement_monitoring",
-            tweets_scraped=0,
-            replies_generated=new_comments,
-            initiated_by="auto"
-        )
-
-        notify(f"🎉 [Engagement] Completed for {username}")
-
-    except Exception as e:
-        from backend.utlils.utils import error
-        error(f"Engagement monitoring failed for {username}", status_code=500, exception_text=str(e), function_name="engagement_monitoring_for_user", username=username)
-        notify(f"❌ [Engagement] Failed for {username}: {e}")
-
-
-async def engagement_monitoring_all_users():
-    """
-    Run engagement monitoring for all users with valid browser sessions.
-    Discovers comments on posted tweets and generates AI replies.
-
-    Auth exceptions (OAuthTokenExpired, BrowserSessionExpired) are caught per-user
-    to gracefully stop processing for that user without affecting others.
-    """
-    from backend.utlils.utils import AuthenticationError
-
-    notify("🚀 [Engagement] Starting engagement monitoring for all users...")
-
-    try:
-        users = get_users_with_valid_sessions()
-
-        if not users:
-            notify("⚠️ [Engagement] No users with valid browser sessions found")
-            return
-
-        notify(f"👥 [Engagement] Found {len(users)} user(s) with valid sessions")
-
-        for username in users:
-            try:
-                await engagement_monitoring_for_user(username)
-            except AuthenticationError as auth_err:
-                # Auth failed mid-job - stop processing this user, continue with others
-                notify(f"🔐 [Engagement] Auth expired for {username}, stopping job: {auth_err}")
-                continue
-            except Exception as e:
-                from backend.utlils.utils import error
-                error("Error in engagement monitoring", status_code=500, exception_text=str(e), function_name="engagement_monitoring_all_users", username=username)
-                notify(f"❌ [Engagement] Error processing {username}: {e}")
-                continue
-
-        notify(f"✅ [Engagement] Completed for {len(users)} user(s)")
-
-    except Exception as e:
-        from backend.utlils.utils import error
-        error("Fatal error in engagement monitoring", status_code=500, exception_text=str(e), function_name="engagement_monitoring_all_users")
-        notify(f"❌ [Engagement] Fatal error: {e}")
+        error("Fatal error in scheduled jobs", status_code=500, exception_text=str(e), function_name="run_all_jobs_all_users")
+        notify(f"❌ [Scheduler] Fatal error in scheduled jobs: {e}")
 
 
 def start_scheduler(
@@ -323,44 +245,42 @@ def start_scheduler(
     """
     Start the background scheduler with specified intervals.
 
+    All 4 jobs now run together as a single scheduled task:
+    - find_and_reply_to_new_posts
+    - find_user_activity
+    - find_and_reply_to_engagement
+    - analyze
+
     Args:
-        scrape_interval_hours: Hours between automatic scraping runs (default: 24)
-        engagement_interval_hours: Hours between engagement monitoring runs (default: 6)
+        scrape_interval_hours: Hours between background job runs (default: 24)
+        engagement_interval_hours: [DEPRECATED] Kept for backward compatibility, not used
     """
     if scheduler.running:
         notify("⚠️ Scheduler is already running")
         return
 
-    # Add the auto-scrape job
+    # Add the main job that runs all 4 centralized jobs
     scheduler.add_job(
-        auto_scrape_all_users,
+        run_all_jobs_all_users,
         trigger=IntervalTrigger(hours=scrape_interval_hours),
-        id='auto_scrape_all_users',
-        name=f'Auto-scrape tweets every {scrape_interval_hours} hours',
+        id='run_all_jobs_all_users',
+        name=f'Run all background jobs every {scrape_interval_hours} hours',
         replace_existing=True,
         max_instances=1  # Prevent overlapping runs
     )
 
-    # Add engagement monitoring job (runs more frequently)
+    # Add browser session cleanup job (runs every hour to prevent zombie processes)
     scheduler.add_job(
-        engagement_monitoring_all_users,
-        trigger=IntervalTrigger(hours=engagement_interval_hours),
-        id='engagement_monitoring_all_users',
-        name=f'Engagement monitoring every {engagement_interval_hours} hours',
+        cleanup_expired_browser_sessions,
+        trigger=IntervalTrigger(hours=1),
+        id='cleanup_browser_sessions',
+        name='Cleanup expired browser sessions every hour',
         replace_existing=True,
         max_instances=1
     )
 
-    # Add browser session cleanup job (runs every hour to prevent zombie processes)
-    scheduler.add_job(cleanup_expired_browser_sessions,
-                      trigger=IntervalTrigger(hours=1),
-                      id='cleanup_browser_sessions',
-                      name='Cleanup expired browser sessions every hour',
-                      replace_existing=True,
-                      max_instances=1)
-
     scheduler.start()
-    notify(f"✅ Background scheduler started (scrape: {scrape_interval_hours}h, engagement: {engagement_interval_hours}h)")
+    notify(f"✅ Background scheduler started (all jobs run every {scrape_interval_hours}h)")
     notify("🧹 Browser session cleanup scheduled every hour")
 
     jobs = scheduler.get_jobs()
@@ -396,35 +316,19 @@ def get_scheduler_status():
     return {"running": True, "jobs": job_info}
 
 
-def trigger_manual_scrape():
+def trigger_manual_jobs():
     """
-    Manually trigger a scrape for all users (doesn't wait for scheduled time).
+    Manually trigger all background jobs for all users (doesn't wait for scheduled time).
     Returns immediately, runs in background.
     """
     if not scheduler.running:
-        notify("⚠️ Scheduler is not running, cannot trigger manual scrape")
+        notify("⚠️ Scheduler is not running, cannot trigger manual jobs")
         return False
 
     # Schedule the job to run immediately
-    scheduler.add_job(auto_scrape_all_users, id='manual_scrape', replace_existing=True)
+    scheduler.add_job(run_all_jobs_all_users, id='manual_jobs', replace_existing=True)
 
-    notify("🔄 Manual scrape triggered")
-    return True
-
-
-def trigger_manual_engagement():
-    """
-    Manually trigger engagement monitoring for all users.
-    Returns immediately, runs in background.
-    """
-    if not scheduler.running:
-        notify("⚠️ Scheduler is not running, cannot trigger manual engagement monitoring")
-        return False
-
-    # Schedule the job to run immediately
-    scheduler.add_job(engagement_monitoring_all_users, id='manual_engagement', replace_existing=True)
-
-    notify("🔄 Manual engagement monitoring triggered")
+    notify("🔄 Manual background jobs triggered")
     return True
 
 
@@ -435,20 +339,18 @@ async def get_status_endpoint():
 
 
 @router.post("/trigger")
-async def trigger_manual_scrape_endpoint():
-    """Manually trigger a scrape for all users immediately."""
-    success = trigger_manual_scrape()
-    if success:
-        return {"message": "Manual scrape triggered successfully"}
-    else:
-        return {"message": "Failed to trigger manual scrape", "error": "Scheduler not running"}
+async def trigger_manual_jobs_endpoint():
+    """
+    Manually trigger all background jobs for all users immediately.
 
-
-@router.post("/trigger-engagement")
-async def trigger_manual_engagement_endpoint():
-    """Manually trigger engagement monitoring for all users immediately."""
-    success = trigger_manual_engagement()
+    Runs all 4 jobs in sequence:
+    - find_and_reply_to_new_posts
+    - find_user_activity
+    - find_and_reply_to_engagement
+    - analyze
+    """
+    success = trigger_manual_jobs()
     if success:
-        return {"message": "Manual engagement monitoring triggered successfully"}
+        return {"message": "Manual background jobs triggered successfully"}
     else:
-        return {"message": "Failed to trigger engagement monitoring", "error": "Scheduler not running"}
+        return {"message": "Failed to trigger manual jobs", "error": "Scheduler not running"}

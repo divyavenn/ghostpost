@@ -11,11 +11,17 @@ interface LoadingOverlayProps {
     summary?: string;
   } | null;
   onDismiss?: () => void;
+  progress?: { current: number; total: number } | null;
 }
 
-export function LoadingOverlay({ phase, statusData, onDismiss }: LoadingOverlayProps) {
+export function LoadingOverlay({ phase, statusData, onDismiss, progress }: LoadingOverlayProps) {
   // Don't render if no loading phase
   if (!phase) return null;
+
+  // Calculate percentage from progress
+  const percentage = progress && progress.total > 0
+    ? Math.round((progress.current / progress.total) * 100)
+    : null;
 
   // Derive status text from phase and status data
   const getStatusText = (): string => {
@@ -74,6 +80,11 @@ export function LoadingOverlay({ phase, statusData, onDismiss }: LoadingOverlayP
           text={statusText}
           className={phase === 'scraping' ? "text-white text-xl mt-[-150px] text-center" : "text-white text-xl text-center"}
         />
+        {percentage !== null && (
+          <div className="text-white/60 text-lg font-mono">
+            {percentage}%
+          </div>
+        )}
       </div>
     </div>
   );

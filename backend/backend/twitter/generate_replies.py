@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter
 from pydantic import BaseModel, ValidationError
 
-from backend.config import OBELISK_KEY
+from backend.config import DIVYA_API_KEY
 from backend.data.twitter.data_validation import ScrapedTweet
 
 from ..browser_automation.twitter.timeline import USERNAME
@@ -158,14 +158,27 @@ async def build_reply_examples_context(username: str, tweet_thread: str | list[s
 
 
 async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", target_handle: str | None = None, prompt_variant: str = "toned_down", username: str = "unknown") -> dict:
-    """Generate a tweet reply using the unified LLM caller."""
-    from backend.utlils.llm import ask_llm
+    """Generate a tweet reply using the unified LLM caller with Claude fallback."""
+    from backend.utlils.llm import ask_llm, ask_claude
 
     # Build system prompt personalized with target handle using specified variant
     prompt_builder = get_prompt_builder(prompt_variant)
     system_prompt = prompt_builder(target_handle)
 
-    return await ask_llm(
+    # If no model specified, use Claude directly (user has no model configured)
+    if not model or model == "":
+        notify(f"ℹ️ No model configured, using Claude")
+        return await ask_claude(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model="claude-opus-4-5-20251101",
+            image_urls=image_urls,
+            username=username,
+            prompt_type="TWEET REPLY"
+        )
+
+    # Try DIVYA model (OpenAI fine-tuned) first
+    response = await ask_llm(
         system_prompt=system_prompt,
         user_prompt=prompt,
         model=model,
@@ -173,6 +186,22 @@ async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nak
         username=username,
         prompt_type="TWEET REPLY"
     )
+
+    # If DIVYA model failed, fallback to Claude
+    if "error" in response:
+        notify(f"⚠️ DIVYA model failed, falling back to Claude: {response.get('error')}")
+        response = await ask_claude(
+            system_prompt=system_prompt,
+            user_prompt=prompt,
+            model="claude-opus-4-5-20251101",
+            image_urls=image_urls,
+            username=username,
+            prompt_type="TWEET REPLY"
+        )
+        if "message" in response:
+            notify(f"✅ Claude fallback successful")
+
+    return response
 
 
 def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], bool, str | None] | None:
@@ -377,10 +406,11 @@ async def generate_replies_for_tweet(
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     from backend.data.twitter.edit_cache import purge_empty_thread_tweets, read_from_cache, write_to_cache
+    from backend.config import GEMINI_API_KEY
 
-    # Check if API key is configured
-    if not OBELISK_KEY:
-        error("❌ OBELISK_KEY environment variable is not set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
+    # Check if at least one API key is configured
+    if not DIVYA_API_KEY and not GEMINI_API_KEY:
+        error("❌ Neither DIVYA_API_KEY nor GEMINI_API_KEY environment variable is set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
 
     # Purge tweets with empty thread content from cache and seen_tweets
     # so they can be re-scraped with proper thread data
@@ -391,8 +421,8 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
 
-    # Get models array - use bracket notation to ensure we get the value
-    models = user_info["models"] if "models" in user_info and user_info["models"] else ["claude-3-5-sonnet-20241022"]
+    # Get models array - if not configured, use None to trigger Gemini
+    models = user_info["models"] if "models" in user_info and user_info["models"] else [None]
     number_of_generations = user_info["number_of_generations"] if "number_of_generations" in user_info else 1
 
     if not tweets:
@@ -498,15 +528,17 @@ async def generate_replies_endpoint(username: str, payload: GenerateRepliesReque
 async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict:
     """Regenerate AI reply for a single tweet."""
     from backend.data.twitter.edit_cache import read_from_cache, write_to_cache
+    from backend.config import GEMINI_API_KEY
 
-    # Check if API key is configured
-    if not OBELISK_KEY:
-        error("Obelisk API key not configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
+    # Check if at least one API key is configured
+    if not DIVYA_API_KEY and not GEMINI_API_KEY:
+        error("Neither DIVYA nor Gemini API key configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Read tweets from cache
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
-    models = user_info["models"] if "models" in user_info and user_info["models"] else ["claude-3-5-sonnet-20241022"]
+    # If models not configured, use None to trigger Gemini
+    models = user_info["models"] if "models" in user_info and user_info["models"] else [None]
     number_of_generations = user_info["number_of_generations"] if "number_of_generations" in user_info else 1
 
     if not tweets:

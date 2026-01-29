@@ -1,7 +1,25 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+
+class EndpointFilter(logging.Filter):
+    """Filter to suppress noisy endpoints from access logs."""
+    def __init__(self, excluded_paths: list[str]):
+        super().__init__()
+        self.excluded_paths = excluded_paths
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        return not any(path in message for path in self.excluded_paths)
+
+
+# Suppress noisy polling endpoints from uvicorn access logs
+logging.getLogger("uvicorn.access").addFilter(
+    EndpointFilter(["/status", "GET /tweets/"])
+)
 
 from backend.data.twitter.edit_cache import router as tweets_router
 from backend.browser_automation.twitter.metrics import router as performance_router
@@ -21,6 +39,7 @@ from backend.utlils.scheduler import router as scheduler_router
 from backend.utlils.scheduler import start_scheduler, stop_scheduler
 from backend.billing.routes import router as billing_router
 from backend.twitter.account_routes import router as account_router
+from backend.desktop.desktop_jobs import router as desktop_router
 
 
 @asynccontextmanager
@@ -67,6 +86,7 @@ app.include_router(comment_replies_router)
 app.include_router(jobs_router)
 app.include_router(billing_router)
 app.include_router(account_router)
+app.include_router(desktop_router)
 
 
 @app.get("/health")

@@ -73,6 +73,7 @@ interface ReplyDisplayProps {
   isRegenerating?: boolean;
   readOnly?: boolean;
   showDeleteButton?: boolean;
+  isJobRunning?: boolean;
 }
 
 // Styled Components
@@ -732,12 +733,14 @@ function getQueryDisplayLabel(scrapedFrom: ReplyData['scraped_from']): string {
   return summary;
 }
 
-export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly }: ReplyDisplayProps) {
+export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, onSkip, onEditReply, onRegenerate, isDeleting = false, isPosting = false, readOnly = false, isRegenerating = false, showDeleteButton = !readOnly, isJobRunning = false }: ReplyDisplayProps) {
   const allReplies = tweet.generated_replies
     ? tweet.generated_replies.map(r => Array.isArray(r) ? r[0] : r)
     : (tweet.reply ? [tweet.reply] : []);
 
   const generatedReplies = maxReplies ? allReplies.slice(0, maxReplies) : allReplies;
+  const hasNoReplies = generatedReplies.length === 0 || generatedReplies.every(r => !r);
+  const isGeneratingReplies = hasNoReplies && isJobRunning && !readOnly;
 
   const [editedTexts, setEditedTexts] = useState<string[]>(generatedReplies);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState<boolean[]>(generatedReplies.map(() => false));
@@ -1041,6 +1044,16 @@ export function ReplyDisplay({ tweet, myProfilePicUrl, maxReplies, onPublish, on
                 <RegeneratingContent>
                   <AnimatedText
                     text="Regenerating replies"
+                    className="text-lg"
+                  />
+                </RegeneratingContent>
+              </RegeneratingContainer>
+            ) : isGeneratingReplies ? (
+              <RegeneratingContainer>
+                <ReplyAvatar src={myAvatar} alt="Your avatar" />
+                <RegeneratingContent>
+                  <AnimatedText
+                    text="Generating replies"
                     className="text-lg"
                   />
                 </RegeneratingContent>

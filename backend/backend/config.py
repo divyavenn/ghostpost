@@ -28,6 +28,16 @@ SHOW_BROWSER = False
 SESSION_TIMEOUT = 300
 
 # =============================================================================
+# TOKEN AND SESSION MANAGEMENT
+# =============================================================================
+# Buffer time for token expiration checks (seconds)
+TOKEN_EXPIRY_BUFFER_SECONDS = 60
+# Session validation timeout (milliseconds)
+SESSION_VALIDATION_TIMEOUT_MS = 10000
+# Cookie validity check buffer (seconds)
+COOKIE_VALIDITY_BUFFER_SECONDS = 60
+
+# =============================================================================
 # TWITTER API CONFIGURATION
 # =============================================================================
 # Twitter OAuth credentials (from environment variables)
@@ -59,6 +69,10 @@ USE_BROWSERBASE_FOR_SCRAPING = False
 # AI/LLM CONFIGURATION
 # =============================================================================
 OBELISK_KEY = os.getenv("OBELISK_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
+DIVYA_API_KEY = os.getenv("DIVYA_API_KEY")
+DIVYA_MODEL_NAME = os.getenv("DIVYA_MODEL_NAME")
 
 # =============================================================================
 # SUPABASE CONFIGURATION
@@ -99,6 +113,10 @@ DEFAULT_MAX_TWEETS_RETRIEVE = 30
 # - Purging old seen_tweets entries
 MAX_TWEET_AGE_HOURS = 48
 
+# Minimum impressions threshold for tweet discovery
+MIN_IMPRESSIONS_FOR_DISCOVERY = 2000
+MIN_IMPRESSIONS_FOR_TIMELINE = 0  # No threshold for user's own timeline
+
 # Default Twitter credentials for scraping (if needed)
 # Note: These should ideally come from environment variables
 DEFAULT_TWITTER_USERNAME = "proudlurker"
@@ -126,3 +144,11 @@ HARDCUTOFF_COLD_DAYS = 7       # Beyond this age, always treat as "cold"
 
 # Activity threshold for promotion back to "active"
 ACTIVITY_PROMOTION_THRESHOLD = 5  # New replies needed to promote to "active"
+
+# =============================================================================
+# DATE FORMAT CONSTANTS
+# =============================================================================
+# Twitter API v2 date format (ISO 8601)
+TWITTER_API_DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+# Twitter v1 API legacy date format
+TWITTER_LEGACY_DATE_FORMAT = "%a %b %d %H:%M:%S %z %Y"

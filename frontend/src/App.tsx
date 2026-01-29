@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
 import { type ReplyData } from './components/ReplyDisplay';
 import { type PostedData } from './components/PostedDisplay';
-import { api, type PostWithComments } from './api/client';
+import { type PostingItem } from './components/PostingInProgress';
+import { api, type PostWithComments, type CommentWithContext } from './api/client';
 import { DiscoveredTab } from './pages/DiscoveredTab';
 import { PostedTab } from './pages/PostedTab';
 import { CommentsTab } from './pages/CommentsTab';
@@ -62,6 +63,9 @@ function App() {
   const [postingTweetIds, _setPostingTweetIds] = useState<Set<string>>(new Set());
   const [regeneratingTweetIds, setRegeneratingTweetIds] = useState<Set<string>>(new Set());
   const [postedTweets, setPostedTweets] = useState<PostedData[]>([]);
+  // Posting queue - tracks tweets currently being posted (shown as animated in Posted tab)
+  // Synced with backend post_queue for persistence across browser sessions
+  const [postingQueue, setPostingQueue] = useState<PostingItem[]>([]);
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
@@ -82,6 +86,8 @@ function App() {
     onAction: () => void;
   } | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Track if find_and_reply_to_new_posts job is running (for showing "generating replies" animation)
+  const [isFindNewPostsJobRunning, setIsFindNewPostsJobRunning] = useState(false);
   // Key to trigger resetting "seen" tracking in DiscoveredTab (incremented on purge)
   const [resetSeenKey, setResetSeenKey] = useState(0);
   const postedTweetsOffsetRef = useRef(0);
@@ -265,6 +271,27 @@ function App() {
     }
   }, []); // No dependencies needed - using functional setState and user param
 
+  // Load pending posts from backend (posts currently being processed)
+  const loadPendingPosts = useCallback(async (user: string) => {
+    try {
+      const data = await api.getPendingPosts(user);
+      // Convert backend format to PostingItem format for UI
+      const pendingItems: PostingItem[] = data.pending_posts.map(p => ({
+        id: p.id,
+        originalTweetId: p.originalTweetId,
+        text: p.text,
+        respondingTo: p.respondingTo,
+        originalTweetUrl: p.originalTweetUrl,
+        originalThreadText: p.originalThreadText,
+        source: p.source,
+        startedAt: new Date(p.startedAt).getTime(),
+      }));
+      setPostingQueue(pendingItems);
+    } catch (error) {
+      console.error('Failed to load pending posts:', error);
+    }
+  }, []);
+
   useEffect(() => {
     // Check for OAuth callback parameters
     const params = new URLSearchParams(window.location.search);
@@ -287,7 +314,7 @@ function App() {
       localStorage.setItem('username', callbackUsername);
       loadUserInfo(callbackUsername);
       loadTweets(callbackUsername);
-      // Don't load posted tweets here - will load when user switches to Posted tab
+      loadPendingPosts(callbackUsername);  // Load any pending posts from before browser close
 
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -295,7 +322,7 @@ function App() {
       console.log('[App] Loading user info for:', username);
       loadUserInfo(username);
       loadTweets(username);
-      // Don't load posted tweets here - will load when user switches to Posted tab
+      loadPendingPosts(username);  // Load any pending posts from before browser close
     } else {
       console.log('[App] No username found in initial load');
     }
@@ -402,7 +429,50 @@ function App() {
   const handlePublishCommentReply = async (commentId: string, text: string, replyIndex: number = 0): Promise<void> => {
     if (!username) return;
 
-    // Optimistically remove comment from UI
+    // Find the comment and its parent post
+    let foundComment: CommentWithContext | null = null;
+    let foundPostId: string | null = null;
+
+    for (const post of postsWithComments) {
+      const comment = post.comments.find(c => c.id === commentId);
+      if (comment) {
+        foundComment = comment;
+        foundPostId = post.post.id;
+        break;
+      }
+    }
+
+    if (!foundComment || !foundPostId) return;
+
+    // Get model and prompt variant from the selected reply
+    let model: string | undefined;
+    let promptVariant: string | undefined;
+    if (foundComment.generated_replies && replyIndex < foundComment.generated_replies.length) {
+      const replyTuple = foundComment.generated_replies[replyIndex];
+      if (Array.isArray(replyTuple) && replyTuple.length >= 2) {
+        model = replyTuple[1];
+      }
+      if (Array.isArray(replyTuple) && replyTuple.length >= 3) {
+        promptVariant = replyTuple[2];
+      }
+    }
+
+    // Create posting queue item for UI display
+    const postingItem: PostingItem = {
+      id: `posting-comment-${commentId}-${Date.now()}`,
+      originalTweetId: commentId,
+      text,
+      respondingTo: foundComment.handle || '',
+      originalTweetUrl: foundComment.url || '',
+      originalThreadText: [foundComment.text || ''],
+      source: 'comments',
+      startedAt: Date.now(),
+    };
+
+    // Add to posting queue UI immediately
+    setPostingQueue(prev => [postingItem, ...prev]);
+
+    // Optimistically remove comment from Comments tab
     setPostsWithComments(prev => prev.map(post => ({
       ...post,
       comments: post.comments.filter(c => c.id !== commentId),
@@ -411,12 +481,32 @@ function App() {
     setPendingCommentsCount(prev => Math.max(0, prev - 1));
 
     try {
-      await api.postCommentReply(username, commentId, text, replyIndex);
+      // Use the new queue API which handles everything server-side
+      const result = await api.addToPostQueue(username, {
+        type: 'comment_reply',
+        response_to: commentId,
+        reply: text,
+        reply_index: replyIndex,
+        model,
+        prompt_variant: promptVariant,
+        media: foundComment.media || [],
+        parent_chain: foundComment.parent_chain || [],
+        response_to_thread: [foundComment.text].filter((text): text is string => text != null),
+        responding_to: foundComment.handle || '',
+        replying_to_pfp: foundComment.author_profile_pic_url || '',
+        original_tweet_url: foundComment.url || '',
+      });
+
+      // Success! Remove from posting queue UI
+      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== commentId));
 
       // Reload user info to update post count
       await loadUserInfo(username);
 
-      // Trigger engagement monitoring in background (debounced - skip if already in progress)
+      // Reload posted tweets to show the newly posted tweet
+      await loadPostedTweets(username, true);
+
+      // Trigger engagement monitoring in background
       if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
         engagementMonitoringInProgressRef.current = true;
         api.startEngagementMonitoring(username)
@@ -429,8 +519,14 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to post comment reply:', error);
-      alert(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}. Reloading...`);
-      window.location.reload();
+
+      // Remove from posting queue UI
+      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== commentId));
+
+      // Backend already restored the comment to cache, so reload comments
+      loadCommentsGrouped(username);
+
+      alert(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -589,6 +685,9 @@ function App() {
         const status = translateJobStatusToLoadingStatus(job);
         console.log('[Polling] Job status:', job.status, job.phase, '| Translated:', status.type);
 
+        // Update isJobRunning state for "generating replies" animation
+        setIsFindNewPostsJobRunning(job.status === 'running');
+
         // Update status based on current scraping phase
         if (status.type === 'account') {
           console.log('[Polling] Setting phase to scraping (account)');
@@ -616,6 +715,7 @@ function App() {
           // This prevents stale 'idle' status from triggering premature completion
           console.log('[Polling] Status complete, stopping polling');
           setLoadingStatusData({ type: 'complete', value: '' });
+          setIsFindNewPostsJobRunning(false);
 
           // Stop polling
           clearInterval(pollInterval);
@@ -936,25 +1036,69 @@ function App() {
     const tweet = tweets.find(t => t.id === tweetId);
     if (!tweet) return;
 
-    // Optimistically remove from UI immediately
+    // Get model and prompt variant from the selected reply
+    let model: string | undefined;
+    let promptVariant: string | undefined;
+    if (tweet.generated_replies && replyIndex < tweet.generated_replies.length) {
+      const replyTuple = tweet.generated_replies[replyIndex];
+      if (Array.isArray(replyTuple) && replyTuple.length >= 2) {
+        model = replyTuple[1];
+      }
+      if (Array.isArray(replyTuple) && replyTuple.length >= 3) {
+        promptVariant = replyTuple[2];
+      }
+    }
+
+    // Create posting queue item for UI display
+    const postingItem: PostingItem = {
+      id: `posting-${tweetId}-${Date.now()}`,
+      originalTweetId: tweetId,
+      text,
+      respondingTo: tweet.thread?.[0]?.handle || '',
+      originalTweetUrl: tweet.thread?.[0]?.url || '',
+      originalThreadText: tweet.thread?.map(t => t.text) || [],
+      source: 'discovered',
+      startedAt: Date.now(),
+    };
+
+    // Add to posting queue UI immediately
+    setPostingQueue(prev => [postingItem, ...prev]);
+
+    // Optimistically remove from Discovered tab
     const updatedTweets = tweets.filter(t => t.id !== tweetId);
     setTweets(updatedTweets);
 
-    // Adjust index if needed
     if (currentTweetIndex >= updatedTweets.length) {
       setCurrentTweetIndex(Math.max(0, updatedTweets.length - 1));
     }
 
     try {
-      await api.postReply(username, text, tweet.id, tweet.cache_id, replyIndex);
+      // Use the new queue API which handles everything server-side
+      const result = await api.addToPostQueue(username, {
+        type: 'reply',
+        response_to: tweet.cache_id || tweetId,
+        reply: text,
+        reply_index: replyIndex,
+        model,
+        prompt_variant: promptVariant,
+        media: tweet.media || [],
+        parent_chain: tweet.thread_ids || [],
+        response_to_thread: tweet.thread || [],
+        responding_to: tweet.handle || '',
+        replying_to_pfp: tweet.author_profile_pic_url || '',
+        original_tweet_url: tweet.url || '',
+      });
 
-      // Remove tweet from cache backend without logging (since we already logged the post)
-      await api.deleteTweet(username, tweet.id, false);
+      // Success! Remove from posting queue UI
+      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== tweetId));
 
       // Reload user info to update lifetime_posts counter
       await loadUserInfo(username);
 
-      // Trigger engagement monitoring in background (debounced - skip if already in progress)
+      // Reload posted tweets to show the newly posted tweet
+      await loadPostedTweets(username, true);
+
+      // Trigger engagement monitoring in background
       if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
         engagementMonitoringInProgressRef.current = true;
         api.startEngagementMonitoring(username)
@@ -967,8 +1111,14 @@ function App() {
       }
     } catch (error) {
       console.error('Failed to post reply:', error);
-      alert(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}. Reloading...`);
-      window.location.reload();
+
+      // Remove from posting queue UI
+      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== tweetId));
+
+      // Backend already restored the tweet to cache, so reload tweets
+      await loadTweets(username);
+
+      alert(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   };
 
@@ -1313,12 +1463,14 @@ function App() {
                 onRegenerate={handleRegenerate}
                 onTweetsSeen={handleMarkTweetsSeen}
                 resetSeenKey={resetSeenKey}
+                isJobRunning={isFindNewPostsJobRunning}
               />
             )}
 
             {activeTab === 'posted' && userInfo && (
               <PostedTab
                 postedTweets={postedTweets}
+                postingQueue={postingQueue}
                 userProfilePicUrl={userInfo.profile_pic_url}
                 userHandle={userInfo.handle}
                 userUsername={userInfo.username}

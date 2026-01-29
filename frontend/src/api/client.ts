@@ -182,6 +182,11 @@ export function parseQueryItem(item: QueryItem): { query: string; summary: strin
   return { query: item, summary: words.slice(0, 2).join(' ') || 'Query' };
 }
 
+export interface SurveyData {
+  interested_socials?: string[];
+  [key: string]: unknown;
+}
+
 export interface UserInfo {
   handle: string;
   username: string;
@@ -198,6 +203,7 @@ export interface UserInfo {
   posts_left?: number;
   min_impressions_filter?: number;
   manual_minimum_impressions?: number | null;
+  survey_data?: SurveyData;
 }
 
 // Job status types
@@ -388,6 +394,72 @@ export const api = {
     return response.json();
   },
 
+  /**
+   * Add a tweet to the posting queue. This will:
+   * 1. Add to the persistent queue (survives browser close)
+   * 2. Mark source as post_pending
+   * 3. Immediately post to Twitter
+   * 4. On success: remove from queue, delete from source
+   * 5. On failure: remove from queue, restore post_pending
+   */
+  addToPostQueue: async (username: string, payload: {
+    type: 'reply' | 'comment_reply';
+    response_to: string;
+    reply: string;
+    reply_index?: number;
+    model?: string;
+    prompt_variant?: string;
+    media?: Array<{ type: string; url: string; alt_text?: string }>;
+    parent_chain?: string[];
+    response_to_thread?: string[];
+    responding_to?: string;
+    replying_to_pfp?: string;
+    original_tweet_url?: string;
+  }): Promise<{
+    message: string;
+    status: 'posted' | 'duplicate' | 'failed';
+    posted_tweet_id?: string;
+    data?: unknown;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/post/queue?username=${encodeURIComponent(username)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to post' }));
+      throw new Error(error.detail || 'Failed to post');
+    }
+    return response.json();
+  },
+
+  /**
+   * Get pending posts formatted for display in PostedTab
+   */
+  getPendingPosts: async (username: string): Promise<{
+    pending_posts: Array<{
+      id: string;
+      originalTweetId: string;
+      text: string;
+      respondingTo: string;
+      originalTweetUrl: string;
+      originalThreadText: string[];
+      source: 'discovered' | 'comments';
+      startedAt: string;
+      replyingToPfp: string;
+      parentChain: string[];
+      media: Array<{ type: string; url: string; alt_text?: string }>;
+    }>;
+    count: number;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/post/pending?username=${encodeURIComponent(username)}`);
+    if (!response.ok) throw new Error('Failed to get pending posts');
+    return response.json();
+  },
+
   deletePostedTweet: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; deleted: boolean }> => {
     const response = await fetch(`${API_BASE_URL}/post/tweet/${tweetId}?username=${encodeURIComponent(username)}`, {
       method: 'DELETE',
@@ -479,6 +551,18 @@ export const api = {
       body: JSON.stringify({ email }),
     });
     if (!response.ok) throw new Error('Failed to update user email');
+    return response.json();
+  },
+
+  updateSurveyData: async (handle: string, surveyData: SurveyData): Promise<{ message: string; survey_data: SurveyData }> => {
+    const response = await fetch(`${API_BASE_URL}/user/${encodeURIComponent(handle)}/survey-data`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ survey_data: surveyData }),
+    });
+    if (!response.ok) throw new Error('Failed to update survey data');
     return response.json();
   },
 
@@ -588,6 +672,14 @@ export const api = {
       body: JSON.stringify({ intent }),
     });
     if (!response.ok) throw new Error('Failed to update intent');
+    return response.json();
+  },
+
+  runBackgroundJobs: async (username: string): Promise<{ message: string; username: string; jobs: string[]; status: string; triggered_by: string }> => {
+    const response = await fetch(`${API_BASE_URL}/jobs/${encodeURIComponent(username)}/run-background-jobs`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error('Failed to start background jobs');
     return response.json();
   },
 

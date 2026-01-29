@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -63,10 +63,17 @@ class TwitterProfile(BaseModel):
     scrapes_left: int | None = None
     posts_left: int | None = None
 
-    # Denormalized data (loaded separately)
-    relevant_accounts: dict[str, bool] = {}  # handle -> enabled
-    queries: list[str] | list[list[str]] = []  # Can be list of strings or [query, summary] pairs
-    seen_tweets: dict[str, str] = {}  # tweet_id -> timestamp
+    # seen tweets tracking (to prevent showing duplicate tweets)
+    seen_tweets: dict[str, str] = {}  # tweet_id -> tweet's posted time (created_at ISO timestamp)
+
+    # since_id tracking (to only fetch NEW tweets per source)
+    last_tweet_ids: dict[str, str] = {}  # source_key (e.g., "query:philosophy", "account:elonmusk", "home_timeline") -> last_tweet_id
+
+    # survey/onboarding data
+    survey_data: dict = {}  # Flexible JSON field for survey responses (e.g., interested_socials)
+
+    # post queue - tweets waiting to be posted
+    post_queue: list[dict] = Field(default_factory=list)  # List of PendingPost dicts
 
 
 class Source(BaseModel):
@@ -112,6 +119,7 @@ class ScrapedTweet(BaseModel):
     generated_replies: list[tuple[str, str] | tuple[str, str, str]] = []
     edited: bool = False  # True if user has edited any generated reply
     seen: bool = False  # True if user has scrolled past this tweet in the UI
+    post_pending: bool = False  # True if this tweet is queued for posting
 
 
 MonitoringState = Literal["active", "warm", "cold"]
@@ -120,6 +128,28 @@ ResurrectionSource = Literal["none", "notification", "search"]
 CommentStatus = Literal["pending", "replied", "skipped"]
 PostType = Literal["original", "reply", "comment_reply"]
 EngagementType = Literal["reply", "quote_tweet"]
+PendingPostType = Literal["reply", "comment_reply"]
+
+
+class PendingPost(BaseModel):
+    """A tweet queued for posting."""
+    type: PendingPostType  # "reply" for discovered tweets, "comment_reply" for comments
+    response_to: str  # ID of the tweet/comment being replied to
+    reply: str  # The actual reply text
+    reply_index: int | None = None  # Which generated reply was selected
+    model: str | None = None  # Model used to generate the reply
+    prompt_variant: str | None = None  # Prompt variant used
+
+    # Context for displaying in PostingInProgress
+    media: list[MediaItem] = Field(default_factory=list)
+    parent_chain: list[str] = Field(default_factory=list)
+    response_to_thread: list[str] = Field(default_factory=list)
+    responding_to: str = ""  # Handle of person being replied to
+    replying_to_pfp: str = ""  # Profile pic URL
+    original_tweet_url: str = ""
+
+    # Timestamps
+    queued_at: str = ""  # ISO 8601 timestamp when added to queue
 
 
 class PostedTweet(BaseModel):
@@ -204,6 +234,7 @@ class CommentRecord(BaseModel):
     status: CommentStatus = "pending"
     generated_replies: list[tuple[str, str] | tuple[str, str, str]] = Field(default_factory=list)  # [(reply_text, model_name, prompt_variant)]
     edited: bool = False
+    post_pending: bool = False  # True if this comment reply is queued for posting
 
     # Monitoring (same as PostedTweet)
     source: TweetSource = "external"
@@ -259,12 +290,14 @@ class Cookie(BaseModel):
 class RelevantAccountModel(BaseModel):
     handle: str
     validated: bool
+    user_id: str | None = None  # Twitter user ID (fetched when account is added)
 
 
 class UpdateSettingsRequest(BaseModel):
     # Queries can be plain strings or [query, summary] tuples
     queries: list[str | list[str]] | None = None
-    relevant_accounts: dict[str, bool] | None = None
+    # relevant_accounts: {handle: {"user_id": str | None, "validated": bool}}
+    relevant_accounts: dict[str, dict[str, Any]] | None = None
     ideal_num_posts: int | None = None
     number_of_generations: int | None = None
     min_impressions_filter: int | None = None
@@ -274,6 +307,10 @@ class UpdateSettingsRequest(BaseModel):
 
 class UpdateEmailRequest(BaseModel):
     email: str
+
+
+class UpdateSurveyDataRequest(BaseModel):
+    survey_data: dict  # Flexible JSON field for survey responses
 
 
 class RemoveQueryRequest(BaseModel):

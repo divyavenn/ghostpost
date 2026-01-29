@@ -156,7 +156,7 @@ def extract_handle(tweet_res: dict, data: dict | None = None) -> str | None:
     return find_any_screen_name(tweet_res)
 
 
-async def collect_from_page(ctx, url: str, handle: str | None, *, username=None, write_callback=None):
+async def collect_from_page(ctx, url: str, handle: str | None, *, username=None, write_callback=None, stats=None):
     """
     Collect tweets from a page with progressive writing.
 
@@ -167,7 +167,10 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
         max_scrolls: Number of scrolls
         username: Username for cache writes
         write_callback: Async function to call when new tweets are found
+        stats: Optional ScrapeStats object to track filtering statistics
     """
+    from backend.utlils.utils import is_tweet_seen
+
     tweets = {}
     page = await ctx.new_page()
     min_likes = 5
@@ -560,15 +563,14 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
     # keep your promo filter disabled for now (debug phase)
 
     def is_original_post(legacy: dict) -> bool:
+        """Check if tweet is original (not reply or retweet)."""
         if legacy.get("retweeted_status_result"):
             return False
         text = (legacy.get("full_text") or legacy.get("text") or "").lstrip()
         if text.startswith("RT @"):
             return False
         in_reply_to_user = legacy.get("in_reply_to_user_id_str")
-        #user_id          = legacy.get("user_id_str")
         is_reply = legacy.get("in_reply_to_status_id_str") or in_reply_to_user
-        #if is_reply and (not user_id or not in_reply_to_user or user_id != in_reply_to_user):
         if is_reply:
             return False
         return True
@@ -645,11 +647,29 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                     created_at = legacy.get("created_at")
                     if not created_at:
                         continue
+
+                    # Track that we fetched this tweet (before filtering)
+                    if stats:
+                        stats.fetched += 1
+
+                    # Skip old tweets and track stats
                     if not within_hours(created_at, hours=MAX_TWEET_AGE_HOURS):
+                        if stats:
+                            stats.filtered_old += 1
                         continue
 
-                    # optional: re-enable filters once debugged
-                    if (not is_original_post(legacy)) or (int(legacy.get("favorite_count", 0)) < min_likes):
+                    # Skip non-original posts (replies/retweets) and track stats
+                    if not is_original_post(legacy):
+                        if stats:
+                            # Determine if it's a reply or retweet for accurate stat tracking
+                            if legacy.get("retweeted_status_result") or (legacy.get("full_text") or "").lstrip().startswith("RT @"):
+                                stats.filtered_retweets += 1
+                            else:
+                                stats.filtered_replies += 1
+                        continue
+
+                    # Skip low-engagement tweets (min likes)
+                    if int(legacy.get("favorite_count", 0)) < min_likes:
                         continue
 
                     # For FYP/query scrapes (not user timelines), require minimum impressions
@@ -657,6 +677,8 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                         views_data = node.get("views") or {}
                         tweet_impressions = int(views_data.get("count", 0))
                         if tweet_impressions < min_impressions_for_discovery:
+                            if stats:
+                                stats.filtered_impressions += 1
                             continue
 
                     # Filter tweets with videos, GIFs, URLs, or quoted tweets containing them
@@ -666,6 +688,12 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
 
                     tid = legacy.get("id_str") or str(node.get("rest_id") or "")
                     if not tid:
+                        continue
+
+                    # Skip already seen tweets
+                    if username and is_tweet_seen(username, tid):
+                        if stats:
+                            stats.filtered_seen += 1
                         continue
 
                     # If scraping from a user timeline, use the handle from the URL parameter

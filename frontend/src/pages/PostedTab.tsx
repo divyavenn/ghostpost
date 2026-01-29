@@ -3,6 +3,7 @@ import { AnimatePresence } from 'framer-motion';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import xLottie from '../assets/x.lottie';
 import { type PostedData, type TweetSource } from '../components/PostedDisplay';
+import { PostingInProgress, type PostingItem } from '../components/PostingInProgress';
 import { AnimatedListItem } from '../components/AnimatedListItem';
 import { QuotedTweetDisplay } from '../components/TweetMediaComponents';
 
@@ -17,6 +18,7 @@ interface ThreadGroup {
 
 interface PostedTabProps {
   postedTweets: PostedData[];
+  postingQueue: PostingItem[];
   userProfilePicUrl: string;
   userHandle: string;
   userUsername: string;
@@ -421,6 +423,7 @@ function ThreadCard({
 
 export function PostedTab({
   postedTweets,
+  postingQueue,
   userProfilePicUrl,
   userHandle,
   userUsername,
@@ -431,7 +434,8 @@ export function PostedTab({
 }: PostedTabProps) {
   const threads = useMemo(() => groupTweetsIntoThreads(postedTweets), [postedTweets]);
 
-  if (postedTweets.length === 0) {
+  // Show empty state only if no posted tweets AND no items in posting queue
+  if (postedTweets.length === 0 && postingQueue.length === 0) {
     return (
       <div className="w-full flex items-center justify-center h-64">
         <p className="text-neutral-400 text-lg">No tweets posted yet</p>
@@ -445,12 +449,35 @@ export function PostedTab({
     columns[index % 3].push(thread);
   });
 
+  // Distribute posting queue items across columns (put all in first column for visibility)
+  const postingQueueByColumn: PostingItem[][] = [[], [], []];
+  postingQueue.forEach((item, index) => {
+    postingQueueByColumn[index % 3].push(item);
+  });
+
   return (
     <div className="w-full">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {columns.map((columnThreads, colIndex) => (
           <div key={colIndex} className="flex flex-col gap-6">
             <AnimatePresence mode="popLayout">
+              {/* Posting in progress items at the top */}
+              {postingQueueByColumn[colIndex].map((item) => (
+                <AnimatedListItem
+                  key={item.id}
+                  itemKey={item.id}
+                  variant="scale"
+                >
+                  <PostingInProgress
+                    item={item}
+                    myProfilePicUrl={userProfilePicUrl}
+                    myHandle={userHandle}
+                    myUsername={userUsername}
+                  />
+                </AnimatedListItem>
+              ))}
+
+              {/* Posted tweets */}
               {columnThreads.map((thread) => (
                 <AnimatedListItem
                   key={thread.groupKey}

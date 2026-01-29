@@ -649,3 +649,187 @@ def delete_scraped_tweets(user_handle: str) -> bool:
         return True
     except Exception:
         return False
+
+
+# =============================================================================
+# FILES FUNCTIONS (for RAG: blogs, notion docs, etc.)
+# =============================================================================
+
+def create_file(user_id: str, file_type: str, title: str | None = None, url: str | None = None) -> dict[str, Any]:
+    """Create a new file record."""
+    db = get_db()
+    data = {
+        "user_id": user_id,
+        "file_type": file_type,
+        "title": title,
+        "url": url
+    }
+    result = db.table("files").insert(data).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    raise RuntimeError("Failed to create file")
+
+
+def get_files(user_id: str, file_type_filter: str | None = None) -> list[dict[str, Any]]:
+    """Get files for a user, optionally filtered by type."""
+    db = get_db()
+    query = db.table("files").select("*").eq("user_id", user_id)
+    if file_type_filter:
+        query = query.eq("file_type", file_type_filter)
+    result = query.order("created_at", desc=True).execute()
+    return result.data or []
+
+
+def delete_file(file_id: str) -> bool:
+    """Delete a file record."""
+    db = get_db()
+    result = db.table("files").delete().eq("file_id", file_id).execute()
+    return len(result.data) > 0 if result.data else False
+
+
+# =============================================================================
+# MEMORIES FUNCTIONS (RAG knowledge base)
+# =============================================================================
+
+def add_memory(
+    user_id: str,
+    content: str,
+    embedding: list[float],
+    source_type: str,
+    source_id: str | None = None,
+    visibility: str = "private",
+    audience: str | None = None,
+    file_id: str | None = None
+) -> dict[str, Any]:
+    """Add a new memory to the knowledge base."""
+    db = get_db()
+    data = {
+        "user_id": user_id,
+        "content": content,
+        "embedding": embedding,
+        "source_type": source_type,
+        "source_id": source_id,
+        "visibility": visibility,
+        "audience": audience,
+        "file_id": file_id
+    }
+    result = db.table("memories").insert(data).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    raise RuntimeError("Failed to add memory")
+
+
+def search_memories_vector(
+    user_id: str,
+    embedding: list[float],
+    limit: int = 10,
+    visibility_filter: str | None = None,
+    audience_filter: str | None = None
+) -> list[dict[str, Any]]:
+    """Search memories by vector similarity using RPC function."""
+    db = get_db()
+    result = db.rpc(
+        "search_memories",
+        {
+            "p_user_id": user_id,
+            "p_embedding": embedding,
+            "p_limit": limit,
+            "p_visibility": visibility_filter,
+            "p_audience": audience_filter
+        }
+    ).execute()
+    return result.data or []
+
+
+def get_memory(memory_id: str) -> dict[str, Any] | None:
+    """Get a single memory by ID."""
+    db = get_db()
+    result = db.table("memories").select("*").eq("memory_id", memory_id).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return None
+
+
+def delete_memory(memory_id: str) -> bool:
+    """Delete a memory."""
+    db = get_db()
+    result = db.table("memories").delete().eq("memory_id", memory_id).execute()
+    return len(result.data) > 0 if result.data else False
+
+
+def get_memories_by_source(user_id: str, source_type: str, source_id: str) -> list[dict[str, Any]]:
+    """Get all memories for a specific source."""
+    db = get_db()
+    result = db.table("memories").select("*").eq("user_id", user_id).eq("source_type", source_type).eq("source_id", source_id).execute()
+    return result.data or []
+
+
+# =============================================================================
+# FEEDBACK FUNCTIONS (learned preferences from edits)
+# =============================================================================
+
+def add_feedback(
+    user_id: str,
+    feedback_type: str,
+    dothis: str | None = None,
+    notthat: str | None = None,
+    trigger_context: str | None = None,
+    trigger_embedding: list[float] | None = None,
+    extracted_rules: dict[str, Any] | None = None,
+    source_action: str | None = None
+) -> dict[str, Any]:
+    """Add a new feedback entry."""
+    db = get_db()
+    data = {
+        "user_id": user_id,
+        "feedback_type": feedback_type,
+        "dothis": dothis,
+        "notthat": notthat,
+        "trigger_context": trigger_context,
+        "trigger_embedding": trigger_embedding,
+        "extracted_rules": extracted_rules or {},
+        "source_action": source_action
+    }
+    result = db.table("feedback").insert(data).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    raise RuntimeError("Failed to add feedback")
+
+
+def search_feedback_vector(user_id: str, embedding: list[float], limit: int = 10) -> list[dict[str, Any]]:
+    """Search feedback by vector similarity using RPC function."""
+    db = get_db()
+    result = db.rpc(
+        "search_feedback",
+        {
+            "p_user_id": user_id,
+            "p_embedding": embedding,
+            "p_limit": limit
+        }
+    ).execute()
+    return result.data or []
+
+
+def get_feedback(feedback_id: str) -> dict[str, Any] | None:
+    """Get a single feedback entry by ID."""
+    db = get_db()
+    result = db.table("feedback").select("*").eq("feedback_id", feedback_id).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return None
+
+
+def get_unprocessed_feedback(user_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    """Get recent feedback entries (for background processing)."""
+    db = get_db()
+    result = db.table("feedback").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(limit).execute()
+    return result.data or []
+
+
+def update_feedback(feedback_id: str, updates: dict[str, Any]) -> dict[str, Any] | None:
+    """Update a feedback entry."""
+    db = get_db()
+    result = db.table("feedback").update(updates).eq("feedback_id", feedback_id).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return None

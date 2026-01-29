@@ -219,6 +219,56 @@ async def post(username, payload: dict, cache_id: str | None = None, reply_index
         log_key = original_tweet_id or posted_tweet_id
         log_tweet_action(username, TweetAction.POSTED, str(log_key), metadata=metadata)
 
+        # Trigger async feedback extraction if this reply was edited
+        # (only for replies, not original posts or comment replies)
+        if post_type == "reply" and cache_id and reply_index is not None:
+            import asyncio
+
+            from backend.twitter.logging import TweetAction as LogAction
+            from backend.twitter.logging import get_logs_by_cache_id
+
+            try:
+                # Check if there was a recent edit for this cache_id
+                logs = get_logs_by_cache_id(username, cache_id)
+                edit_log = None
+
+                for log in reversed(logs):  # Most recent first
+                    if log.get("action") == LogAction.EDITED.value:
+                        edit_log = log
+                        break
+
+                if edit_log:
+                    notify(f"🔍 Reply was edited before posting, queueing feedback extraction")
+
+                    # Queue async background task for feedback extraction
+                    async def extract_feedback_task():
+                        try:
+                            from backend.rag.feedback_extraction import extract_feedback_from_edit
+                            await extract_feedback_from_edit(username, edit_log)
+                        except Exception as e:
+                            # Log but don't fail the post
+                            error(
+                                f"Background feedback extraction failed: {e}",
+                                status_code=500,
+                                exception_text=str(e),
+                                function_name="extract_feedback_task",
+                                username=username,
+                                critical=False
+                            )
+
+                    # Run in background without blocking
+                    asyncio.create_task(extract_feedback_task())
+            except Exception as e:
+                # Never let feedback extraction block or fail the post
+                error(
+                    f"Failed to check for edits for feedback extraction: {e}",
+                    status_code=500,
+                    exception_text=str(e),
+                    function_name="post",
+                    username=username,
+                    critical=False
+                )
+
         # Add to posted_tweets.json cache with parent_chain support
         # (Examples are now sourced from posted_tweets_cache, sorted by score)
         try:

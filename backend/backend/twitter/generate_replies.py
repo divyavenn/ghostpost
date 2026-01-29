@@ -34,19 +34,79 @@ from backend.twitter.reply_prompt_builder import get_prompt_builder
 ACTIVE_PROMPT_VARIANTS = ["toned_down", "original"]
 
 
-def build_reply_examples_context(username: str, target_account: str | None = None, limit: int = 10) -> str:
+async def build_reply_examples_context(username: str, tweet_thread: str | list[str] = "", target_account: str | None = None, limit: int = 10) -> str:
     """
     Build a formatted string of example replies for the LLM prompt.
-    Prioritizes replies to the same account, then falls back to top-performing replies.
+
+    If RAG retrieval is enabled for the user, uses semantic search to find
+    relevant memories and learned preferences. Otherwise, falls back to
+    engagement-score-based example selection.
 
     Args:
         username: User's handle
+        tweet_thread: The tweet/thread being replied to (for RAG semantic search)
         target_account: Handle of account being replied to (prioritize replies to them)
         limit: Maximum number of examples to include
 
     Returns:
         Formatted string with examples or empty string if none
     """
+    from backend.utlils.supabase_client import get_twitter_profile, log_activity
+
+    # Check if RAG retrieval is enabled for this user
+    profile = get_twitter_profile(username)
+    use_rag = profile.get("use_rag_retrieval", False) if profile else False
+
+    if use_rag and tweet_thread:
+        # Use RAG retrieval for semantic context
+        try:
+            from backend.rag.retrieval import retrieve_context_for_reply
+
+            notify(f"🔍 Using RAG retrieval for @{username}")
+
+            rag_context = await retrieve_context_for_reply(
+                username=username,
+                tweet_thread=tweet_thread,
+                target_account=target_account,
+                max_memories=limit,
+                max_feedback=5
+            )
+
+            # Log retrieval metrics
+            log_activity(
+                handle=username,
+                action="rag_retrieval",
+                tweet_id=None,
+                metadata={
+                    "memory_count": rag_context["memory_count"],
+                    "feedback_count": rag_context["feedback_count"],
+                    "avg_similarity": rag_context["avg_similarity"],
+                    "retrieval_time_ms": rag_context["retrieval_time_ms"]
+                }
+            )
+
+            # If RAG returned context, use it
+            if rag_context["context_string"]:
+                notify(f"✅ RAG context: {rag_context['memory_count']} memories, {rag_context['feedback_count']} feedback")
+                context = rag_context["context_string"]
+                context += "\n\n========== NOW WRITE A REPLY TO THIS TWEET ==========\n"
+                return context
+
+            # If RAG returned empty, fall through to old system
+            notify(f"⚠️ RAG returned no context, falling back to engagement-based examples")
+
+        except Exception as e:
+            # If RAG fails, fall back to old system
+            error(
+                f"RAG retrieval failed, falling back to engagement-based examples: {e}",
+                status_code=500,
+                exception_text=str(e),
+                function_name="build_reply_examples_context",
+                username=username,
+                critical=False
+            )
+
+    # Fall back to original engagement-score-based example selection
     from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_replies_to_account, get_top_posts_by_type
 
     same_account_replies = []
@@ -247,8 +307,20 @@ async def generate_replies_for_tweet(
     else:
         target_account = getattr(tweet, "handle", None) or getattr(tweet, "username", None)
 
+    # Get tweet thread text for RAG semantic search
+    tweet_thread_text = ""
+    if isinstance(tweet, dict):
+        tweet_thread_text = tweet.get("thread", "")
+    else:
+        tweet_thread_text = getattr(tweet, "thread", "")
+
     # Add examples context to the prompt (prioritizes replies to same account)
-    examples_context = build_reply_examples_context(username, target_account=target_account)
+    # If RAG is enabled, this will use semantic search; otherwise, engagement scores
+    examples_context = await build_reply_examples_context(
+        username,
+        tweet_thread=tweet_thread_text,
+        target_account=target_account
+    )
     if examples_context:
         text_prompt = examples_context + "\n" + text_prompt
 

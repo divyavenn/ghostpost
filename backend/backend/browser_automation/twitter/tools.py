@@ -753,8 +753,13 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
                         from backend.twitter.filtering import check_tweet_matches_intent_initial
                         matches_intent = await check_tweet_matches_intent_initial(tweet_data, username)
                         if not matches_intent:
+                            # Log filtered tweet
+                            notify(f"❌ Tweet {tid} filtered out by initial intent check")
                             # Skip this tweet - doesn't match intent
                             continue
+                        else:
+                            # Log passed tweet
+                            notify(f"✅ Tweet {tid} passed initial intent filter")
 
                     tweets[tid] = tweet_data
                     # NOTE: Don't write here - wait until threads are collected
@@ -785,6 +790,12 @@ async def collect_from_page(ctx, url: str, handle: str | None, *, username=None,
         await asyncio.gather(*pending, return_exceptions=True)
 
     await page.close()
+
+    # Log extraction results
+    if handle:
+        notify(f"📊 Extracted {len(tweets)} tweets from @{handle}'s timeline")
+    else:
+        notify(f"📊 Extracted {len(tweets)} tweets from search results")
 
     # Collect threads and other replies for all tweets with progressive writing
     for tid, t in tweets.items():

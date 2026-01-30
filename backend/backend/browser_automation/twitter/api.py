@@ -1590,8 +1590,16 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50, si
 
             # Cache it for next time
             user_info["twitter_user_id"] = user_id
-            write_user_info(user_info)
-            notify(f"[API] Cached Twitter user ID for @{username}")
+            # Ensure handle field exists (required by write_user_info)
+            if "handle" not in user_info and "username" not in user_info:
+                user_info["handle"] = username
+
+            try:
+                write_user_info(user_info)
+                notify(f"[API] Cached Twitter user ID for @{username}")
+            except Exception as write_error:
+                notify(f"⚠️ Failed to cache user ID: {write_error}")
+                # Continue anyway - we have the user_id in memory
         else:
             error(f"Could not look up user ID for @{username}", status_code=404, function_name="scrape_user_recent_tweets", critical=False)
             notify(f"⚠️ Could not look up user ID for @{username}, returning empty results")
@@ -1599,6 +1607,7 @@ async def scrape_user_recent_tweets(ctx, username: str, max_tweets: int = 50, si
     else:
         notify(f"[API] Using cached user_id={user_id} for @{username}")
 
+    notify(f"[DEBUG] About to fetch tweets: user_id={user_id}, since_id={since_id}")
     notify(f"[API] Fetching recent tweets from @{username} (user_id={user_id})" + (f" since_id={since_id}" if since_id else ""))
 
     tweets = []

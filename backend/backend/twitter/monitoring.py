@@ -220,14 +220,33 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
         notify(f"[DEBUG] Existing tweet IDs in cache: {len(existing_ids)}")
 
         # Get the newest tweet ID for efficient polling (only fetch tweets since this ID)
+        # But only if it's recent enough (Twitter API only searches last 7 days)
         since_id = None
         if existing_ids:
             # Tweet IDs are sortable as strings (they're snowflake IDs)
-            since_id = max(existing_ids)
-            notify(f"[DEBUG] Using since_id={since_id} for efficient polling")
+            newest_id = max(existing_ids)
+
+            # Check if newest_id is within last 7 days (Twitter API limit)
+            # Tweet IDs are snowflake IDs: (timestamp_ms - 1288834974657) << 22
+            # Extract timestamp from tweet ID
+            from datetime import datetime, timedelta, timezone
+            try:
+                tweet_timestamp_ms = (int(newest_id) >> 22) + 1288834974657
+                tweet_time = datetime.fromtimestamp(tweet_timestamp_ms / 1000, tz=timezone.utc)
+                age_days = (datetime.now(timezone.utc) - tweet_time).days
+
+                if age_days <= 7:
+                    since_id = newest_id
+                    notify(f"[DEBUG] Using since_id={since_id} ({age_days} days old)")
+                else:
+                    notify(f"[DEBUG] Ignoring old since_id from {age_days} days ago (API only searches last 7 days)")
+            except Exception as e:
+                notify(f"[DEBUG] Could not parse tweet timestamp, ignoring since_id: {e}")
 
         # Scrape user's recent tweets using API with efficient polling
+        notify(f"[DEBUG] About to call scrape_user_recent_tweets with handle={user_handle}, max={max_tweets}, since_id={since_id}")
         recent_tweets = await scrape_user_recent_tweets(ctx, user_handle, max_tweets, since_id=since_id)
+        notify(f"[DEBUG] scrape_user_recent_tweets returned {len(recent_tweets)} tweets")
         notify(f"📊 Found {len(recent_tweets)} recent tweets for @{user_handle}")
 
         skipped_existing = 0
@@ -317,7 +336,7 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
             try:
                 # Add to posted_tweets
                 created_at = tweet.get("created_at", datetime.now(UTC).isoformat())
-                url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
+                url = tweet.get("url") or f"https://x.com/{user_handle}/status/{tweet_id}"
 
                 # Determine initial monitoring state based on age
                 temp_tweet = {"created_at": created_at, "last_activity_at": created_at}
@@ -370,7 +389,8 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                 # else: remains "reply" - replying to someone else's post
 
                 tweet_data = {
-                    "id": tweet_id,
+                    "tweet_id": tweet_id,
+                    "handle": user_handle,
                     "text": tweet.get("text", ""),
                     "likes": tweet.get("likes", 0),
                     "retweets": tweet.get("retweets", 0),
@@ -499,7 +519,7 @@ async def discover_engagement(username: str, user_handle: str, ctx=None) -> dict
         for tweet in active_tweets:
             active_idx += 1
             tweet_id = tweet.get("tweet_id")
-            url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
+            url = tweet.get("url") or f"https://x.com/{user_handle}/status/{tweet_id}"
 
             try:
                 scrape_result = await deep_scrape_thread(ctx, url, tweet_id, user_handle)
@@ -557,7 +577,7 @@ async def discover_engagement(username: str, user_handle: str, ctx=None) -> dict
         for tweet in warm_tweets:
             warm_idx += 1
             tweet_id = tweet.get("tweet_id")
-            url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
+            url = tweet.get("url") or f"https://x.com/{user_handle}/status/{tweet_id}"
 
             try:
                 scrape_result = await shallow_scrape_thread(ctx, url, tweet_id)
@@ -726,7 +746,7 @@ async def discover_resurrected(username: str, user_handle: str, ctx=None) -> dic
                 if not tweet:
                     continue
 
-                url = tweet.get("url", f"https://x.com/{user_handle}/status/{tweet_id}")
+                url = tweet.get("url") or f"https://x.com/{user_handle}/status/{tweet_id}"
 
                 # Deep scrape the resurrected tweet
                 scrape_result = await deep_scrape_thread(ctx, url, tweet_id, user_handle)

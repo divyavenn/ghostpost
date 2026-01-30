@@ -495,18 +495,26 @@ async def import_cookies(payload: CookieImport) -> dict:
 
     notify(f"📦 Received {len(cookies)} cookies for @{username} from extension")
 
-    # Security: Verify user exists in the system before storing cookies
-    user_info = read_user_info(username)
-    if not user_info:
-        error_msg = f"User @{username} not found in system"
-        notify(f"🚫 {error_msg} - rejecting cookie import")
-        return {
-            "success": False,
-            "error": "user_not_found",
-            "message": error_msg,
-            "user_message": f"Account Error: @{username} is not registered with GhostPoster. Please sign up first at the GhostPoster website.",
-            "username": username
-        }
+    # Check if this is a bread account (burner account for scraping)
+    from backend.twitter.bread_accounts import BREAD_ACCOUNTS
+    bread_account_handles = [acc[0] for acc in BREAD_ACCOUNTS]
+    is_bread_account = username in bread_account_handles
+
+    # If not a bread account, verify user exists in the system
+    if not is_bread_account:
+        user_info = read_user_info(username)
+        if not user_info:
+            error_msg = f"User @{username} not found in system"
+            notify(f"🚫 {error_msg} - rejecting cookie import")
+            return {
+                "success": False,
+                "error": "user_not_found",
+                "message": error_msg,
+                "user_message": f"Account Error: @{username} is not registered with GhostPoster. Please sign up first at the GhostPoster website.",
+                "username": username
+            }
+    else:
+        notify(f"🍞 Detected bread account: @{username}")
 
     # Validate cookies exist
     if not cookies or len(cookies) == 0:
@@ -580,8 +588,15 @@ async def import_cookies(payload: CookieImport) -> dict:
 
     # Save browser state to database
     try:
-        store_browser_state(username, storage_state, site="twitter")
-        notify(f"✅ Imported {len(cookies)} cookies for @{username}")
+        if is_bread_account:
+            # Store to bread_accounts table
+            from backend.utlils.supabase_client import store_bread_account_state
+            store_bread_account_state(username, storage_state, site="twitter")
+            notify(f"✅ Imported {len(cookies)} cookies for bread account @{username}")
+        else:
+            # Store to browser_states table (user account)
+            store_browser_state(username, storage_state, site="twitter")
+            notify(f"✅ Imported {len(cookies)} cookies for @{username}")
     except Exception as e:
         error_msg = f"Failed to save browser state for @{username}: {e}"
         notify(f"❌ {error_msg}")

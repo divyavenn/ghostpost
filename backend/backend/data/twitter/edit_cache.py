@@ -62,10 +62,10 @@ async def write_to_cache(tweets, description: str, *, username=USERNAME) -> None
     upload_scraped_tweets(username, json.dumps(all_tweets, ensure_ascii=False))
     # notify(f"💾{description} and wrote to Supabase Storage")
 
-    # Track newly written tweets in seen_tweets
+    # Track newly written tweets in seen_tweets (store only IDs)
     from backend.utlils.utils import add_to_seen_tweets
-    # Pass the actual tweet dicts (not just IDs) so add_to_seen_tweets can access created_at
-    add_to_seen_tweets(username, tweets)
+    tweet_ids = [t.get("id") or t.get("tweet_id") for t in tweets if t.get("id") or t.get("tweet_id")]
+    add_to_seen_tweets(username, tweet_ids)
 
 
 async def read_from_cache(username=USERNAME) -> list[dict[str, Any]]:
@@ -465,31 +465,9 @@ class EditReplyRequest(BaseModel):
 
 @router.get("/{username}")
 async def get_tweets(username: str) -> list[dict[str, Any]]:
-    """Get all cached tweets for a given username, excluding tweets we've already seen."""
-    from backend.utlils.utils import read_user_info
-
+    """Get all cached tweets for a given username."""
     tweets = await read_from_cache(username)
-
-    # Filter out tweets we've already seen (includes replied-to tweets)
-    user_info = read_user_info(username)
-    if not user_info:
-        return tweets
-
-    seen_tweets = user_info.get("seen_tweets", {})
-    already_seen_ids = set(seen_tweets.keys())
-
-    filtered_tweets = []
-    for tweet in tweets:
-        tweet_id = tweet.get("id") or tweet.get("tweet_id")
-        if tweet_id and str(tweet_id) not in already_seen_ids:
-            filtered_tweets.append(tweet)
-
-    if len(already_seen_ids) > 0:
-        skipped = len(tweets) - len(filtered_tweets)
-        if skipped > 0:
-            notify(f"📋 Filtered out {skipped} tweets that were already seen")
-
-    return filtered_tweets
+    return tweets
 
 
 @router.delete("/{username}/{tweet_id}", status_code=status.HTTP_204_NO_CONTENT)

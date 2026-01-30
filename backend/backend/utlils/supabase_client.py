@@ -141,23 +141,42 @@ def get_user_for_profile(handle: str) -> dict[str, Any] | None:
 # =============================================================================
 
 def get_relevant_accounts(handle: str) -> dict[str, bool]:
-    """Get relevant accounts for a Twitter profile as a dict."""
+    """Get relevant accounts for a Twitter profile.
+
+    Returns simple format: {account_handle: bool} (enabled status)
+    """
     db = get_db()
     result = db.table("twitter_relevant_accounts").select("account_handle, enabled").eq("handle", handle).execute()
-    return {row["account_handle"]: row["enabled"] for row in (result.data or [])}
+    return {row["account_handle"]: row.get("enabled", False) for row in (result.data or [])}
 
 
-def set_relevant_accounts(handle: str, accounts: dict[str, bool]) -> None:
-    """Set relevant accounts for a Twitter profile (replaces existing)."""
+def set_relevant_accounts(handle: str, accounts: dict[str, bool | dict[str, Any]]) -> None:
+    """Set relevant accounts for a Twitter profile (replaces existing).
+
+    Supports both formats:
+    - Simple: {handle: bool} - boolean indicates if enabled
+    - Extended: {handle: {"validated": bool, ...}} - extracts validated field
+    """
     db = get_db()
     # Delete existing
     db.table("twitter_relevant_accounts").delete().eq("handle", handle).execute()
     # Insert new
     if accounts:
-        rows = [
-            {"handle": handle, "account_handle": acct_handle, "enabled": enabled}
-            for acct_handle, enabled in accounts.items()
-        ]
+        rows = []
+        for acct_handle, data in accounts.items():
+            # Handle both simple (bool) and extended (dict) formats
+            if isinstance(data, dict):
+                # Extended format: extract validated field as enabled
+                enabled = data.get("validated", False)
+            else:
+                # Simple format: boolean is the enabled status
+                enabled = bool(data)
+
+            rows.append({
+                "handle": handle,
+                "account_handle": acct_handle,
+                "enabled": enabled
+            })
         db.table("twitter_relevant_accounts").insert(rows).execute()
 
 
@@ -517,6 +536,61 @@ def log_background_task(handle: str, task_type: str, **details) -> None:
         "task_type": task_type,
         "details": details
     }).execute()
+
+
+# =============================================================================
+# BREAD ACCOUNTS FUNCTIONS (burner accounts for scraping, not tied to users)
+# =============================================================================
+
+def get_bread_account(handle: str) -> dict[str, Any] | None:
+    """Get a bread account by handle."""
+    db = get_db()
+    result = db.table("bread_accounts").select("*").eq("handle", handle).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]
+    return None
+
+
+def get_all_bread_accounts() -> list[dict[str, Any]]:
+    """Get all bread accounts."""
+    db = get_db()
+    result = db.table("bread_accounts").select("*").execute()
+    return result.data or []
+
+
+def store_bread_account_state(handle: str, state: dict[str, Any], site: str = "twitter") -> None:
+    """Store browser state for a bread account."""
+    from datetime import datetime
+    try:
+        from datetime import UTC
+    except ImportError:
+        from datetime import timezone
+        UTC = timezone.utc
+
+    db = get_db()
+    state["timestamp"] = datetime.now(UTC).isoformat()
+    db.table("bread_accounts").upsert({
+        "handle": handle,
+        "site": site,
+        "state": state,
+        "updated_at": datetime.now(UTC).isoformat()
+    }, on_conflict="handle,site").execute()
+
+
+def get_bread_account_state(handle: str, site: str = "twitter") -> dict[str, Any] | None:
+    """Get browser state for a bread account."""
+    db = get_db()
+    result = db.table("bread_accounts").select("state").eq("handle", handle).eq("site", site).execute()
+    if result.data and len(result.data) > 0:
+        return result.data[0]["state"]
+    return None
+
+
+def delete_bread_account_state(handle: str, site: str = "twitter") -> bool:
+    """Delete browser state for a bread account."""
+    db = get_db()
+    result = db.table("bread_accounts").delete().eq("handle", handle).eq("site", site).execute()
+    return len(result.data) > 0 if result.data else False
 
 
 # =============================================================================

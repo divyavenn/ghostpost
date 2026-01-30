@@ -296,8 +296,10 @@ class RelevantAccountModel(BaseModel):
 class UpdateSettingsRequest(BaseModel):
     # Queries can be plain strings or [query, summary] tuples
     queries: list[str | list[str]] | None = None
-    # relevant_accounts: {handle: {"user_id": str | None, "validated": bool}}
-    relevant_accounts: dict[str, dict[str, Any]] | None = None
+    # relevant_accounts supports both formats:
+    # - Simple: {handle: bool} - boolean indicates if validated
+    # - Extended: {handle: {"user_id": str | None, "validated": bool}} - with metadata
+    relevant_accounts: dict[str, bool | dict[str, Any]] | None = None
     ideal_num_posts: int | None = None
     number_of_generations: int | None = None
     min_impressions_filter: int | None = None

@@ -62,8 +62,10 @@ app.add_middleware(
         "http://localhost:5174",  # Local dev (Vite alternate port)
         "http://localhost:3000",  # Local dev
         "http://localhost",  # Docker frontend (port 80)
+        "http://127.0.0.1:8000",  # Allow localhost
         "http://192.168.8.57:3000",  # Production server
     ],
+    allow_origin_regex=r"^chrome-extension://.*$",  # Allow all Chrome extensions
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -131,7 +131,7 @@ class BreadAccountContext:
     async def _ensure_bread_session(self):
         """
         Ensure bread account has valid browser session.
-        Attempts to restore from saved state, logs in if needed.
+        Attempts to restore from saved state. Raises error if no valid session exists.
         """
         # Try to restore saved session
         result = await read_browser_state(self.browser, self.bread_username, account_type="bread")
@@ -142,45 +142,25 @@ class BreadAccountContext:
             notify(f"✅ Restored existing session for bread account: {self.bread_username}")
             return
 
-        # No session or expired - need to login
-        notify(f"🔐 No valid session for {self.bread_username}, attempting login...")
-        await self._login_bread_account()
+        # No valid session - require manual login
+        from backend.utlils.utils import error
+        from backend.utlils.email import message_devs
 
-    async def _login_bread_account(self):
-        """
-        Login bread account and create new session.
-        Rotates to next account on failure.
-        """
-        try:
-            from backend.browser_automation.twitter.timeline import log_in_bread_account
+        error_msg = (
+            f"❌ No valid session for bread account: {self.bread_username}\n"
+            f"   Automated login is disabled to prevent Twitter blocks.\n"
+            f"   Please run: python backend/manual_bread_login.py\n"
+            f"   This will open a browser where you can manually log in all bread accounts."
+        )
 
-            self.browser, self.context = await log_in_bread_account(
-                self.bread_username,
-                self.bread_password,
-                self.browser
-            )
-            notify(f"✅ Successfully logged in bread account: {self.bread_username}")
+        notify(error_msg)
+        error(error_msg, status_code=500, function_name="_ensure_bread_session", username=self.user_username, critical=True)
+        message_devs(f"🔐 {error_msg}")
 
-        except Exception as e:
-            # Login failed - notify devs and try next account
-            from backend.utlils.utils import error
-            from backend.utlils.email import message_devs
+        raise RuntimeError(error_msg)
 
-            error_msg = f"Bread account {self.bread_username} login failed: {e}"
-            error(error_msg, status_code=500, function_name="_login_bread_account", username=self.user_username, critical=False)
-            message_devs(f"❌ {error_msg}")
-
-            # Try next account
-            notify(f"🔄 Rotating to next bread account...")
-            await self._rotate_to_next_bread_account()
-
-    async def _rotate_to_next_bread_account(self):
-        """
-        Rotate to next available bread account after login failure.
-        Recursively attempts login with next account.
-        """
-        # Select next account (will raise if all exhausted)
-        await self._select_bread_account()
-
-        # Try to ensure session with new account
-        await self._ensure_bread_session()
+    # REMOVED: Automated login is disabled to prevent Twitter blocks.
+    # Use manual_bread_login.py script instead to log in bread accounts.
+    #
+    # async def _login_bread_account(self):
+    # async def _rotate_to_next_bread_account(self):

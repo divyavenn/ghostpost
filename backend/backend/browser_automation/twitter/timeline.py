@@ -117,115 +117,28 @@ async def log_in(username: str, password: str, browser=None):
 
 async def log_in_bread_account(username: str, password: str, browser=None):
     """
-    Log in a bread account using password authentication.
-    Stores session to bread_storage_state.json (separate from user sessions).
+    DISABLED: Automated login is disabled to prevent Twitter blocks and rate limiting.
 
-    Bread accounts are burner accounts used for automated scraping to avoid
-    consuming user API quotas or risking user account TOS violations.
+    Use manual_bread_login.py script instead to log in bread accounts manually.
+    This allows handling captchas, verifications, and other challenges that
+    automated login cannot handle.
 
     Args:
         username: Bread account username
         password: Bread account password
-        browser: Optional existing browser instance (should already be headless)
-
-    Returns:
-        Tuple of (browser, context)
+        browser: Optional existing browser instance (unused)
 
     Raises:
-        Exception: If login fails (timeout, incorrect credentials, etc.)
+        RuntimeError: Always raises to prevent automated login attempts
     """
-    from backend.utlils.utils import notify, store_browser_state, error
+    error_msg = (
+        f"❌ Automated login is disabled for bread account: {username}\n"
+        f"   Twitter blocks automated login attempts.\n"
+        f"   Please run: python backend/manual_bread_login.py\n"
+        f"   This will open a browser where you can manually log in."
+    )
 
-    # Browser should already be created by BreadAccountContext
-    # but create if needed for testing (visible for debugging)
-    if browser is None:
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-
-    ctx = await browser.new_context()
-    page = await ctx.new_page()
-
-    try:
-        notify(f"🔐 Logging in bread account: {username}")
-        await page.goto("https://x.com/i/flow/login?lang=en")
-        await asyncio.sleep(2)
-
-        # Fill username
-        notify(f"   → Entering username...")
-        await page.fill('input[name="text"]', username)
-        await page.press('input[name="text"]', "Enter")
-
-        # Wait for next screen - could be password or phone verification
-        await asyncio.sleep(3)
-
-        # Try to find password field (may need to wait for it)
-        notify(f"   → Waiting for password field...")
-        try:
-            await page.wait_for_selector('input[name="password"]', timeout=15000)
-            notify(f"   → Password field found, entering password...")
-            await page.fill('input[name="password"]', password)
-            await page.press('input[name="password"]', "Enter")
-        except Exception as e:
-            # Password field not found - may need manual intervention or different flow
-            notify(f"   ⚠️  Password field not found - checking page state...")
-            notify(f"   Current URL: {page.url}")
-
-            # Check if we're on a verification page
-            page_content = await page.content()
-            if "verification" in page_content.lower() or "verify" in page_content.lower():
-                notify(f"   ⚠️  Twitter is asking for verification")
-                notify(f"   ⏳ Waiting 60 seconds for manual verification...")
-
-                # Wait for user to complete verification manually
-                await asyncio.sleep(60)
-
-                # Try again to find password field
-                try:
-                    await page.wait_for_selector('input[name="password"]', timeout=5000)
-                    notify(f"   → Password field found after verification, continuing...")
-                    await page.fill('input[name="password"]', password)
-                    await page.press('input[name="password"]', "Enter")
-                except Exception:
-                    # Still not found - wait for home page directly
-                    notify(f"   → Password field still not found, waiting for login completion...")
-                    try:
-                        await page.wait_for_url("https://x.com/home", timeout=30_000)
-                        notify(f"   ✅ Login completed manually!")
-                        await store_browser_state(username, ctx, account_type="bread")
-                        notify(f"✅ Bread account {username} logged in successfully")
-                        return browser, ctx
-                    except Exception:
-                        raise Exception(f"Manual verification timeout. Current URL: {page.url}")
-            else:
-                raise Exception(f"Password field not found. Current URL: {page.url}. May need verification.")
-
-        # Wait for successful redirect to home
-        notify(f"   → Waiting for login to complete...")
-        await page.wait_for_url("https://x.com/home", timeout=60_000)
-
-        # Save bread account session
-        await store_browser_state(username, ctx, account_type="bread")
-        notify(f"✅ Bread account {username} logged in successfully")
-
-        return browser, ctx
-
-    except Exception as e:
-        # Cleanup on failure
-        try:
-            await page.close()
-            await ctx.close()
-        except Exception:
-            pass
-
-        error(
-            f"Failed to login bread account {username}",
-            status_code=500,
-            exception_text=str(e),
-            function_name="log_in_bread_account",
-            username=username,
-            critical=False
-        )
-        raise
+    raise RuntimeError(error_msg)
 
 
 async def get_home(browser=None, username=None):

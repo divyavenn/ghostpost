@@ -100,7 +100,8 @@ def error(msg: str, status_code: int = 500, exception_text: str | None = None, f
     try:
         with open(errors_log_path, "a") as f:
             f.write(error_log.model_dump_json() + "\n")
-    timestamp = datetime.utcnow().isoformat() + "Z"
+    except Exception as e:
+        print(f"⚠️ Failed to write error to local log: {e}")
 
     try:
         sb_log_error(
@@ -221,14 +222,23 @@ async def store_browser_state(username: str, context, account_type: str = "user"
     notify(f"✅ Browser state saved for {username}")
 
 
-async def read_browser_state(browser, username: str, validate_session: bool = False) -> tuple[Any, Any] | None:
-    """Read and restore browser state for a user."""
+async def read_browser_state(browser, username: str, validate_session: bool = False, account_type: str = "user") -> tuple[Any, Any] | None:
+    """Read and restore browser state for a user or bread account."""
     from pydantic import ValidationError
 
     from backend.data.twitter.data_validation import BrowserState
-    from backend.utlils.supabase_client import delete_browser_state, get_browser_state as sb_get_browser_state
+    from backend.utlils.supabase_client import (
+        delete_browser_state,
+        get_browser_state as sb_get_browser_state,
+        get_bread_account_state,
+        delete_bread_account_state,
+    )
 
-    state = sb_get_browser_state(username)
+    # Use appropriate function based on account type
+    if account_type == "bread":
+        state = get_bread_account_state(username)
+    else:
+        state = sb_get_browser_state(username)
 
     if not state:
         notify(f"⚠️ No saved {account_type} browser state for {username}")
@@ -243,7 +253,10 @@ async def read_browser_state(browser, username: str, validate_session: bool = Fa
 
     # Check for auth_token cookie validity
     if not cookie_still_valid(state):
-        delete_browser_state(username)
+        if account_type == "bread":
+            delete_bread_account_state(username)
+        else:
+            delete_browser_state(username)
         notify(f"🔐 Relogging for {username} (missing/expired cookie)")
         return None
 

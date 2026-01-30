@@ -858,18 +858,7 @@ const commentCardVariants = {
   posting: {
     opacity: 1,
     scale: 1,
-    boxShadow: [
-      '0 0 0 2px rgba(14, 165, 233, 0.3)',
-      '0 0 0 4px rgba(14, 165, 233, 0.5)',
-      '0 0 0 2px rgba(14, 165, 233, 0.3)',
-    ],
-    transition: {
-      boxShadow: {
-        repeat: Infinity,
-        duration: 0.8,
-        ease: 'easeInOut',
-      },
-    },
+    boxShadow: '0 0 0 0px rgba(14, 165, 233, 0)',
   },
 };
 

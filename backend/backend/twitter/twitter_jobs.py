@@ -28,8 +28,6 @@ from backend.utlils.utils import (
     error,
     notify,
     read_user_info,
-    get_last_tweet_id,
-    update_last_tweet_id,
 )
 
 
@@ -290,7 +288,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
         """Update progress display every second while job is running."""
         while not job_complete:
             details = current_phase.get("details", "")
-            notify(f"[Progress Update] Phase: {current_phase['name']}, Progress: {current_phase['progress']}%, Details: {details}")
+            # notify(f"[Progress Update] Phase: {current_phase['name']}, Progress: {current_phase['progress']}%, Details: {details}")
             _update_job_status(
                 username, "find_and_reply_to_new_posts", "running",
                 current_phase["name"],
@@ -379,18 +377,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
             query_display = query_summary_map.get(query, query)[:50]  # Truncate long queries
             current_phase["details"] = f'"{query_display}"'
             try:
-                # Get last tweet ID for this query (for since_id polling)
-                source_key = f"query:{query}"
-                last_tweet_id = get_last_tweet_id(username, source_key)
-                if last_tweet_id:
-                    notify(f"📍 Using since_id={last_tweet_id} for query: {query}")
-
-                raw_tweets, stats = await search_tweets(query, ctx, username, min_impressions_filter, since_id=last_tweet_id)
-
-                # Update last_tweet_id with the newest tweet (if any)
-                if raw_tweets:
-                    newest_tweet_id = max(raw_tweets.keys(), key=lambda x: int(x))
-                    update_last_tweet_id(username, source_key, newest_tweet_id)
+                raw_tweets, stats = await search_tweets(query, ctx, username, min_impressions_filter)
 
                 # Track tweets from this query for selection counting
                 # Apply intent filtering (done here for both API and BROWSER modes)
@@ -427,18 +414,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
             current_phase["details"] = "home timeline"
 
             try:
-                # Get last tweet ID for home timeline (for since_id polling)
-                source_key = "home_timeline"
-                last_tweet_id = get_last_tweet_id(username, source_key)
-                if last_tweet_id:
-                    notify(f"📍 Using since_id={last_tweet_id} for home timeline")
-
-                home_tweets, stats = await fetch_home_timeline(username, ctx, ideal_num_posts, min_impressions_filter, since_id=last_tweet_id)
-
-                # Update last_tweet_id with the newest tweet (if any)
-                if home_tweets:
-                    newest_tweet_id = max(home_tweets.keys(), key=lambda x: int(x))
-                    update_last_tweet_id(username, source_key, newest_tweet_id)
+                home_tweets, stats = await fetch_home_timeline(username, ctx, ideal_num_posts, min_impressions_filter)
 
                 # Apply intent filtering (done here for both API and BROWSER modes)
                 home_tweet_ids = []
@@ -506,18 +482,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
             current_phase["progress"] = phase_progress
             current_phase["details"] = f"@{account_handle}"
             try:
-                # Get last tweet ID for this account (for since_id polling)
-                source_key = f"account:{account_handle}"
-                last_tweet_id = get_last_tweet_id(username, source_key)
-                if last_tweet_id:
-                    notify(f"📍 Using since_id={last_tweet_id} for @{account_handle}")
-
-                raw_tweets, stats = await fetch_user_timeline(username, account_handle, ctx, ideal_num_posts, since_id=last_tweet_id, user_id=account_user_id)
-
-                # Update last_tweet_id with the newest tweet (if any)
-                if raw_tweets:
-                    newest_tweet_id = max(raw_tweets.keys(), key=lambda x: int(x))
-                    update_last_tweet_id(username, source_key, newest_tweet_id)
+                raw_tweets, stats = await fetch_user_timeline(username, account_handle, ctx, ideal_num_posts, user_id=account_user_id)
 
                 # Apply intent filtering (done here for both API and BROWSER modes)
                 account_tweet_ids = []
@@ -620,7 +585,7 @@ async def find_and_reply_to_new_posts(username: str, triggered_by: str = "manual
                     tweets_written += 1
 
                     # Mark this tweet as seen immediately after caching (with tweet's posted time)
-                    add_to_seen_tweets(username, [populated])
+                    add_to_seen_tweets(username, [populated["id"]])
 
                     # Trigger reply generation in background (parallel processing)
                     if is_premium:

@@ -40,7 +40,7 @@ DROP TABLE IF EXISTS tokens CASCADE;
 -- USERS TABLE (extends auth.users with application-specific data)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS users (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    uid UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     account_type TEXT DEFAULT 'trial' CHECK (account_type IN ('trial', 'poster', 'premium')),
 
     -- User-level settings (shared across all Twitter profiles)
@@ -319,8 +319,8 @@ CREATE INDEX IF NOT EXISTS idx_browser_states_user_site ON browser_states(user_i
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS files (
     file_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    file_type TEXT NOT NULL CHECK (file_type IN ('blog', 'notion', 'gdoc', 'pdf', 'other')),
+    user_id UUID NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
+    file_type TEXT NOT NULL CHECK (file_type IN ('blog', 'notion', 'gdoc', 'pdf', 'youtube', 'podcast', 'other')),
     title TEXT,
     url TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -335,7 +335,7 @@ CREATE INDEX IF NOT EXISTS idx_files_type ON files(user_id, file_type);
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS memories (
     memory_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
     content TEXT NOT NULL,
     embedding vector(1536) NOT NULL,
 
@@ -366,7 +366,7 @@ WITH (m = 16, ef_construction = 64);
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS feedback (
     feedback_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(uid) ON DELETE CASCADE,
     feedback_type TEXT NOT NULL CHECK (feedback_type IN ('edit', 'skip', 'choose_reply')),
 
     -- Contrastive learning: what to do vs what not to do
@@ -521,7 +521,7 @@ ALTER TABLE feedback ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Users can only access their own data
 CREATE POLICY "Users can access own data" ON users
-    FOR ALL USING (auth.uid() = id);
+    FOR ALL USING (auth.uid() = uid);
 
 CREATE POLICY "Users can access own twitter profiles" ON twitter_profiles
     FOR ALL USING (user_id = auth.uid());

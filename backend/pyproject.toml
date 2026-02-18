@@ -30,6 +30,8 @@ dependencies = [
   "httpx>=0.28.1",
   # Billing
   "stripe>=7.0.0",
+  # Deployment
+  "modal>=0.66.0",
 ]
 
 [dependency-groups]

@@ -24,6 +24,10 @@ USER_INFO_FILE = CACHE_DIR / "user_info.json"
 
 SHOW_BROWSER = False
 
+# Debug: Log prompts sent to LLM to text files
+LOG_PROMPTS = os.getenv("LOG_PROMPTS", "false").lower() == "true"
+PROMPTS_LOG_DIR = CACHE_DIR / "prompts"
+
 # Session timeout for browser sessions (seconds)
 SESSION_TIMEOUT = 300
 

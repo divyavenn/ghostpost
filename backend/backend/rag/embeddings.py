@@ -1,11 +1,11 @@
 """
-Embedding service using Obelisk API (OpenAI text-embedding-3-small).
+Embedding service using OpenAI API (text-embedding-3-small).
 
 Generates 1536-dimensional embeddings for RAG semantic search.
 """
 import asyncio
 
-from backend.config import OBELISK_KEY
+from backend.config import DIVYA_API_KEY
 from backend.twitter.rate_limiter import LLM_OBELISK, call_api
 from backend.utlils.utils import error, notify
 
@@ -27,11 +27,11 @@ async def generate_embedding(text: str, username: str = "system") -> list[float]
     if not text or not text.strip():
         error("Cannot generate embedding for empty text", status_code=400, function_name="generate_embedding", username=username, critical=True)
 
-    if not OBELISK_KEY:
-        error("OBELISK_KEY not configured", status_code=500, function_name="generate_embedding", username=username, critical=True)
+    if not DIVYA_API_KEY:
+        error("DIVYA_API_KEY (OpenAI) not configured", status_code=500, function_name="generate_embedding", username=username, critical=True)
 
-    url = "https://obelisk.dread.technology/api/embeddings"
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
+    url = "https://api.openai.com/v1/embeddings"
+    headers = {"Authorization": f"Bearer {DIVYA_API_KEY}", "Content-Type": "application/json"}
 
     payload = {
         "model": "text-embedding-3-small",
@@ -116,11 +116,11 @@ async def generate_embeddings_batch(
     if not non_empty_texts:
         error("Cannot generate embeddings for batch of empty texts", status_code=400, function_name="generate_embeddings_batch", username=username, critical=True)
 
-    if not OBELISK_KEY:
-        error("OBELISK_KEY not configured", status_code=500, function_name="generate_embeddings_batch", username=username, critical=True)
+    if not DIVYA_API_KEY:
+        error("DIVYA_API_KEY (OpenAI) not configured", status_code=500, function_name="generate_embeddings_batch", username=username, critical=True)
 
-    url = "https://obelisk.dread.technology/api/embeddings"
-    headers = {"Authorization": f"Bearer {OBELISK_KEY}", "Content-Type": "application/json"}
+    url = "https://api.openai.com/v1/embeddings"
+    headers = {"Authorization": f"Bearer {DIVYA_API_KEY}", "Content-Type": "application/json"}
 
     all_embeddings = []
     total_batches = (len(non_empty_texts) + batch_size - 1) // batch_size

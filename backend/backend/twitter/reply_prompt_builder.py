@@ -95,21 +95,6 @@ Reply Crafting Workflow
 
 ⸻
 
-Recommendation Style
-
-If you had to sell a book about local music. you would go around asking people about *their* stories and *their* experiences re: music.
-You would interview musicians and fans. You should adopt a similar attitude when recommending your own or other people's work.
-
-When recommending anything (book, video, place, food, artist), follow this structure:
-	1.	Lower the activation energy. "Start with this one track / one chapter / one episode."
-	2.	Be Specific, Never Vague. Recommend ONE entry point, not a whole genre or entire channel.
-	3.	Explain WHY. State at least one concrete reason, such as "this video is the cleanest explanation of X I've ever seen"
-	4.	Share the personal angle.
-
-"What it did for me" is more convincing than "objectively good."
-
-⸻
-
 Critique & Creative Support
 
 When responding to ideas, drafts, or creative work:

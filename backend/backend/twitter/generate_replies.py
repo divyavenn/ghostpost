@@ -53,21 +53,35 @@ async def build_reply_examples_context(username: str, tweet_thread: str | list[s
     """
     from backend.utlils.supabase_client import get_twitter_profile, log_activity
 
-    # Check if RAG retrieval is enabled for this user
-    profile = get_twitter_profile(username)
-    use_rag = profile.get("use_rag_retrieval", False) if profile else False
+    # HYBRID APPROACH:
+    # 1. First get replies to same account (simple DB query, no RAG)
+    # 2. Then get topic-relevant examples (RAG semantic search)
+    from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_replies_to_account, get_top_posts_by_type
 
-    if use_rag and tweet_thread:
-        # Use RAG retrieval for semantic context
+    context_parts = []
+
+    # Part 1: Account-based examples (no RAG needed)
+    if target_account:
+        notify(f"📋 Getting replies to @{target_account} (DB query, no RAG)")
+        same_account_replies = get_replies_to_account(username, target_account, min(5, limit))
+
+        if same_account_replies:
+            account_context = build_examples_from_posts(same_account_replies, title=f"Past replies to @{target_account}")
+            if account_context:
+                context_parts.append(account_context)
+                notify(f"✅ Found {len(same_account_replies)} past replies to @{target_account}")
+
+    # Part 2: Topic-based examples (RAG semantic search)
+    if tweet_thread:
         try:
             from backend.rag.retrieval import retrieve_context_for_reply
 
-            notify(f"🔍 Using RAG retrieval for @{username}")
+            notify(f"🔍 RAG semantic search for topic-relevant examples")
 
             rag_context = await retrieve_context_for_reply(
                 username=username,
                 tweet_thread=tweet_thread,
-                target_account=target_account,
+                target_account=None,  # Don't filter by account in RAG (that's part 1)
                 max_memories=limit,
                 max_feedback=5
             )
@@ -85,20 +99,13 @@ async def build_reply_examples_context(username: str, tweet_thread: str | list[s
                 }
             )
 
-            # If RAG returned context, use it
             if rag_context["context_string"]:
-                notify(f"✅ RAG context: {rag_context['memory_count']} memories, {rag_context['feedback_count']} feedback")
-                context = rag_context["context_string"]
-                context += "\n\n========== NOW WRITE A REPLY TO THIS TWEET ==========\n"
-                return context
-
-            # If RAG returned empty, fall through to old system
-            notify(f"⚠️ RAG returned no context, falling back to engagement-based examples")
+                notify(f"✅ RAG found: {rag_context['memory_count']} memories, {rag_context['feedback_count']} feedback")
+                context_parts.append(rag_context["context_string"])
 
         except Exception as e:
-            # If RAG fails, fall back to old system
             error(
-                f"RAG retrieval failed, falling back to engagement-based examples: {e}",
+                f"RAG retrieval failed: {e}",
                 status_code=500,
                 exception_text=str(e),
                 function_name="build_reply_examples_context",
@@ -106,7 +113,13 @@ async def build_reply_examples_context(username: str, tweet_thread: str | list[s
                 critical=False
             )
 
-    # Fall back to original engagement-score-based example selection
+    # Combine both parts
+    if context_parts:
+        combined = "\n\n".join(context_parts)
+        combined += "\n\n========== NOW WRITE A REPLY TO THIS TWEET ==========\n"
+        return combined
+
+    # Fall back to engagement-based if both failed
     from backend.data.twitter.posted_tweets_cache import build_examples_from_posts, get_replies_to_account, get_top_posts_by_type
 
     same_account_replies = []
@@ -293,6 +306,45 @@ def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], 
     return text_prompt, image_urls, has_quoted, tweet_id
 
 
+def _save_prompt_to_file(prompt: str, tweet_id: str, model: str, variant: str, username: str, examples_context: str = ""):
+    """Save prompt to debug file if LOG_PROMPTS is enabled."""
+    from backend.config import LOG_PROMPTS, PROMPTS_LOG_DIR
+    from datetime import datetime
+
+    if not LOG_PROMPTS:
+        return
+
+    try:
+        # Create prompts directory if it doesn't exist
+        PROMPTS_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Create filename with timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"{timestamp}_{username}_{tweet_id}_{model.replace('/', '_')}_{variant}.txt"
+        filepath = PROMPTS_LOG_DIR / filename
+
+        # Write prompt with metadata
+        with open(filepath, 'w', encoding='utf-8') as f:
+            f.write(f"=== PROMPT LOG ===\n")
+            f.write(f"Timestamp: {datetime.now().isoformat()}\n")
+            f.write(f"Username: {username}\n")
+            f.write(f"Tweet ID: {tweet_id}\n")
+            f.write(f"Model: {model}\n")
+            f.write(f"Variant: {variant}\n")
+            f.write(f"\n{'='*80}\n")
+            f.write(f"=== EXAMPLES CONTEXT ({len(examples_context)} chars) ===\n")
+            f.write(f"{'='*80}\n\n")
+            f.write(examples_context if examples_context else "(No examples context)\n")
+            f.write(f"\n{'='*80}\n")
+            f.write(f"=== FULL PROMPT ===\n")
+            f.write(f"{'='*80}\n\n")
+            f.write(prompt)
+
+        notify(f"📝 Logged prompt to: {filepath.name}")
+    except Exception as e:
+        notify(f"⚠️ Failed to log prompt: {e}")
+
+
 async def generate_replies_for_tweet(
     tweet: dict[str, Any] | ScrapedTweet,
     models: list[str],
@@ -372,6 +424,9 @@ async def generate_replies_for_tweet(
             notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} [{selected_variant}] with {len(image_urls)} image(s)...")
         else:
             notify(f"🤖 Generating reply {gen_idx+1} for {tweet_id} using {selected_model} [{selected_variant}]...")
+
+        # Log prompt to file if debugging is enabled
+        _save_prompt_to_file(text_prompt, tweet_id, selected_model, selected_variant, username, examples_context or "")
 
         # Pass target handle and prompt variant for personalized system prompt
         response = await ask_model(
@@ -507,6 +562,16 @@ class GenerateRepliesRequest(BaseModel):
     overwrite: bool = False
 
 
+class GeneratePostRequest(BaseModel):
+    """Request model for generating a recommendation post about a resource."""
+    title: str
+    author: str | None = None
+    publishDate: str | None = None
+    url: str | None = None
+    contentType: str = "pdf"  # pdf, article, video, podcast, book, etc.
+    textSample: str | None = None  # optional sample text from the resource
+
+
 @router.post("/{username}/replies")
 async def generate_replies_endpoint(username: str, payload: GenerateRepliesRequest | None = None) -> dict:
     """Generate AI replies for tweets in the cache."""
@@ -575,6 +640,135 @@ async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict
     await write_to_cache([tweet], f"Regenerated {len(replies)} replies for tweet {tweet_id}", username=username)
 
     return {"message": "Replies regenerated successfully", "tweet_id": tweet_id, "new_replies": replies}
+
+
+@router.post("/{username}/post")
+async def generate_post_endpoint(username: str, payload: GeneratePostRequest) -> dict:
+    """
+    Generate a recommendation post about a resource using RAG on memories.
+
+    Uses the user's memories (past tweets, notes, preferences) to write a personalized
+    blurb about why they liked/recommend the resource.
+    """
+    from backend.rag.embeddings import generate_embedding
+    from backend.utlils.supabase_client import get_twitter_profile, search_memories_vector
+    from backend.utlils.llm import ask_claude
+
+    # Get user_id from username
+    profile = get_twitter_profile(username)
+    if not profile:
+        error(
+            f"Twitter profile not found for {username}",
+            status_code=404,
+            function_name="generate_post_endpoint",
+            username=username,
+            critical=True
+        )
+        return {"error": "Profile not found"}
+
+    user_id = profile.get("user_id")
+    if not user_id:
+        error(
+            f"No user_id found for profile {username}",
+            status_code=500,
+            function_name="generate_post_endpoint",
+            username=username,
+            critical=True
+        )
+        return {"error": "User ID not found"}
+
+    # Build search query from resource metadata
+    search_parts = [payload.title]
+    if payload.author:
+        search_parts.append(f"by {payload.author}")
+    if payload.textSample:
+        # Use a portion of the text sample for semantic search
+        search_parts.append(payload.textSample[:500])
+
+    search_query = " ".join(search_parts)
+
+    # Generate embedding for the resource
+    notify(f"🔢 Generating embedding for resource: {payload.title}")
+    embedding = await generate_embedding(search_query, username=username)
+
+    # Search memories for relevant context
+    notify(f"🔍 Searching memories for relevant context")
+    memories = search_memories_vector(
+        user_id=user_id,
+        embedding=embedding,
+        limit=10,
+        visibility_filter="private"
+    )
+
+    # Build context from memories
+    memory_context = ""
+    if memories:
+        memory_context = "\n\nHere are some of your past thoughts and writings that may be relevant:\n"
+        for i, mem in enumerate(memories, 1):
+            content = mem.get("content", "")[:300]
+            source_type = mem.get("source_type", "unknown")
+            memory_context += f"\n[{source_type}] {content}\n"
+
+    # Build the LLM prompt
+    resource_info = f"Title: {payload.title}"
+    if payload.author:
+        resource_info += f"\nAuthor: {payload.author}"
+    if payload.publishDate:
+        resource_info += f"\nPublished: {payload.publishDate}"
+    if payload.url:
+        resource_info += f"\nURL: {payload.url}"
+    resource_info += f"\nType: {payload.contentType}"
+
+    text_sample_section = ""
+    if payload.textSample:
+        text_sample_section = f"\n\nExcerpt from the resource:\n\"\"\"\n{payload.textSample[:1000]}\n\"\"\""
+
+    system_prompt = """You are helping write a short, authentic social media post recommending a resource (article, book, PDF, video, etc.).
+
+Write in the user's voice based on their past writings provided as context. The post should:
+- Be concise (1-3 sentences, under 280 characters if possible)
+- Feel personal and authentic, not like a generic review
+- Mention why YOU specifically found it valuable or interesting
+- Avoid generic phrases like "must-read" or "game-changer"
+- Sound like something you'd casually share with friends
+
+If the context shows the user has related interests or past thoughts on similar topics, weave that connection in naturally."""
+
+    user_prompt = f"""Write a short recommendation post for this resource:
+
+{resource_info}{text_sample_section}{memory_context}
+
+Write the post now (just the post text, no quotes or preamble):"""
+
+    # Generate the post
+    notify(f"🤖 Generating recommendation post for: {payload.title}")
+    response = await ask_claude(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        model="claude-sonnet-4-20250514",
+        username=username,
+        prompt_type="GENERATE_POST"
+    )
+
+    if "error" in response:
+        error(
+            f"Failed to generate post: {response.get('error')}",
+            status_code=500,
+            function_name="generate_post_endpoint",
+            username=username,
+            critical=True
+        )
+        return {"error": response.get("error")}
+
+    post_text = response.get("message", "").strip()
+
+    notify(f"✅ Generated post: {post_text[:100]}...")
+
+    return {
+        "post": post_text,
+        "memories_used": len(memories),
+        "resource_title": payload.title
+    }
 
 
 if __name__ == "__main__":

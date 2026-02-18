@@ -62,6 +62,94 @@ def _should_promote_to_active(tweet: dict, new_metrics: dict, new_reply_ids: lis
     return delta >= ACTIVITY_PROMOTION_THRESHOLD
 
 
+async def _create_memory_from_tweet(username: str, tweet_id: str, text: str, created_at: str) -> None:
+    """Create a RAG memory from an original tweet."""
+    from backend.rag.embeddings import generate_embedding
+    from backend.utlils.supabase_client import get_db, get_twitter_profile
+
+    # Get user_id
+    profile = get_twitter_profile(username)
+    if not profile:
+        return
+
+    user_id = profile.get("user_id")
+    if not user_id:
+        notify(f"⚠️ No user_id for {username}, cannot create memory")
+        return
+
+    db = get_db()
+
+    # Check if memory already exists
+    existing = db.table("memories")\
+        .select("memory_id")\
+        .eq("user_id", user_id)\
+        .eq("source_type", "tweet")\
+        .eq("source_id", tweet_id)\
+        .execute()
+
+    if existing.data:
+        return  # Already exists
+
+    # Generate embedding
+    embedding = await generate_embedding(text, username)
+
+    # Insert memory
+    db.table("memories").insert({
+        "user_id": user_id,
+        "content": text,
+        "embedding": embedding,
+        "source_type": "tweet",
+        "source_id": tweet_id,
+        "visibility": "private",
+        "created_at": created_at or datetime.now(UTC).isoformat()
+    }).execute()
+
+
+async def _create_feedback_from_reply(
+    username: str,
+    tweet_id: str,
+    reply_text: str,
+    original_thread: list[str],
+    responding_to: str
+) -> None:
+    """Create a feedback entry from a reply tweet (shows what user chose to post)."""
+    from backend.rag.embeddings import generate_embedding
+    from backend.utlils.supabase_client import get_db, get_twitter_profile
+
+    # Get user_id
+    profile = get_twitter_profile(username)
+    if not profile:
+        return
+
+    user_id = profile.get("user_id")
+    if not user_id:
+        notify(f"⚠️ No user_id for {username}, cannot create feedback")
+        return
+
+    db = get_db()
+
+    # Combine original thread for context
+    trigger_context = "\n".join(original_thread) if original_thread else ""
+
+    if not trigger_context:
+        return  # Need context to create meaningful feedback
+
+    # Generate embedding for the trigger context (for semantic search later)
+    trigger_embedding = await generate_embedding(trigger_context, username)
+
+    # Insert feedback: this is a positive example (what user chose to post)
+    db.table("feedback").insert({
+        "user_id": user_id,
+        "feedback_type": "choose_reply",
+        "dothis": reply_text,  # Positive example: user posted this
+        "notthat": None,  # No negative example for posted replies
+        "trigger_context": trigger_context,
+        "trigger_embedding": trigger_embedding,
+        "source_action": f"posted_external_{tweet_id}",
+        "extracted_rules": {}  # Will be populated by feedback extraction job later
+    }).execute()
+
+
 def _determine_monitoring_state(tweet: dict) -> str:
     """
     Determine what monitoring state a tweet should be in based on age and activity.
@@ -429,6 +517,28 @@ async def discover_recently_posted(username: str, user_handle: str, max_tweets: 
                     results["comment_backs"] += 1
 
                 notify(f"✅ Discovered external tweet {tweet_id} ({initial_state}, {post_type})")
+
+                # Auto-create RAG memory for original tweets
+                if post_type == "original" and tweet.get("text"):
+                    try:
+                        await _create_memory_from_tweet(username, tweet_id, tweet.get("text"), created_at)
+                        notify(f"📝 Created memory for original tweet {tweet_id}")
+                    except Exception as mem_error:
+                        notify(f"⚠️ Failed to create memory for {tweet_id}: {mem_error}")
+
+                # Auto-create feedback entry for replies
+                if post_type in ["reply", "comment_reply"] and tweet.get("text") and response_to_thread:
+                    try:
+                        await _create_feedback_from_reply(
+                            username,
+                            tweet_id,
+                            tweet.get("text"),
+                            response_to_thread,
+                            responding_to
+                        )
+                        notify(f"💬 Created feedback for reply {tweet_id}")
+                    except Exception as fb_error:
+                        notify(f"⚠️ Failed to create feedback for {tweet_id}: {fb_error}")
 
                 # Deep scrape if active state to get initial replies and QTs
                 if initial_state == "active":

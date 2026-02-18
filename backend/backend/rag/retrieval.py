@@ -437,46 +437,47 @@ def format_memories_as_citations(memories: list[dict[str, Any]]) -> str:
 
 def format_feedback_as_constraints(feedback_entries: list[dict[str, Any]]) -> str:
     """
-    Format feedback as implicit constraints for LLM prompt.
+    Format feedback as raw before/after examples for LLM to infer patterns.
 
     Args:
-        feedback_entries: List of feedback dicts with dothis/notthat, extracted_rules
+        feedback_entries: List of feedback dicts with dothis/notthat, trigger_context
 
     Returns:
-        Formatted string with learned preferences
+        Formatted string with raw edit examples
     """
     if not feedback_entries:
         return ""
 
-    context = "========== LEARNED PREFERENCES ==========\n"
-    context += "Based on your past edits, keep these preferences in mind:\n\n"
+    context = "========== EXAMPLES OF HOW YOU EDIT REPLIES ==========\n"
+    context += "Here are examples of how you've edited AI-generated replies in the past.\n"
+    context += "Learn from these patterns and apply similar thinking to your response.\n\n"
 
     for i, fb in enumerate(feedback_entries, 1):
         feedback_type = fb.get("feedback_type", "unknown")
-        rules = fb.get("extracted_rules", {})
-        similarity = fb.get("similarity", 0)
+        trigger = fb.get("trigger_context", "")
+        notthat = fb.get("notthat")  # What was generated
+        dothis = fb.get("dothis")    # What you changed it to
 
-        context += f"[Preference {i} - {feedback_type.upper()}] (similarity: {similarity:.2f})\n"
+        if not dothis:
+            continue  # Skip if no positive example
 
-        # Show extracted rules if available
-        if rules:
-            if "tone_shift" in rules and rules["tone_shift"]:
-                context += f"  • Tone: {rules['tone_shift']}\n"
-            if "confidence_shift" in rules and rules["confidence_shift"]:
-                context += f"  • Confidence: {rules['confidence_shift']}\n"
-            if "constraints" in rules and rules["constraints"]:
-                context += f"  • Constraints: {rules['constraints']}\n"
+        context += f"Example {i}:\n"
 
-        # Show contrastive examples if available
-        dothis = fb.get("dothis")
-        notthat = fb.get("notthat")
+        # Show the original tweet being replied to (for context)
+        if trigger:
+            trigger_short = trigger[:150] + "..." if len(trigger) > 150 else trigger
+            context += f"[ORIGINAL TWEET]: {trigger_short}\n"
 
-        if dothis and notthat:
-            context += f"  ✓ Do: {dothis[:100]}...\n" if len(dothis) > 100 else f"  ✓ Do: {dothis}\n"
-            context += f"  ✗ Don't: {notthat[:100]}...\n" if len(notthat) > 100 else f"  ✗ Don't: {notthat}\n"
+        # Show what was generated vs what you changed it to
+        if notthat:
+            context += f"[AI GENERATED]: {notthat}\n"
+            context += f"[YOU CHANGED IT TO]: {dothis}\n"
+        else:
+            # For choose_reply feedback (no notthat)
+            context += f"[YOU CHOSE TO POST]: {dothis}\n"
 
         context += "\n"
 
-    context += "========== END PREFERENCES ==========\n"
+    context += "========== END EXAMPLES ==========\n"
 
     return context

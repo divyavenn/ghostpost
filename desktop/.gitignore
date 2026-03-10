@@ -1,7 +1,0 @@
-node_modules/
-dist/
-build/
-*.log
-.DS_Store
-config.json
-twitter_session.json

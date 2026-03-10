@@ -385,20 +385,15 @@ async def _run_find_and_reply_with_error_handling(username: str, triggered_by: s
 @router.post("/{username}/tweets")
 async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None = None) -> dict:
     """
-    Start tweet scraping and reply generation in background. Returns immediately.
-    Frontend should poll /jobs/{username}/status to track progress.
-
-    Uses find_and_reply_to_new_posts job which fetches full thread context for each tweet.
-    Uses asyncio.create_task() for true parallel execution with other background jobs.
+    Queue tweet scraping for desktop execution. Returns immediately.
+    Frontend should poll /jobs/{username}/status and /desktop-jobs/{username}/status.
     """
-    from backend.twitter.authentication import ensure_access_token
+    from backend.desktop.desktop_jobs import create_desktop_job
+    from backend.desktop.task_types import DesktopTaskType
+    from backend.twitter.twitter_jobs import _update_job_status
 
     try:
-        notify(f"📋 [API] Received scrape request for {username}")
-
-        # Verify OAuth token is valid before starting background job
-        # This lets the frontend know immediately if re-auth is needed
-        await ensure_access_token(username, raise_on_failure=True)
+        notify(f"📋 [API] Received scrape queue request for {username}")
 
         # Check user account type
         user_info = read_user_info(username)
@@ -409,19 +404,41 @@ async def read_tweets_endpoint(username: str, payload: ReadTweetsRequest | None 
         account_type = user_info.get("account_type", "trial")
         notify(f"📋 [API] User {username} has account type: {account_type}")
 
-        # Use asyncio.create_task with error handling wrapper for true parallel execution
-        asyncio.create_task(_run_find_and_reply_with_error_handling(username, "manual"))
+        # Queue desktop scraping task with requested overrides (if any).
+        params = {
+            "usernames": payload.usernames if payload else None,
+            "queries": payload.queries if payload else None,
+            "max_tweets": payload.max_tweets if payload else None,
+        }
+        desktop_job_id = create_desktop_job(username, DesktopTaskType.SCRAPE_TWEETS_X.value, params)
 
-        notify(f"✅ [API] Background job scheduled for {username}")
+        # Keep existing frontend loading flow active by marking the job "running/queued".
+        _update_job_status(
+            username,
+            "find_and_reply_to_new_posts",
+            "running",
+            "queued",
+            progress={"current": 0, "total": 100},
+            details="Waiting for desktop execution",
+            triggered_by="manual",
+        )
 
-        message = "Job started in background. Poll /jobs/{username}/status to track progress."
+        notify(f"✅ [API] Queued desktop scrape job {desktop_job_id} for {username}")
+
+        message = "Scrape queued for desktop execution. Keep the desktop client running."
         if account_type != "premium":
             message += " (Reply generation requires premium account)"
 
-        return {"message": message, "status": "scraping_started", "background_task": "find_and_reply_to_new_posts", "account_type": account_type}
+        return {
+            "message": message,
+            "status": "queued",
+            "background_task": "desktop_scrape_tweets",
+            "desktop_job_id": desktop_job_id,
+            "account_type": account_type,
+        }
     except Exception as e:
-        notify(f"❌ [API] Error scheduling job for {username}: {str(e)}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error starting job: {str(e)}") from e
+        notify(f"❌ [API] Error queueing desktop scrape for {username}: {str(e)}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error queueing desktop job: {str(e)}") from e
 
 
 @router.get("/{username}/status")

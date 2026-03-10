@@ -1,7 +1,12 @@
 import { motion } from 'framer-motion';
+import { useEffect, useState } from 'react';
 
+export type PostingStatus = 'awaiting_approval' | 'queued' | 'running' | 'failed' | 'completed';
 export interface PostingItem {
   id: string;  // Unique ID for this posting attempt
+  draftId?: string;
+  status?: PostingStatus;
+  error?: string | null;
   originalTweetId: string;  // ID of the tweet being replied to (for rollback)
   text: string;  // The reply text being posted
   respondingTo: string;  // Handle of who we're replying to
@@ -16,16 +21,135 @@ interface PostingInProgressProps {
   myProfilePicUrl: string;
   myHandle: string;
   myUsername: string;
+  onApproveDraft?: (draftId: string) => Promise<void> | void;
+  onSaveDraft?: (draftId: string, text: string) => Promise<void> | void;
+  onDiscardDraft?: (draftId: string) => Promise<void> | void;
+  isActionPending?: boolean;
 }
 
 export function PostingInProgress({
   item,
   myProfilePicUrl,
   myHandle,
-  myUsername
+  myUsername,
+  onApproveDraft,
+  onSaveDraft,
+  onDiscardDraft,
+  isActionPending = false,
 }: PostingInProgressProps) {
-  // Combine thread text for display
+  const [draftText, setDraftText] = useState(item.text);
+  useEffect(() => {
+    setDraftText(item.text);
+  }, [item.text]);
+
+  const status = item.status || 'queued';
   const threadPreview = item.originalThreadText?.join(' ').slice(0, 200) || '';
+  const isDraft = status === 'awaiting_approval' || status === 'failed';
+  const canEdit = status === 'awaiting_approval' || status === 'failed';
+  const canApprove = status === 'awaiting_approval' || status === 'failed';
+
+  if (status === 'completed') {
+    return (
+      <div className="w-full px-[2%] pb-[4%] rounded-2xl bg-black text-white shadow-2xl border border-emerald-500/30">
+        <div className="flex items-center justify-between p-5 mb-2">
+          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400">
+            posted
+          </span>
+        </div>
+        <div className="px-5 py-3">
+          <div className="flex gap-3">
+            <img src={myProfilePicUrl} alt={myUsername} className="h-12 w-12 rounded-full" />
+            <div className="flex-1">
+              <div className="flex items-center gap-2 text-sm text-neutral-400 mb-1">
+                <span className="text-base font-bold text-white">{myUsername}</span>
+                <span>@{myHandle}</span>
+              </div>
+              <p className="whitespace-pre-wrap text-lg leading-relaxed text-white">{item.text}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isDraft) {
+    const hasChanges = draftText !== item.text;
+    return (
+      <motion.div
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className={`w-full px-[2%] pb-[4%] rounded-2xl bg-black text-white shadow-2xl border ${
+          status === 'failed' ? 'border-red-500/30' : 'border-amber-500/30'
+        }`}
+      >
+        <div className="flex items-center justify-between p-5 mb-2">
+          <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+            status === 'failed'
+              ? 'bg-red-500/20 text-red-400'
+              : 'bg-amber-500/20 text-amber-400'
+          }`}>
+            {status === 'failed' ? 'failed - edit & retry' : 'awaiting approval'}
+          </span>
+        </div>
+
+        <div className="px-5 py-3">
+          {item.respondingTo && threadPreview && (
+            <p className="text-sm text-neutral-500 pb-3">
+              Replying to <span className="text-sky-400">@{item.respondingTo}</span>
+            </p>
+          )}
+
+          {item.error && (
+            <div className="mb-3 text-xs text-red-300 bg-red-500/10 border border-red-500/20 rounded-lg p-2">
+              {item.error}
+            </div>
+          )}
+
+          <textarea
+            value={draftText}
+            onChange={(e) => setDraftText(e.target.value)}
+            disabled={!canEdit || isActionPending}
+            className="w-full min-h-[120px] rounded-lg bg-neutral-900 border border-neutral-700 p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500 resize-y"
+          />
+
+          <div className="flex items-center gap-2 pt-3">
+            <button
+              type="button"
+              disabled={!hasChanges || isActionPending || !item.draftId}
+              onClick={() => {
+                if (item.draftId && onSaveDraft) onSaveDraft(item.draftId, draftText);
+              }}
+              className="px-3 py-1.5 text-xs rounded-md bg-neutral-700 text-white disabled:opacity-50"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              disabled={!canApprove || isActionPending || !item.draftId}
+              onClick={() => {
+                if (item.draftId && onApproveDraft) onApproveDraft(item.draftId);
+              }}
+              className="px-3 py-1.5 text-xs rounded-md bg-sky-600 text-white disabled:opacity-50"
+            >
+              {status === 'failed' ? 'Retry' : 'Approve'}
+            </button>
+            <button
+              type="button"
+              disabled={isActionPending || !item.draftId}
+              onClick={() => {
+                if (item.draftId && onDiscardDraft) onDiscardDraft(item.draftId);
+              }}
+              className="px-3 py-1.5 text-xs rounded-md bg-red-600/80 text-white disabled:opacity-50"
+            >
+              Discard
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    );
+  }
+
+  const postingLabel = status === 'running' ? 'posting...' : 'queued for desktop...';
 
   return (
     <motion.div
@@ -64,7 +188,7 @@ export function PostingInProgress({
               <i className="fa-solid fa-circle-notch text-sky-400 text-xl" />
             </motion.div>
             <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-400">
-              posting...
+              {postingLabel}
             </span>
           </div>
         </div>

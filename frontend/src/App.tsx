@@ -1,13 +1,15 @@
 import { useEffect, useState, useCallback, useRef, useLayoutEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useRecoilState } from 'recoil';
+import { type AuthChangeEvent, type Session } from '@supabase/supabase-js';
 import { type ReplyData } from './components/ReplyDisplay';
 import { type PostedData } from './components/PostedDisplay';
 import { type PostingItem } from './components/PostingInProgress';
-import { api, type PostWithComments, type CommentWithContext } from './api/client';
+import { api, type PostWithComments, type CommentWithContext, type StandalonePendingPost } from './api/client';
 import { DiscoveredTab } from './pages/DiscoveredTab';
 import { PostedTab } from './pages/PostedTab';
 import { CommentsTab } from './pages/CommentsTab';
+import { PostsTab } from './pages/PostsTab';
 import { UserSettingsModal } from './components/UserSettingsModal';
 import { StatsDashboard } from './components/StatsDashboard';
 import { Background } from './components/Background';
@@ -36,6 +38,28 @@ import {
   twitterConnectedState,
 } from './atoms';
 import { supabase, signOut } from './lib/supabase';
+
+type DesktopAuthAlert = {
+  code: 'ACCOUNT_MISMATCH' | 'ACCOUNT_LOGIN_REQUIRED' | string;
+  message: string;
+  expected_twitter_handle?: string | null;
+  reported_twitter_handle?: string | null;
+  created_at?: string;
+};
+
+function parseDesktopAuthAlert(input: unknown): DesktopAuthAlert | null {
+  if (!input || typeof input !== 'object') return null;
+  const raw = input as Record<string, unknown>;
+  const message = typeof raw.message === 'string' ? raw.message : '';
+  if (!message) return null;
+  return {
+    code: typeof raw.code === 'string' ? raw.code : 'ACCOUNT_LOGIN_REQUIRED',
+    message,
+    expected_twitter_handle: typeof raw.expected_twitter_handle === 'string' ? raw.expected_twitter_handle : null,
+    reported_twitter_handle: typeof raw.reported_twitter_handle === 'string' ? raw.reported_twitter_handle : null,
+    created_at: typeof raw.created_at === 'string' ? raw.created_at : undefined,
+  };
+}
 
 function App() {
   const navigate = useNavigate();
@@ -66,6 +90,9 @@ function App() {
   // Posting queue - tracks tweets currently being posted (shown as animated in Posted tab)
   // Synced with backend post_queue for persistence across browser sessions
   const [postingQueue, setPostingQueue] = useState<PostingItem[]>([]);
+  const [standalonePendingPosts, setStandalonePendingPosts] = useState<StandalonePendingPost[]>([]);
+  const [standalonePendingCount, setStandalonePendingCount] = useState(0);
+  const [pendingDraftActionIds, setPendingDraftActionIds] = useState<Set<string>>(new Set());
   const [hasInvalidAccounts, setHasInvalidAccounts] = useState(false);
   const [isFirstTimeSetup, setIsFirstTimeSetup] = useState(false);
   const [hasMorePostedTweets, setHasMorePostedTweets] = useState(true);
@@ -80,6 +107,7 @@ function App() {
   const [numberOfGenerations, setNumberOfGenerations] = useState<number>(1);
   const [showPremiumModal, setShowPremiumModal] = useState(false);
   const [showPaidModal, setShowPaidModal] = useState(false);
+  const [desktopAuthAlert, setDesktopAuthAlert] = useState<DesktopAuthAlert | null>(null);
   const [paidModalConfig, setPaidModalConfig] = useState<{
     actionType: 'scrape' | 'post';
     remaining: number;
@@ -97,8 +125,6 @@ function App() {
   const tweetCountBeforeScrapeRef = useRef<number>(0);
   // Track tweet IDs before scrape to identify new tweets
   const tweetIdsBeforeScrapeRef = useRef<Set<string>>(new Set());
-  // Track if engagement monitoring is already in progress (debounce post-triggered refreshes)
-  const engagementMonitoringInProgressRef = useRef(false);
   // Track if we've seen the job actually running (to avoid treating stale 'idle' as 'complete')
   const hasSeenJobRunningRef = useRef(false);
   // Scroll anchoring refs - keeps user's view stable when new tweets are added
@@ -202,6 +228,9 @@ function App() {
     if (phase === 'discovering') {
       return { type: 'discovering', value: details };
     }
+    if (phase === 'queued') {
+      return { type: 'scraping', value: details || 'Queued for desktop execution' };
+    }
     return { type: 'scraping', value: '' };
   };
 
@@ -278,17 +307,30 @@ function App() {
       // Convert backend format to PostingItem format for UI
       const pendingItems: PostingItem[] = data.pending_posts.map(p => ({
         id: p.id,
+        draftId: p.draft_id,
+        status: p.status,
+        error: p.error || null,
         originalTweetId: p.originalTweetId,
         text: p.text,
         respondingTo: p.respondingTo,
         originalTweetUrl: p.originalTweetUrl,
         originalThreadText: p.originalThreadText,
         source: p.source,
-        startedAt: new Date(p.startedAt).getTime(),
+        startedAt: new Date(p.startedAt || p.updatedAt || Date.now()).getTime(),
       }));
       setPostingQueue(pendingItems);
     } catch (error) {
       console.error('Failed to load pending posts:', error);
+    }
+  }, []);
+
+  const loadStandalonePosts = useCallback(async (user: string) => {
+    try {
+      const data = await api.getPendingStandalonePosts(user);
+      setStandalonePendingPosts(data.pending_posts);
+      setStandalonePendingCount(data.pending_count);
+    } catch (error) {
+      console.error('Failed to load standalone pending posts:', error);
     }
   }, []);
 
@@ -315,6 +357,7 @@ function App() {
       loadUserInfo(callbackUsername);
       loadTweets(callbackUsername);
       loadPendingPosts(callbackUsername);  // Load any pending posts from before browser close
+      loadStandalonePosts(callbackUsername);
 
       // Clean up URL
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -323,12 +366,28 @@ function App() {
       loadUserInfo(username);
       loadTweets(username);
       loadPendingPosts(username);  // Load any pending posts from before browser close
+      loadStandalonePosts(username);
     } else {
       console.log('[App] No username found in initial load');
     }
     // This should only run once on mount, not when username changes
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!username) return;
+    loadPendingPosts(username);
+    loadStandalonePosts(username);
+  }, [username, loadPendingPosts, loadStandalonePosts]);
+
+  useEffect(() => {
+    if (!username) return;
+    const intervalId = setInterval(() => {
+      loadPendingPosts(username);
+      loadStandalonePosts(username);
+    }, 3000);
+    return () => clearInterval(intervalId);
+  }, [username, loadPendingPosts, loadStandalonePosts]);
 
   // Supabase auth state listener
   useEffect(() => {
@@ -341,7 +400,7 @@ function App() {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (_event: AuthChangeEvent, session: Session | null) => {
         setSupabaseSession(session);
         setSupabaseUser(session?.user ?? null);
       }
@@ -350,38 +409,47 @@ function App() {
     return () => subscription.unsubscribe();
   }, [setSupabaseSession, setSupabaseUser, setSessionLoading]);
 
-  // Redirect to login if no Supabase session (wait for session check to complete)
+  // Session gate: require Supabase session + paired desktop daemon + linked username
   useEffect(() => {
-    // Don't redirect until we've checked for a session
     if (sessionLoading) return;
 
-    // Check both Supabase session and username
     if (!supabaseSession) {
       navigate('/login');
-    } else if (supabaseSession && !username) {
-      // Has Supabase session but no username in localStorage
-      // Check if user has a linked Twitter profile
-      const checkLinkedTwitter = async () => {
-        try {
-          const syncResult = await api.syncSupabaseUser(supabaseSession.access_token);
-          if (syncResult.twitter_handle) {
-            // Twitter already connected - set username and stay on home
-            setUsername(syncResult.twitter_handle);
-            setTwitterConnected(true);
-          } else {
-            // Need to connect Twitter
-            navigate('/connect-twitter');
-          }
-        } catch {
-          // If sync fails, go to connect-twitter
-          navigate('/connect-twitter');
-        }
-      };
-      checkLinkedTwitter();
-    } else if (username) {
-      setTwitterConnected(true);
+      return;
     }
-  }, [sessionLoading, supabaseSession, username, navigate, setTwitterConnected, setUsername]);
+
+    const verifyAccess = async () => {
+      try {
+        const syncResult = await api.syncSupabaseUser(supabaseSession.access_token);
+        const devicesResult = await api.getDesktopDevices(supabaseSession.access_token);
+        const activeDevices = (devicesResult.devices || []).filter(device => !device.revoked);
+
+        if (activeDevices.length === 0) {
+          setTwitterConnected(false);
+          navigate('/install-daemon');
+          return;
+        }
+
+        const resolvedHandle = syncResult.twitter_handle || devicesResult.user_info.twitter_handle || null;
+        if (!resolvedHandle) {
+          setTwitterConnected(false);
+          navigate('/install-daemon');
+          return;
+        }
+
+        if (username !== resolvedHandle) {
+          setUsername(resolvedHandle);
+          localStorage.setItem('username', resolvedHandle);
+        }
+        setTwitterConnected(true);
+      } catch {
+        setTwitterConnected(false);
+        navigate('/install-daemon');
+      }
+    };
+
+    verifyAccess();
+  }, [sessionLoading, supabaseSession, navigate, setTwitterConnected, setUsername, username]);
 
   // Load posted tweets when switching to Posted tab
   useEffect(() => {
@@ -457,21 +525,6 @@ function App() {
       }
     }
 
-    // Create posting queue item for UI display
-    const postingItem: PostingItem = {
-      id: `posting-comment-${commentId}-${Date.now()}`,
-      originalTweetId: commentId,
-      text,
-      respondingTo: foundComment.handle || '',
-      originalTweetUrl: foundComment.url || '',
-      originalThreadText: [foundComment.text || ''],
-      source: 'comments',
-      startedAt: Date.now(),
-    };
-
-    // Add to posting queue UI immediately
-    setPostingQueue(prev => [postingItem, ...prev]);
-
     // Optimistically remove comment from Comments tab
     setPostsWithComments(prev => prev.map(post => ({
       ...post,
@@ -482,7 +535,7 @@ function App() {
 
     try {
       // Use the new queue API which handles everything server-side
-      const result = await api.addToPostQueue(username, {
+      await api.addToPostQueue(username, {
         type: 'comment_reply',
         response_to: commentId,
         reply: text,
@@ -497,34 +550,14 @@ function App() {
         original_tweet_url: foundComment.url || '',
       });
 
-      // Success! Remove from posting queue UI
-      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== commentId));
-
-      // Reload user info to update post count
-      await loadUserInfo(username);
-
-      // Reload posted tweets to show the newly posted tweet
-      await loadPostedTweets(username, true);
-
-      // Trigger engagement monitoring in background
-      if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
-        engagementMonitoringInProgressRef.current = true;
-        api.startEngagementMonitoring(username)
-          .catch(err => console.error('Background engagement monitoring failed:', err))
-          .finally(() => {
-            setTimeout(() => {
-              engagementMonitoringInProgressRef.current = false;
-            }, 30000);
-          });
-      }
+      // Refresh queued drafts so Posted tab shows awaiting approval state.
+      await loadPendingPosts(username);
+      setActiveTab('posted');
     } catch (error) {
       console.error('Failed to post comment reply:', error);
 
-      // Remove from posting queue UI
-      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== commentId));
-
-      // Backend already restored the comment to cache, so reload comments
-      loadCommentsGrouped(username);
+      // Reload comments to restore optimistic removals.
+      await loadCommentsGrouped(username);
 
       alert(`Failed to post reply: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
@@ -608,6 +641,7 @@ function App() {
       const info = await api.getUserInfo(user);
       console.log('[loadUserInfo] Got info:', info);
       setUserInfo(info);
+      setDesktopAuthAlert(parseDesktopAuthAlert(info.survey_data?.desktop_auth_alert));
 
       // Check if user needs to provide email (first-time users)
       if (!info.email || info.email.trim() === '') {
@@ -646,7 +680,7 @@ function App() {
       // (Tweets without threads remain in cache but aren't shown)
       const tweetsWithThreads = data.filter(tweet => {
         const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
-        return hasThread;
+        return hasThread && !tweet.post_pending;
       });
 
       // Sort by created_at date (newest first)
@@ -661,6 +695,74 @@ function App() {
       alert('Failed to load tweets. Please try again.');
     }
   };
+
+  const runPendingDraftAction = useCallback(async (draftId: string, action: () => Promise<void>) => {
+    setPendingDraftActionIds(prev => new Set(prev).add(draftId));
+    try {
+      await action();
+    } finally {
+      setPendingDraftActionIds(prev => {
+        const next = new Set(prev);
+        next.delete(draftId);
+        return next;
+      });
+    }
+  }, []);
+
+  const handleApprovePendingDraft = useCallback(async (draftId: string) => {
+    if (!username) return;
+    await runPendingDraftAction(draftId, async () => {
+      await api.approvePendingPost(username, draftId);
+      await loadPendingPosts(username);
+    });
+  }, [username, runPendingDraftAction, loadPendingPosts]);
+
+  const handleSavePendingDraft = useCallback(async (draftId: string, text: string) => {
+    if (!username) return;
+    await runPendingDraftAction(draftId, async () => {
+      await api.updatePendingPost(username, draftId, text);
+      await loadPendingPosts(username);
+    });
+  }, [username, runPendingDraftAction, loadPendingPosts]);
+
+  const handleDiscardPendingDraft = useCallback(async (draftId: string) => {
+    if (!username) return;
+    await runPendingDraftAction(draftId, async () => {
+      await api.removePendingPost(username, draftId);
+      await loadPendingPosts(username);
+      await loadTweets(username);
+      if (activeTab === 'comments') {
+        await loadCommentsGrouped(username);
+      }
+    });
+  }, [username, runPendingDraftAction, loadPendingPosts, loadTweets, activeTab, loadCommentsGrouped]);
+
+  const handleApproveStandalonePost = useCallback(async (draftId: string) => {
+    if (!username) return;
+    await runPendingDraftAction(draftId, async () => {
+      await api.approveStandalonePost(username, draftId);
+      await loadStandalonePosts(username);
+    });
+  }, [username, runPendingDraftAction, loadStandalonePosts]);
+
+  const handleSaveStandalonePost = useCallback(async (
+    draftId: string,
+    payload: { text?: string; image_url?: string | null; link_url?: string | null }
+  ) => {
+    if (!username) return;
+    await runPendingDraftAction(draftId, async () => {
+      await api.updateStandalonePost(username, draftId, payload);
+      await loadStandalonePosts(username);
+    });
+  }, [username, runPendingDraftAction, loadStandalonePosts]);
+
+  const handleDiscardStandalonePost = useCallback(async (draftId: string) => {
+    if (!username) return;
+    await runPendingDraftAction(draftId, async () => {
+      await api.removeStandalonePost(username, draftId);
+      await loadStandalonePosts(username);
+    });
+  }, [username, runPendingDraftAction, loadStandalonePosts]);
 
   // Handle scraping + generation (full refresh)
   const handleScrapeInternal = async () => {
@@ -727,7 +829,7 @@ function App() {
           const data = await api.getTweetsCache(username);
           const tweetsWithThreads = data.filter(tweet => {
             const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
-            return hasThread;
+            return hasThread && !tweet.post_pending;
           });
           const sorted = tweetsWithThreads.sort((a, b) => {
             return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -776,7 +878,7 @@ function App() {
             const data = await api.getTweetsCache(username);
             const tweetsWithThreads = data.filter(tweet => {
               const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
-              return hasThread;
+              return hasThread && !tweet.post_pending;
             });
             const sorted = tweetsWithThreads.sort((a, b) => {
               return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -835,7 +937,7 @@ function App() {
         const data = await api.getTweetsCache(username);
         const tweetsWithThreads = data.filter(tweet => {
           const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
-          return hasThread;
+          return hasThread && !tweet.post_pending;
         });
         const sorted = tweetsWithThreads.sort((a, b) => {
           return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -981,13 +1083,16 @@ function App() {
       // Reset edited flag since backend cache now has the update
       setTweets(prev => prev.map(t => {
         if (t.id === tweetId) {
-          const generatedReplies: Array<[string, string]> = t.generated_replies || (t.reply ? [[t.reply, 'unknown']] : []);
-          const updatedReplies: Array<[string, string]> = [...generatedReplies];
+          const generatedReplies: Array<[string, string, string?]> = t.generated_replies || (t.reply ? [[t.reply, 'unknown']] : []);
+          const updatedReplies: Array<[string, string, string?]> = [...generatedReplies];
           // Update the text while preserving the model name
           const currentModel = Array.isArray(updatedReplies[replyIndex]) && updatedReplies[replyIndex].length >= 2
             ? updatedReplies[replyIndex][1]
             : 'unknown';
-          updatedReplies[replyIndex] = [newReply, currentModel];
+          const currentPromptVariant = Array.isArray(updatedReplies[replyIndex]) && updatedReplies[replyIndex].length >= 3
+            ? updatedReplies[replyIndex][2]
+            : undefined;
+          updatedReplies[replyIndex] = [newReply, currentModel, currentPromptVariant];
           return { ...t, generated_replies: updatedReplies, edited: false };
         }
         return t;
@@ -1049,21 +1154,6 @@ function App() {
       }
     }
 
-    // Create posting queue item for UI display
-    const postingItem: PostingItem = {
-      id: `posting-${tweetId}-${Date.now()}`,
-      originalTweetId: tweetId,
-      text,
-      respondingTo: tweet.thread?.[0]?.handle || '',
-      originalTweetUrl: tweet.thread?.[0]?.url || '',
-      originalThreadText: tweet.thread?.map(t => t.text) || [],
-      source: 'discovered',
-      startedAt: Date.now(),
-    };
-
-    // Add to posting queue UI immediately
-    setPostingQueue(prev => [postingItem, ...prev]);
-
     // Optimistically remove from Discovered tab
     const updatedTweets = tweets.filter(t => t.id !== tweetId);
     setTweets(updatedTweets);
@@ -1074,7 +1164,7 @@ function App() {
 
     try {
       // Use the new queue API which handles everything server-side
-      const result = await api.addToPostQueue(username, {
+      await api.addToPostQueue(username, {
         type: 'reply',
         response_to: tweet.cache_id || tweetId,
         reply: text,
@@ -1089,31 +1179,10 @@ function App() {
         original_tweet_url: tweet.url || '',
       });
 
-      // Success! Remove from posting queue UI
-      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== tweetId));
-
-      // Reload user info to update lifetime_posts counter
-      await loadUserInfo(username);
-
-      // Reload posted tweets to show the newly posted tweet
-      await loadPostedTweets(username, true);
-
-      // Trigger engagement monitoring in background
-      if (!isRefreshing && !engagementMonitoringInProgressRef.current) {
-        engagementMonitoringInProgressRef.current = true;
-        api.startEngagementMonitoring(username)
-          .catch(err => console.error('Background engagement monitoring failed:', err))
-          .finally(() => {
-            setTimeout(() => {
-              engagementMonitoringInProgressRef.current = false;
-            }, 30000);
-          });
-      }
+      await loadPendingPosts(username);
+      setActiveTab('posted');
     } catch (error) {
       console.error('Failed to post reply:', error);
-
-      // Remove from posting queue UI
-      setPostingQueue(prev => prev.filter(p => p.originalTweetId !== tweetId));
 
       // Backend already restored the tweet to cache, so reload tweets
       await loadTweets(username);
@@ -1306,6 +1375,30 @@ function App() {
     }
   };
 
+  const handleDismissDesktopAuthAlert = async () => {
+    if (!username) {
+      setDesktopAuthAlert(null);
+      return;
+    }
+
+    try {
+      await api.updateSurveyData(username, { desktop_auth_alert: null });
+      setUserInfo(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          survey_data: {
+            ...(prev.survey_data || {}),
+            desktop_auth_alert: null,
+          },
+        };
+      });
+      setDesktopAuthAlert(null);
+    } catch (error) {
+      console.error('Failed to dismiss desktop auth alert:', error);
+    }
+  };
+
   if (isLoading && !loadingPhase) {
     return (
       <Background className="flex items-center justify-center p-6">
@@ -1324,6 +1417,30 @@ function App() {
         onRefreshClick={handleRefresh}
         hasInvalidAccounts={hasInvalidAccounts}
       />
+
+      {desktopAuthAlert && (
+        <div className="mx-6 mt-4 rounded-2xl border border-amber-300/40 bg-amber-500/10 p-4 text-amber-100">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-amber-200">Desktop login required</div>
+              <div className="mt-1 text-sm">{desktopAuthAlert.message}</div>
+              {desktopAuthAlert.expected_twitter_handle && (
+                <div className="mt-2 text-xs text-amber-200/90">
+                  Expected: {desktopAuthAlert.expected_twitter_handle}
+                  {desktopAuthAlert.reported_twitter_handle ? `, found: ${desktopAuthAlert.reported_twitter_handle}` : ''}
+                </div>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={handleDismissDesktopAuthAlert}
+              className="rounded-md border border-amber-200/50 px-3 py-1 text-xs font-semibold text-amber-100 hover:bg-amber-200/15"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {userInfo && (
         <UserSettingsModal
@@ -1365,7 +1482,7 @@ function App() {
                   const data = await api.getTweetsCache(username);
                   const tweetsWithThreads = data.filter(tweet => {
                     const hasThread = tweet.thread && Array.isArray(tweet.thread) && tweet.thread.length > 0;
-                    return hasThread;
+                    return hasThread && !tweet.post_pending;
                   });
                   const sorted = tweetsWithThreads.sort((a, b) => {
                     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -1416,6 +1533,7 @@ function App() {
           }}
           onLogout={handleLogout}
           isFirstTimeSetup={isFirstTimeSetup}
+          supabaseAccessToken={supabaseSession?.access_token ?? null}
         />
       )}
 
@@ -1428,6 +1546,7 @@ function App() {
         onTabChange={setActiveTab}
         discoveredCount={tweets.length}
         postedCount={userInfo?.lifetime_posts || 0}
+        postsCount={standalonePendingCount}
         commentsCount={pendingCommentsCount}
       />
 
@@ -1478,6 +1597,20 @@ function App() {
                 isLoadingMore={isLoadingMorePosted}
                 onDelete={handleDeletePosted}
                 onViewTweet={handleViewPostedTweet}
+                onApprovePendingDraft={handleApprovePendingDraft}
+                onSavePendingDraft={handleSavePendingDraft}
+                onDiscardPendingDraft={handleDiscardPendingDraft}
+                pendingActionDraftIds={pendingDraftActionIds}
+              />
+            )}
+
+            {activeTab === 'posts' && userInfo && (
+              <PostsTab
+                posts={standalonePendingPosts}
+                pendingActionDraftIds={pendingDraftActionIds}
+                onApprovePost={handleApproveStandalonePost}
+                onSavePost={handleSaveStandalonePost}
+                onDiscardPost={handleDiscardStandalonePost}
               />
             )}
 

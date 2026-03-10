@@ -26,6 +26,10 @@ interface PostedTabProps {
   isLoadingMore: boolean;
   onDelete: (tweetId: string) => void;
   onViewTweet: (tweetId: string) => void;
+  onApprovePendingDraft: (draftId: string) => Promise<void> | void;
+  onSavePendingDraft: (draftId: string, text: string) => Promise<void> | void;
+  onDiscardPendingDraft: (draftId: string) => Promise<void> | void;
+  pendingActionDraftIds: Set<string>;
 }
 
 /** Group tweets by immediate parent (what we're directly replying to) */
@@ -431,6 +435,10 @@ export function PostedTab({
   isLoadingMore,
   onDelete,
   onViewTweet,
+  onApprovePendingDraft,
+  onSavePendingDraft,
+  onDiscardPendingDraft,
+  pendingActionDraftIds,
 }: PostedTabProps) {
   const threads = useMemo(() => groupTweetsIntoThreads(postedTweets), [postedTweets]);
 
@@ -473,6 +481,10 @@ export function PostedTab({
                     myProfilePicUrl={userProfilePicUrl}
                     myHandle={userHandle}
                     myUsername={userUsername}
+                    onApproveDraft={onApprovePendingDraft}
+                    onSaveDraft={onSavePendingDraft}
+                    onDiscardDraft={onDiscardPendingDraft}
+                    isActionPending={!!item.draftId && pendingActionDraftIds.has(item.draftId)}
                   />
                 </AnimatedListItem>
               ))}

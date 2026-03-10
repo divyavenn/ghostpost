@@ -26,11 +26,12 @@ export interface ReplyData {
   username: string;
   followers: number;
   reply?: string;
-  generated_replies?: Array<[string, string]>;
+  generated_replies?: Array<[string, string, string?]>;
   other_replies?: OtherReply[];
   created_at: string;
   url: string;
   thread?: string[];
+  thread_ids?: string[];
   author_profile_pic_url?: string;
   scraped_from?: {
     type: 'account' | 'query' | 'home_timeline';
@@ -56,6 +57,7 @@ export interface ReplyData {
     created_at: string;
     url: string;
   };
+  post_pending?: boolean;
   /** Flag to indicate this tweet has been locally edited and should not be overwritten by polling */
   edited?: boolean;
 }

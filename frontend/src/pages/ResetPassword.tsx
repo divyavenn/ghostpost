@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import styled from 'styled-components';
+import { type AuthChangeEvent, type Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { Background } from '../components/Background';
 
@@ -126,7 +127,7 @@ export function ResetPassword() {
 
   useEffect(() => {
     // Listen for auth state changes - Supabase will process the URL token
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       console.log('Auth event:', event, session);
 
       if (event === 'PASSWORD_RECOVERY') {

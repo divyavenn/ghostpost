@@ -74,22 +74,22 @@ export function AuthCallback() {
         try {
           const syncResult = await api.syncSupabaseUser(session.access_token);
 
-          // Check if user has connected Twitter
+          // Check if user already has a linked handle
           if (syncResult.twitter_handle) {
-            // Has Twitter connected - store username and go to main app
+            // Has linked handle - store username and go to main app
             localStorage.setItem('username', syncResult.twitter_handle);
             setTwitterConnected(true);
             navigate('/');
           } else {
-            // No Twitter connected - go to connect Twitter flow
+            // No linked handle/device yet - go to daemon setup flow
             setTwitterConnected(false);
-            navigate('/connect-twitter');
+            navigate('/install-daemon');
           }
         } catch (syncError) {
           console.error('Failed to sync user with backend:', syncError);
-          // Still allow user to proceed to connect Twitter
+          // Still allow user to proceed to daemon setup
           setTwitterConnected(false);
-          navigate('/connect-twitter');
+          navigate('/install-daemon');
         }
       } catch (err) {
         console.error('Auth callback error:', err);

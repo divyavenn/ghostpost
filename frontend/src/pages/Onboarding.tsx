@@ -371,7 +371,7 @@ export function Onboarding() {
   const [newAccountInput, setNewAccountInput] = useState('');
   const [validatingHandle, setValidatingHandle] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [explainTabIndex, setExplainTabIndex] = useState(0); // 0=discovered, 1=posted, 2=comments, 3=done
+  const [explainTabIndex, setExplainTabIndex] = useState(0); // 0=discovered, 1=posted, 2=posts, 3=comments, 4=done
   const [maxStepReached, setMaxStepReached] = useState(0); // Track furthest step for forward navigation
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -775,13 +775,14 @@ export function Onboarding() {
         );
 
       case 'tabs': {
-        const tabNames: Array<'discovered' | 'posted' | 'comments'> = ['discovered', 'posted', 'comments'];
+        const tabNames: Array<'discovered' | 'posted' | 'posts' | 'comments'> = ['discovered', 'posted', 'posts', 'comments'];
         const tabExplanations: Record<string, string> = {
           discovered: 'Every day, we find the most high-traction posts on social media relevant to your brand. Engaging with these is the best way to organically get the word out and improve your search rankings. \n\nThey\'re all in one place in your Discovered Tab.',
           posted: 'We keep track of all your posts and learn from what\'s performing well to make our web agents smarter. \n \n Your top posts automatically get reposted to other platforms',
+          posts: 'Standalone drafts from your CLI and extension land here first. Review the text, optional image, and optional link, then approve to send to the desktop post_all task.',
           comments: 'Replying to comments is vital for keeping engagement high.\n\n With Ghostpost you can build relationships with your audience with a single click.'
         };
-        const activeTabName = explainTabIndex < 3 ? tabNames[explainTabIndex] : 'discovered';
+        const activeTabName = explainTabIndex < tabNames.length ? tabNames[explainTabIndex] : 'discovered';
 
         return (
           <Bubble>
@@ -792,16 +793,17 @@ export function Onboarding() {
                 onTabChange={(tab) => setExplainTabIndex(tabNames.indexOf(tab))}
                 discoveredCount={0}
                 postedCount={0}
+                postsCount={0}
                 commentsCount={0}
               />
             </div>
-            {explainTabIndex < 3 && (
+            {explainTabIndex < tabNames.length && (
               <TabExplanationBox key={explainTabIndex}>
                 <p>{tabExplanations[activeTabName]}</p>
               </TabExplanationBox>
             )}
             <ContinueHint>
-              {explainTabIndex < 2
+              {explainTabIndex < tabNames.length - 1
                 ? 'Press Enter to see next tab'
                 : 'Press Enter to continue'}
             </ContinueHint>
@@ -841,11 +843,11 @@ export function Onboarding() {
           advanceStep('intent');
         } else if (step === 'tabs') {
           e.preventDefault();
-          if (explainTabIndex < 2) {
-            // Advance through tabs: 0 → 1 → 2
+          if (explainTabIndex < 3) {
+            // Advance through tabs: 0 → 1 → 2 → 3
             setExplainTabIndex(prev => prev + 1);
-          } else if (explainTabIndex === 2) {
-            // After Comments, auto-submit
+          } else if (explainTabIndex === 3) {
+            // After final tab explanation, auto-submit
             handleSubmit();
           }
         }

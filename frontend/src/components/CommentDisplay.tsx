@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import styled, { css } from 'styled-components';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import { type PostWithComments as CommentGroupData, type CommentWithContext } from '../api/client';
 import { AnimatedText } from './WordStyles';
 import { QuotedTweetDisplay, TweetMediaGrid } from './TweetMediaComponents';
@@ -429,30 +429,6 @@ const BottomBar = styled.div`
   flex-shrink: 0;
 `;
 
-const PostAllButton = styled.button`
-  border-radius: 9999px;
-  background-color: #0ea5e9;
-  padding: 0.625rem 2rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: white;
-  transition: background-color 0.2s;
-  border: none;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-
-  &:hover {
-    background-color: #0284c7;
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-`;
-
 const ReplyAvatar = styled.img`
   height: 1.5rem;
   width: 1.5rem;
@@ -838,7 +814,7 @@ interface CommentDisplayProps {
 }
 
 // Animation variants for comment cards during Post All
-const commentCardVariants = {
+const commentCardVariants: Variants = {
   normal: {
     opacity: 1,
     scale: 1,
@@ -851,7 +827,7 @@ const commentCardVariants = {
       opacity: {
         repeat: Infinity,
         duration: 1.5,
-        ease: 'easeInOut',
+        ease: [0.42, 0, 0.58, 1],
       },
     },
   },
@@ -875,7 +851,6 @@ export function CommentDisplay({
   regeneratingCommentIds,
 }: CommentDisplayProps) {
   const { post, comments } = data;
-  const [isPostingAll, setIsPostingAll] = useState(false);
   const [isPostExpanded, setIsPostExpanded] = useState(false);
   const [postingProgress, setPostingProgress] = useState<{
     current: number;
@@ -898,7 +873,6 @@ export function CommentDisplay({
     const total = commentsWithReplies.length;
     if (total === 0) return;
 
-    setIsPostingAll(true);
     setPostingProgress({ current: 0, total, currentCommentId: null });
 
     // Post each comment sequentially and wait for each to complete
@@ -921,7 +895,6 @@ export function CommentDisplay({
       setPostingProgress({ current: i + 1, total, currentCommentId: null });
     }
 
-    setIsPostingAll(false);
     setPostingProgress(null);
   };
 

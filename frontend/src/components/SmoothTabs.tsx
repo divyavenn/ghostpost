@@ -6,7 +6,7 @@ import {
     useSpring,
     useTransform,
     useVelocity,
-} from "motion/react"
+} from "framer-motion"
 import { useEffect, useRef, useState } from "react"
 
 export default function SmoothTabs() {

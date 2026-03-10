@@ -10,6 +10,17 @@ import dotenv
 # Load .env file from backend/ directory (one level up from backend/backend/)
 dotenv.load_dotenv(Path(__file__).resolve().parent.parent / '.env')
 
+
+def _get_int_env(name: str, default: int) -> int:
+    """Read an integer env var with safe fallback."""
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
 # =============================================================================
 # PATHS
 # =============================================================================
@@ -100,7 +111,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
 # Email settings for developer notifications
 DEV_EMAIL = os.getenv("DEV_EMAIL")
 SMTP_HOST = os.getenv("SMTP_HOST")
-SMTP_PORT = int(os.getenv("SMTP_PORT"))
+SMTP_PORT = _get_int_env("SMTP_PORT", 587)
 SMTP_USER = os.getenv("SMTP_USER")
 SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 

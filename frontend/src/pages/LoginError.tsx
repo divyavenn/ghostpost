@@ -111,10 +111,9 @@ export function LoginError() {
   }, []);
 
   const handleTryAgain = () => {
-    // If user has Supabase session, go to connect-twitter page
-    // Otherwise, go to login page
+    // If user has a valid Supabase session, continue daemon setup.
     if (hasSession) {
-      navigate('/connect-twitter');
+      navigate('/install-daemon');
     } else {
       navigate('/login');
     }
@@ -132,7 +131,7 @@ export function LoginError() {
           )}
           <ErrorCode>Error: {errorCode}</ErrorCode>
           <Button onClick={handleTryAgain}>
-            {hasSession ? 'Connect Twitter' : 'Try Again'}
+            {hasSession ? 'Set Up Desktop Daemon' : 'Try Again'}
           </Button>
         </Card>
       </Container>

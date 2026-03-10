@@ -24,7 +24,7 @@ logging.getLogger("uvicorn.access").addFilter(
 from backend.data.twitter.edit_cache import router as tweets_router
 from backend.browser_automation.twitter.metrics import router as performance_router
 from backend.browser_automation.twitter.timeline import router as read_router
-from backend.twitter.auth_routes import router as auth_router
+from backend.twitter.cookie_import_routes import router as cookie_import_router
 from backend.auth.supabase_routes import router as supabase_auth_router
 from backend.twitter.comment_replies import router as comment_replies_router
 from backend.twitter.comments_routes import router as comments_router
@@ -40,6 +40,7 @@ from backend.utlils.scheduler import start_scheduler, stop_scheduler
 from backend.billing.routes import router as billing_router
 from backend.twitter.account_routes import router as account_router
 from backend.desktop.desktop_jobs import router as desktop_router
+from backend.desktop.pairing import router as desktop_pairing_router
 
 
 @asynccontextmanager
@@ -71,7 +72,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router)
+app.include_router(cookie_import_router)
 app.include_router(supabase_auth_router)
 app.include_router(tweets_router)
 app.include_router(post_router)
@@ -89,6 +90,7 @@ app.include_router(jobs_router)
 app.include_router(billing_router)
 app.include_router(account_router)
 app.include_router(desktop_router)
+app.include_router(desktop_pairing_router)
 
 
 @app.get("/health")

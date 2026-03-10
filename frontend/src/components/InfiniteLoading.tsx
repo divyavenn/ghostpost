@@ -1,6 +1,6 @@
 "use client"
 
-import { motion, stagger } from "motion/react"
+import { motion, stagger } from "framer-motion"
 import { useState } from "react"
 
 export default function InfiniteLoading() {

@@ -1,17 +1,18 @@
 interface TabNavigationProps {
-  activeTab: 'discovered' | 'posted' | 'comments';
-  onTabChange: (tab: 'discovered' | 'posted' | 'comments') => void;
+  activeTab: 'discovered' | 'posted' | 'posts' | 'comments';
+  onTabChange: (tab: 'discovered' | 'posted' | 'posts' | 'comments') => void;
   discoveredCount: number;
   postedCount: number;
+  postsCount?: number;
   commentsCount?: number;
 }
 
-export function TabNavigation({ activeTab, onTabChange, discoveredCount, postedCount, commentsCount = 0 }: TabNavigationProps) {
+export function TabNavigation({ activeTab, onTabChange, discoveredCount, postedCount, postsCount = 0, commentsCount = 0 }: TabNavigationProps) {
   return (
-    <div className="flex justify-center gap-4 pt-2 pb-4">
+    <div className="flex flex-wrap justify-center gap-3 pt-2 pb-4">
       <button
         onClick={() => onTabChange('discovered')}
-        className={`px-6 py-2 text-sm font-semibold transition rounded-full ${
+        className={`px-5 py-2 text-sm font-semibold transition rounded-full ${
           activeTab === 'discovered'
             ? 'bg-sky-500 text-white'
             : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
@@ -21,7 +22,7 @@ export function TabNavigation({ activeTab, onTabChange, discoveredCount, postedC
       </button>
       <button
         onClick={() => onTabChange('posted')}
-        className={`px-6 py-2 text-sm font-semibold transition rounded-full ${
+        className={`px-5 py-2 text-sm font-semibold transition rounded-full ${
           activeTab === 'posted'
             ? 'bg-sky-500 text-white'
             : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
@@ -30,8 +31,18 @@ export function TabNavigation({ activeTab, onTabChange, discoveredCount, postedC
         Posted ({postedCount})
       </button>
       <button
+        onClick={() => onTabChange('posts')}
+        className={`px-5 py-2 text-sm font-semibold transition rounded-full ${
+          activeTab === 'posts'
+            ? 'bg-sky-500 text-white'
+            : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'
+        }`}
+      >
+        Posts {postsCount > 0 && `(${postsCount})`}
+      </button>
+      <button
         onClick={() => onTabChange('comments')}
-        className={`px-6 py-2 text-sm font-semibold transition rounded-full ${
+        className={`px-5 py-2 text-sm font-semibold transition rounded-full ${
           activeTab === 'comments'
             ? 'bg-sky-500 text-white'
             : 'bg-neutral-800 text-neutral-400 hover:bg-neutral-700 hover:text-white'

@@ -280,20 +280,20 @@ export function Login() {
         if (error) {
           setError(error.message);
         } else if (data.session) {
-          // Sync with backend and check if Twitter is already connected
+          // Sync with backend and route into daemon setup if needed
           try {
             const syncResult = await api.syncSupabaseUser(data.session.access_token);
             if (syncResult.twitter_handle) {
-              // Twitter already connected - go straight to home
+              // Existing linked handle - go straight to home
               localStorage.setItem('username', syncResult.twitter_handle);
               navigate('/');
             } else {
-              // Need to connect Twitter
-              navigate('/connect-twitter');
+              // Need daemon setup
+              navigate('/install-daemon');
             }
           } catch {
-            // If sync fails, still go to connect-twitter
-            navigate('/connect-twitter');
+            // If sync fails, continue into daemon setup flow
+            navigate('/install-daemon');
           }
         }
       }

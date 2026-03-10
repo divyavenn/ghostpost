@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { RecoilRoot } from 'recoil'
 import '@fortawesome/fontawesome-free/css/all.min.css'
 import '@fontsource/fraunces'
@@ -9,7 +9,7 @@ import './index.css'
 import App from './App.tsx'
 import { Login } from './pages/Login.tsx'
 import { AuthCallback } from './pages/AuthCallback.tsx'
-import { ConnectTwitter } from './pages/ConnectTwitter.tsx'
+import { InstallDaemon } from './pages/InstallDaemon.tsx'
 import { ResetPassword } from './pages/ResetPassword.tsx'
 import { LoginError } from './pages/LoginError.tsx'
 import { Pricing } from './pages/Pricing.tsx'
@@ -28,7 +28,8 @@ createRoot(document.getElementById('root')!).render(
         <Route path="/onboarding" element={<Onboarding />} />
         <Route path="/login-error" element={<LoginError />} />
         <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/connect-twitter" element={<ConnectTwitter />} />
+        <Route path="/install-daemon" element={<InstallDaemon />} />
+        <Route path="/connect-twitter" element={<Navigate to="/install-daemon" replace />} />
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/pricing" element={<Pricing />} />
         <Route path="/billing/success" element={<BillingSuccess />} />

@@ -38,7 +38,7 @@ export interface CommentData {
   parent_chain: string[];
   in_reply_to_status_id: string | null;
   status: 'pending' | 'replied' | 'skipped';
-  generated_replies: Array<[string, string]>; // [(text, model), ...]
+  generated_replies: Array<[string, string, string?]>; // [(text, model, prompt_variant?), ...]
   edited: boolean;
   thread?: string[];
   other_replies?: Array<{
@@ -129,35 +129,6 @@ async function handleAuthError(response: Response): Promise<void> {
   }
 }
 
-export interface AuthResponse {
-  auth_url: string;
-  state: string;
-  session_id: string;
-  message: string;
-  debugger_url?: string;  // Browserbase live debugger URL
-}
-
-export interface BrowserLoginResponse {
-  session_id: string;
-  debugger_url: string;
-  login_url: string;
-  message: string;
-}
-
-export interface BrowserLoginStatus {
-  status: 'pending' | 'complete' | 'error';
-  username?: string;
-  error?: string;
-  message?: string;
-  current_url?: string;
-}
-
-export interface TwitterStatus {
-  connected: boolean;
-  twitter_handle: string | null;
-  expires_at: string | null;
-}
-
 // Query can be either a plain string or [query, summary] tuple
 export type QueryItem = string | [string, string];
 
@@ -239,74 +210,56 @@ export interface ValidationDelayConfig {
   tier: string;
 }
 
+export interface StandalonePendingPost {
+  id: string;
+  draft_id: string;
+  status: 'awaiting_approval' | 'queued' | 'running' | 'failed' | 'completed';
+  text: string;
+  image_url?: string | null;
+  link_url?: string | null;
+  desktop_job_id?: string;
+  error?: string;
+  startedAt: string;
+  updatedAt?: string;
+}
+
+export type DesktopPlatform = 'twitter' | 'substack' | 'linkedin' | 'reddit';
+
+export interface DesktopAccountState {
+  status: 'logged_in' | 'logged_out' | 'unknown';
+  account?: string | null;
+  updated_at?: string;
+}
+
+export interface DesktopDevice {
+  id: string;
+  user_id: string;
+  device_name: string;
+  os: string;
+  daemon_version: string;
+  machine_id: string;
+  platform_preferences: DesktopPlatform[];
+  accounts: Record<string, DesktopAccountState>;
+  paired_at: string;
+  last_seen_at: string;
+  revoked: boolean;
+}
+
+export interface DesktopUserInfo {
+  user_id: string;
+  email?: string | null;
+  account_type: string;
+  twitter_handle?: string | null;
+  twitter_username?: string | null;
+  platform_preferences: DesktopPlatform[];
+  survey_data?: Record<string, unknown>;
+}
+
 export const api = {
   // Config endpoints
   getValidationDelay: async (): Promise<ValidationDelayConfig> => {
     const response = await fetch(`${API_BASE_URL}/user/config/validation-delay`);
     if (!response.ok) throw new Error('Failed to get validation delay config');
-    return response.json();
-  },
-
-  // Auth endpoints
-  startTwitterOAuth: async (redirectTo?: string): Promise<AuthResponse> => {
-    const response = await fetch(`${API_BASE_URL}/auth/twitter/start`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        redirect_to: redirectTo
-      }),
-    });
-    if (!response.ok) throw new Error('Failed to start OAuth');
-    return response.json();
-  },
-
-  getTwitterStatus: async (): Promise<TwitterStatus> => {
-    const response = await fetch(`${API_BASE_URL}/auth/twitter/status`);
-    if (!response.ok) throw new Error('Failed to get Twitter status');
-    return response.json();
-  },
-
-  startBrowserLogin: async (): Promise<BrowserLoginResponse> => {
-    const response = await fetch(`${API_BASE_URL}/auth/twitter/browser-login`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) throw new Error('Failed to start browser login');
-    return response.json();
-  },
-
-  checkBrowserLogin: async (sessionId: string): Promise<BrowserLoginStatus> => {
-    const response = await fetch(`${API_BASE_URL}/auth/twitter/browser-login/check/${sessionId}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) throw new Error('Failed to check browser login');
-    return response.json();
-  },
-
-  getLoginUrl: async (frontendUrl: string): Promise<{ login_url: string; session_id: string }> => {
-    const response = await fetch(`${API_BASE_URL}/auth/twitter/login-url`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        frontend_url: frontendUrl
-      }),
-    });
-    if (!response.ok) throw new Error('Failed to get login URL');
-    return response.json();
-  },
-
-  checkCookieStatus: async (sessionId: string): Promise<{ status: string; username?: string; verified?: boolean }> => {
-    const response = await fetch(`${API_BASE_URL}/auth/twitter/cookie-status/${sessionId}`);
-    if (!response.ok) throw new Error('Failed to check cookie status');
     return response.json();
   },
 
@@ -346,6 +299,94 @@ export const api = {
     if (!response.ok) {
       const error = await response.json().catch(() => ({ detail: 'Failed to get user profile' }));
       throw new Error(error.detail || 'Failed to get user profile');
+    }
+    return response.json();
+  },
+
+  getDesktopDownloadLinks: async (): Promise<{
+    macos: string;
+    windows: string;
+    linux: string;
+    docs: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/desktop/download-links`);
+    if (!response.ok) throw new Error('Failed to get download links');
+    return response.json();
+  },
+
+  startDesktopPairing: async (
+    accessToken: string,
+    expiresMinutes: number = 10
+  ): Promise<{
+    pair_code: string;
+    expires_at: string;
+    expires_in_seconds: number;
+    user_info: DesktopUserInfo;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/desktop/pairing/start`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ expires_minutes: expiresMinutes }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to start pairing' }));
+      throw new Error(error.detail || 'Failed to start pairing');
+    }
+    return response.json();
+  },
+
+  getDesktopDevices: async (accessToken: string): Promise<{
+    devices: DesktopDevice[];
+    platform_preferences: DesktopPlatform[];
+    user_info: DesktopUserInfo;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/desktop/devices`, {
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to get devices' }));
+      throw new Error(error.detail || 'Failed to get devices');
+    }
+    return response.json();
+  },
+
+  revokeDesktopDevice: async (accessToken: string, deviceId: string): Promise<{
+    status: 'revoked';
+    device_id: string;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/desktop/devices/${encodeURIComponent(deviceId)}/revoke`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+      },
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to revoke device' }));
+      throw new Error(error.detail || 'Failed to revoke device');
+    }
+    return response.json();
+  },
+
+  updateDesktopPlatformPreferences: async (
+    accessToken: string,
+    platforms: DesktopPlatform[]
+  ): Promise<{ platform_preferences: DesktopPlatform[] }> => {
+    const response = await fetch(`${API_BASE_URL}/desktop/platform-preferences`, {
+      method: 'PATCH',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ platforms }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to update platforms' }));
+      throw new Error(error.detail || 'Failed to update platforms');
     }
     return response.json();
   },
@@ -395,12 +436,8 @@ export const api = {
   },
 
   /**
-   * Add a tweet to the posting queue. This will:
-   * 1. Add to the persistent queue (survives browser close)
-   * 2. Mark source as post_pending
-   * 3. Immediately post to Twitter
-   * 4. On success: remove from queue, delete from source
-   * 5. On failure: remove from queue, restore post_pending
+   * Add a draft to the posting queue for manual approval.
+   * This does not post immediately.
    */
   addToPostQueue: async (username: string, payload: {
     type: 'reply' | 'comment_reply';
@@ -417,9 +454,10 @@ export const api = {
     original_tweet_url?: string;
   }): Promise<{
     message: string;
-    status: 'posted' | 'duplicate' | 'failed';
-    posted_tweet_id?: string;
-    data?: unknown;
+    status: 'awaiting_approval' | 'duplicate' | 'failed';
+    draft_id?: string;
+    item?: unknown;
+    queued?: boolean;
   }> => {
     const response = await fetch(`${API_BASE_URL}/post/queue?username=${encodeURIComponent(username)}`, {
       method: 'POST',
@@ -442,6 +480,9 @@ export const api = {
   getPendingPosts: async (username: string): Promise<{
     pending_posts: Array<{
       id: string;
+      draft_id?: string;
+      status: 'awaiting_approval' | 'queued' | 'running' | 'failed' | 'completed';
+      desktop_job_id?: string;
       originalTweetId: string;
       text: string;
       respondingTo: string;
@@ -449,14 +490,158 @@ export const api = {
       originalThreadText: string[];
       source: 'discovered' | 'comments';
       startedAt: string;
+      updatedAt?: string;
+      error?: string;
+      posted_tweet_id?: string;
       replyingToPfp: string;
       parentChain: string[];
       media: Array<{ type: string; url: string; alt_text?: string }>;
     }>;
     count: number;
+    pending_count: number;
   }> => {
     const response = await fetch(`${API_BASE_URL}/post/pending?username=${encodeURIComponent(username)}`);
     if (!response.ok) throw new Error('Failed to get pending posts');
+    return response.json();
+  },
+
+  updatePendingPost: async (username: string, draftId: string, reply: string): Promise<{
+    message: string;
+    draft_id: string;
+    item: unknown;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/post/pending/${encodeURIComponent(draftId)}?username=${encodeURIComponent(username)}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ reply }),
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to update pending post' }));
+      throw new Error(error.detail || 'Failed to update pending post');
+    }
+    return response.json();
+  },
+
+  approvePendingPost: async (username: string, draftId: string): Promise<{
+    message: string;
+    draft_id: string;
+    desktop_job_id?: string;
+    status: string;
+    item?: unknown;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/post/pending/${encodeURIComponent(draftId)}/approve?username=${encodeURIComponent(username)}`, {
+      method: 'POST',
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to approve pending post' }));
+      throw new Error(error.detail || 'Failed to approve pending post');
+    }
+    return response.json();
+  },
+
+  removePendingPost: async (username: string, draftId: string): Promise<{
+    message: string;
+    removed: boolean;
+    item?: unknown;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/post/pending/${encodeURIComponent(draftId)}?username=${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to remove pending post' }));
+      throw new Error(error.detail || 'Failed to remove pending post');
+    }
+    return response.json();
+  },
+
+  queueStandalonePost: async (
+    username: string,
+    payload: { text: string; image_url?: string | null; link_url?: string | null }
+  ): Promise<{
+    message: string;
+    status: 'awaiting_approval' | 'duplicate';
+    draft_id?: string;
+    queued?: boolean;
+    item?: unknown;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/post/standalone/queue?username=${encodeURIComponent(username)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to queue standalone post' }));
+      throw new Error(error.detail || 'Failed to queue standalone post');
+    }
+    return response.json();
+  },
+
+  getPendingStandalonePosts: async (username: string): Promise<{
+    pending_posts: StandalonePendingPost[];
+    count: number;
+    pending_count: number;
+  }> => {
+    const response = await fetch(`${API_BASE_URL}/post/standalone/pending?username=${encodeURIComponent(username)}`);
+    await handleAuthError(response);
+    if (!response.ok) throw new Error('Failed to get pending standalone posts');
+    return response.json();
+  },
+
+  updateStandalonePost: async (
+    username: string,
+    draftId: string,
+    payload: { text?: string; image_url?: string | null; link_url?: string | null }
+  ): Promise<{ message: string; draft_id: string; item?: unknown }> => {
+    const response = await fetch(`${API_BASE_URL}/post/standalone/${encodeURIComponent(draftId)}?username=${encodeURIComponent(username)}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to update standalone post' }));
+      throw new Error(error.detail || 'Failed to update standalone post');
+    }
+    return response.json();
+  },
+
+  approveStandalonePost: async (
+    username: string,
+    draftId: string
+  ): Promise<{ message: string; draft_id: string; desktop_job_id?: string; status: string; item?: unknown }> => {
+    const response = await fetch(`${API_BASE_URL}/post/standalone/${encodeURIComponent(draftId)}/approve?username=${encodeURIComponent(username)}`, {
+      method: 'POST',
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to approve standalone post' }));
+      throw new Error(error.detail || 'Failed to approve standalone post');
+    }
+    return response.json();
+  },
+
+  removeStandalonePost: async (
+    username: string,
+    draftId: string
+  ): Promise<{ message: string; removed: boolean; item?: unknown }> => {
+    const response = await fetch(`${API_BASE_URL}/post/standalone/${encodeURIComponent(draftId)}?username=${encodeURIComponent(username)}`, {
+      method: 'DELETE',
+    });
+    await handleAuthError(response);
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Failed to remove standalone post' }));
+      throw new Error(error.detail || 'Failed to remove standalone post');
+    }
     return response.json();
   },
 
@@ -522,7 +707,7 @@ export const api = {
     return response.json();
   },
 
-  regenerateSingleReply: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; new_replies: Array<[string, string]> }> => {
+  regenerateSingleReply: async (username: string, tweetId: string): Promise<{ message: string; tweet_id: string; new_replies: Array<[string, string, string?]> }> => {
     const response = await fetch(`${API_BASE_URL}/generate/${encodeURIComponent(username)}/replies/${encodeURIComponent(tweetId)}`, {
       method: 'POST',
       headers: {
@@ -822,7 +1007,7 @@ export const api = {
   regenerateCommentReply: async (username: string, commentId: string): Promise<{
     message: string;
     comment_id: string;
-    new_replies: Array<[string, string]>;
+    new_replies: Array<[string, string, string?]>;
   }> => {
     const response = await fetch(`${API_BASE_URL}/comments/${encodeURIComponent(username)}/generate/${encodeURIComponent(commentId)}`, {
       method: 'POST',

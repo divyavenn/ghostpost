@@ -1,13 +1,21 @@
 "use client"
 
-import { AnimateNumber, AnimateNumberProps } from "motion-plus/react"
-import { mix, motion } from "motion/react"
+import { mix, motion } from "framer-motion"
 import { useEffect, useState } from "react"
 
-const format: AnimateNumberProps["format"] = {
+const format: Intl.NumberFormatOptions = {
     notation: "compact",
     compactDisplay: "short",
-    roundingMode: "trunc",
+}
+
+function AnimateNumber({
+    children,
+    format: numberFormat,
+}: {
+    children: number
+    format?: Intl.NumberFormatOptions
+}) {
+    return <>{new Intl.NumberFormat("en-US", numberFormat).format(children)}</>
 }
 
 export default function EngagementStats() {

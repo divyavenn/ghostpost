@@ -124,7 +124,7 @@ def _start_callback_server(redirect_uri: str, expected_state: str) -> tuple[HTTP
     Spin up a local HTTP server to capture the OAuth redirect.
 
     NOTE: This is ONLY used by the standalone oauth_login() function.
-    In production, auth_routes.py handles callbacks via FastAPI (no separate server needed).
+    The daemon-first server flow does not use this callback server.
     """
     parsed = urlparse(redirect_uri)
     if parsed.scheme != "http":

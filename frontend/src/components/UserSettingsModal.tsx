@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api, type UserSettings, type QueryItem, parseQueryItem } from '../api/client';
+import { api, type UserSettings, type QueryItem, parseQueryItem, type DesktopDevice, type DesktopPlatform } from '../api/client';
 import { AnimatedText } from './WordStyles';
 import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import xLottie from '../assets/x.lottie';
@@ -15,6 +15,7 @@ interface UserSettingsModalProps {
   };
   onLogout: () => void;
   isFirstTimeSetup?: boolean;
+  supabaseAccessToken?: string | null;
 }
 
 interface BubbleProps {
@@ -171,7 +172,7 @@ function QueryBubble({ item, onSave, onRemove }: QueryBubbleProps) {
 }
 
 
-export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogout, isFirstTimeSetup = false }: UserSettingsModalProps) {
+export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogout, isFirstTimeSetup = false, supabaseAccessToken = null }: UserSettingsModalProps) {
   const [settings, setSettings] = useState<UserSettings>({
     queries: [],
     relevant_accounts: {},
@@ -194,13 +195,43 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
   const [minImpressionsInput, setMinImpressionsInput] = useState<string>('2000');
   const [isManualOverride, setIsManualOverride] = useState(false);
   const [generatingQueries, setGeneratingQueries] = useState(false);
+  const [desktopDevices, setDesktopDevices] = useState<DesktopDevice[]>([]);
+  const [desktopPairCode, setDesktopPairCode] = useState<string | null>(null);
+  const [desktopPairExpiresAt, setDesktopPairExpiresAt] = useState<string | null>(null);
+  const [desktopPlatforms, setDesktopPlatforms] = useState<DesktopPlatform[]>(['twitter']);
+  const [desktopLinks, setDesktopLinks] = useState<{
+    macos: string;
+    windows: string;
+    linux: string;
+    docs: string;
+  } | null>(null);
+  const [desktopLoading, setDesktopLoading] = useState(false);
+  const [desktopBusy, setDesktopBusy] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       loadSettings();
+      loadDesktopData();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
+
+  const loadDesktopData = async () => {
+    setDesktopLoading(true);
+    try {
+      const links = await api.getDesktopDownloadLinks();
+      setDesktopLinks(links);
+      if (supabaseAccessToken) {
+        const data = await api.getDesktopDevices(supabaseAccessToken);
+        setDesktopDevices(data.devices || []);
+        setDesktopPlatforms((data.platform_preferences || ['twitter']) as DesktopPlatform[]);
+      }
+    } catch (error) {
+      console.error('Failed to load desktop data:', error);
+    } finally {
+      setDesktopLoading(false);
+    }
+  };
 
   const loadSettings = async () => {
     setLoading(true);
@@ -371,6 +402,67 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
     }
   };
 
+  const handleGeneratePairCode = async () => {
+    if (!supabaseAccessToken) {
+      showError('Please sign in again to pair desktop');
+      return;
+    }
+    setDesktopBusy(true);
+    try {
+      const result = await api.startDesktopPairing(supabaseAccessToken, 10);
+      setDesktopPairCode(result.pair_code);
+      setDesktopPairExpiresAt(result.expires_at);
+    } catch (error) {
+      console.error('Failed to generate pairing code:', error);
+      showError((error as Error).message || 'Failed to generate pairing code');
+    } finally {
+      setDesktopBusy(false);
+    }
+  };
+
+  const handleCopyPairCode = async () => {
+    if (!desktopPairCode) return;
+    try {
+      await navigator.clipboard.writeText(desktopPairCode);
+      showError('Pairing code copied');
+    } catch {
+      showError('Failed to copy code');
+    }
+  };
+
+  const handleToggleDesktopPlatform = async (platform: DesktopPlatform) => {
+    if (!supabaseAccessToken) return;
+    const next = desktopPlatforms.includes(platform)
+      ? desktopPlatforms.filter(p => p !== platform)
+      : [...desktopPlatforms, platform];
+    const normalized = (next.length === 0 ? ['twitter'] : next) as DesktopPlatform[];
+    setDesktopPlatforms(normalized);
+    try {
+      setDesktopBusy(true);
+      await api.updateDesktopPlatformPreferences(supabaseAccessToken, normalized);
+      await loadDesktopData();
+    } catch (error) {
+      console.error('Failed to update desktop platform preferences:', error);
+      showError((error as Error).message || 'Failed to update platform preferences');
+    } finally {
+      setDesktopBusy(false);
+    }
+  };
+
+  const handleRevokeDesktopDevice = async (deviceId: string) => {
+    if (!supabaseAccessToken) return;
+    try {
+      setDesktopBusy(true);
+      await api.revokeDesktopDevice(supabaseAccessToken, deviceId);
+      await loadDesktopData();
+    } catch (error) {
+      console.error('Failed to revoke device:', error);
+      showError((error as Error).message || 'Failed to revoke device');
+    } finally {
+      setDesktopBusy(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
 
@@ -471,6 +563,110 @@ export function UserSettingsModal({ isOpen, onClose, username, userInfo, onLogou
                 </p>
               </div>
             )}
+
+            <div>
+              <SectionTitle text="Desktop Daemon" />
+              <div className="bg-neutral-800/60 rounded-lg p-4 space-y-4">
+                <div className="text-sm text-neutral-300">
+                  Download daemon, open Settings, enter pairing code, and keep it running for scraping/posting execution.
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {desktopLinks && (
+                    <>
+                      <a className="bg-neutral-700 hover:bg-neutral-600 text-white text-xs px-3 py-2 rounded-full" href={desktopLinks.macos} target="_blank" rel="noopener noreferrer">Download macOS</a>
+                      <a className="bg-neutral-700 hover:bg-neutral-600 text-white text-xs px-3 py-2 rounded-full" href={desktopLinks.windows} target="_blank" rel="noopener noreferrer">Download Windows</a>
+                      <a className="bg-neutral-700 hover:bg-neutral-600 text-white text-xs px-3 py-2 rounded-full" href={desktopLinks.linux} target="_blank" rel="noopener noreferrer">Download Linux</a>
+                      <a className="text-sky-400 text-xs px-2 py-2" href={desktopLinks.docs} target="_blank" rel="noopener noreferrer">Setup docs</a>
+                    </>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleGeneratePairCode}
+                    disabled={desktopBusy || !supabaseAccessToken}
+                    className="bg-sky-500 hover:bg-sky-600 disabled:opacity-60 text-white text-xs px-3 py-2 rounded-full"
+                  >
+                    Generate Pairing Code
+                  </button>
+                  {desktopPairCode && (
+                    <>
+                      <code className="px-3 py-1 rounded bg-neutral-900 text-sky-300 text-sm">{desktopPairCode}</code>
+                      <button
+                        onClick={handleCopyPairCode}
+                        className="text-xs text-neutral-300 hover:text-white"
+                      >
+                        Copy
+                      </button>
+                      {desktopPairExpiresAt && (
+                        <span className="text-xs text-neutral-500">
+                          expires {new Date(desktopPairExpiresAt).toLocaleTimeString()}
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                <div>
+                  <div className="text-xs text-neutral-400 mb-2">Platforms</div>
+                  <div className="flex flex-wrap gap-2">
+                    {(['twitter', 'substack', 'linkedin', 'reddit'] as DesktopPlatform[]).map((platform) => (
+                      <button
+                        key={platform}
+                        onClick={() => handleToggleDesktopPlatform(platform)}
+                        disabled={desktopBusy || !supabaseAccessToken}
+                        className={`text-xs px-3 py-1 rounded-full border ${
+                          desktopPlatforms.includes(platform)
+                            ? 'border-sky-400 text-sky-300 bg-sky-900/20'
+                            : 'border-neutral-600 text-neutral-400'
+                        }`}
+                      >
+                        {platform}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-xs text-neutral-400 mb-2">Paired Devices</div>
+                  {desktopLoading ? (
+                    <div className="text-xs text-neutral-500">Loading desktop status...</div>
+                  ) : desktopDevices.length === 0 ? (
+                    <div className="text-xs text-neutral-500">No paired devices yet.</div>
+                  ) : (
+                    <div className="space-y-2">
+                      {desktopDevices.filter(d => !d.revoked).map((device) => (
+                        <div key={device.id} className="bg-neutral-900 rounded-lg p-3 text-xs text-neutral-300">
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-white">{device.device_name}</div>
+                              <div className="text-neutral-500">{device.os} • {device.daemon_version}</div>
+                            </div>
+                            <button
+                              onClick={() => handleRevokeDesktopDevice(device.id)}
+                              className="text-red-300 hover:text-red-200"
+                            >
+                              Revoke
+                            </button>
+                          </div>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {Object.entries(device.accounts || {}).map(([platform, accountState]) => {
+                              const account = accountState as { account?: string | null; status?: string };
+                              return (
+                              <span key={platform} className="px-2 py-1 rounded bg-neutral-800 text-neutral-300">
+                                {platform}: {account.account || account.status || 'unknown'}
+                              </span>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-2 text-neutral-500">Last seen: {new Date(device.last_seen_at).toLocaleString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
             {/* Intent */}
             <div>
               <div className="flex items-center justify-between mb-3">

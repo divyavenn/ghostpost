@@ -41,6 +41,7 @@ from backend.billing.routes import router as billing_router
 from backend.twitter.account_routes import router as account_router
 from backend.desktop.desktop_jobs import router as desktop_router
 from backend.desktop.pairing import router as desktop_pairing_router
+from backend.backend.scraping_routes import router as scraping_router
 
 
 @asynccontextmanager
@@ -91,6 +92,7 @@ app.include_router(billing_router)
 app.include_router(account_router)
 app.include_router(desktop_router)
 app.include_router(desktop_pairing_router)
+app.include_router(scraping_router)
 
 
 @app.get("/health")

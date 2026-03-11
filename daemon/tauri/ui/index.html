@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consumed Settings</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+
+        <!-- Main Page: Toggle Switches -->
+        <div id="page-main" class="page">
+            <h1>Consumed</h1>
+
+            <div class="toggle-list">
+                <div class="toggle-row">
+                    <span class="toggle-label">Substack</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="post-substack">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="toggle-row">
+                    <span class="toggle-label">Twitter</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="post-twitter">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
+                <div class="toggle-row">
+                    <span class="toggle-label">GitHub File</span>
+                    <div class="toggle-right">
+                        <button id="github-settings-btn" class="icon-btn" title="GitHub settings">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.32 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                            </svg>
+                        </button>
+                        <label class="toggle">
+                            <input type="checkbox" id="post-github">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- GitHub settings panel (hidden by default) -->
+                <div id="github-settings" class="settings-panel hidden">
+                    <div class="form-group">
+                        <label for="github-token">GitHub Token</label>
+                        <input type="password" id="github-token" placeholder="ghp_xxxxxxxxxxxx">
+                        <small>Personal access token with repo permissions</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="github-repo">GitHub Repository</label>
+                        <input type="text" id="github-repo" placeholder="username/reading-log">
+                        <small>Repository in owner/repo format</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="diary-path">Diary Path</label>
+                        <input type="text" id="diary-path" value="reading_now.md">
+                        <small>Path to diary file in the repository</small>
+                    </div>
+                    <div class="button-group">
+                        <button id="save-github" class="primary">Save</button>
+                    </div>
+                </div>
+
+                <div class="toggle-row">
+                    <span class="toggle-label">LinkedIn</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="post-linkedin">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <button id="advanced-btn" class="link-btn">Advanced Settings</button>
+        </div>
+
+        <!-- Advanced Settings Page -->
+        <div id="page-advanced" class="page hidden">
+            <div class="page-header">
+                <button id="back-btn" class="icon-btn" title="Back">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="15 18 9 12 15 6"/>
+                    </svg>
+                </button>
+                <h1>Advanced</h1>
+            </div>
+
+            <div class="form-group">
+                <label for="port">Server Port</label>
+                <input type="number" id="port" min="1024" max="65535" value="9876">
+                <small>Port for the local API server (default: 9876)</small>
+            </div>
+
+            <div class="form-group">
+                <label>Cookies Storage Path</label>
+                <code id="cookies-path">~/.consumed/browser_state.json</code>
+                <small>Where browser cookies are stored for Playwright</small>
+            </div>
+
+            <div class="form-group">
+                <label for="ghostpost-api-base-url">Ghostpost API URL</label>
+                <input type="text" id="ghostpost-api-base-url" placeholder="http://localhost:8000">
+                <small>Remote backend URL used for pairing and account sync</small>
+            </div>
+
+            <div class="settings-panel">
+                <div class="form-group">
+                    <label for="pair-code">Pairing Code</label>
+                    <input type="text" id="pair-code" placeholder="AB12CD">
+                    <small>Generate this code in Ghostpost web settings, then click Pair Device.</small>
+                </div>
+                <div class="button-group">
+                    <button id="pair-device-btn" class="primary">Pair Device</button>
+                    <button id="refresh-remote-btn" class="secondary">Refresh Accounts</button>
+                </div>
+                <div id="paired-user" class="mt-2 text-xs muted"></div>
+                <div id="linked-accounts" class="mt-2 text-xs"></div>
+            </div>
+
+            <div class="button-group">
+                <button id="save-advanced" class="primary">Save</button>
+            </div>
+        </div>
+
+        <div id="status" class="status hidden"></div>
+    </div>
+
+    <script src="main.js"></script>
+</body>
+</html>

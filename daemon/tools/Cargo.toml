@@ -1,0 +1,35 @@
+[package]
+name = "consumed-core"
+version.workspace = true
+edition.workspace = true
+description = "Core library for consumed - URL metadata extraction and diary management"
+
+[dependencies]
+# Error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Date/Time
+chrono.workspace = true
+
+# HTTP & Web
+reqwest.workspace = true
+scraper = "0.19"
+webpage = "2.0"
+
+# HTML & URL
+url.workspace = true
+html-escape = "0.2"
+
+# Regex
+regex.workspace = true
+
+# Base64 encoding for GitHub API
+base64.workspace = true
+
+# Environment variables
+dotenvy.workspace = true

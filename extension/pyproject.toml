@@ -1,0 +1,35 @@
+[project]
+name = "markdownload"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.114.2",
+    "pydantic>=2.11.0",
+    "requests>=2.32.5",
+    "uvicorn>=0.30.5",
+    "dotenv>=0.9.9",
+    "playwright>=1.55.0",
+    "torch>=2.8.0",
+    "trafilatura>=1.6.0",
+    "marker-pdf>=1.10.1",
+    "yt-dlp>=2025.10.14",
+    "ffmpeg>=1.4",
+    "python-dotenv>=1.0.1",
+    "webvtt-py>=0.4.6",
+    "pypdf2>=3.0.1",
+    "python-multipart>=0.0.20",
+    "faster-whisper>=1.2.0",
+    "modal>=1.1.4",
+    "beautifulsoup4>=4.14.2",
+    "av>=12.0.0,<14",
+    "tiktoken>=0.12.0",
+    "pyannote-audio>=4.0.1",
+    "soundfile>=0.13.0",
+    "anthropic>=0.46.0",
+    "jellyfish>=1.2.1",
+    "scikit-learn>=1.7.2",
+    "omegaconf>=2.3.0",
+]
+

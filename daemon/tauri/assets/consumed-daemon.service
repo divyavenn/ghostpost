@@ -1,0 +1,13 @@
+[Unit]
+Description=Consumed Daemon - Cookie receiver and content logger
+After=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/consumed-daemon
+Restart=on-failure
+RestartSec=5
+Environment=DISPLAY=:0
+
+[Install]
+WantedBy=default.target

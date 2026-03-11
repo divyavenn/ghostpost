@@ -1,0 +1,21 @@
+[package]
+name = "consumed-cli"
+version.workspace = true
+edition.workspace = true
+description = "CLI for consumed - track consumed content in a markdown diary"
+
+[[bin]]
+name = "consumed"
+path = "src/main.rs"
+
+[dependencies]
+consumed-core = { path = "../tools" }
+
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
+# Date/Time
+chrono.workspace = true
+
+# Environment variables
+dotenvy.workspace = true

@@ -1,0 +1,30 @@
+[workspace]
+resolver = "2"
+members = [
+    "tools",
+    "cli",
+    "tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+# Shared dependencies across workspace
+anyhow = "1.0"
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.11", features = ["blocking", "json"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+axum = "0.7"
+tower-http = { version = "0.5", features = ["cors"] }
+url = "2.5"
+regex = "1.10"
+base64 = "0.22"
+dotenvy = "0.15"
+directories = "5.0"
+dirs = "5.0"
+toml = "0.8"

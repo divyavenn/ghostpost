@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Caveat:wght@400..700&display=swap');
+    </style>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Markdown.load</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <canvas id="rain-effect" aria-hidden="true"></canvas>
+    <main class="container" id="main-view">
+      <div class="control-row">
+        <label for="filename" class="sr-only">File name</label>
+        <button id="extract-metadata" class="icon-button" title="Extract metadata" aria-label="Extract page metadata">
+          <img src="icons/bookmark.svg" alt="" aria-hidden="true" />
+        </button>
+        <input id="filename" type="text" autocomplete="off" class="input" />
+        <button id="queue" class="icon-button" title="Add current page" aria-label="Add current page">
+          <img src="icons/queue_download.svg" alt="" aria-hidden="true" />
+        </button>
+      </div>
+      <input id="notes" type="text" autocomplete="off" class="notes-input" placeholder="Ready when you are :)" />
+      <div id="timestamp-row" class="timestamp-row" style="display: none;">
+        <input id="start-time" type="text" autocomplete="off" class="timestamp-input" placeholder="start (e.g. 1:30)" />
+        <span class="timestamp-sep">→</span>
+        <input id="end-time" type="text" autocomplete="off" class="timestamp-input" placeholder="end (e.g. 5:00)" />
+      </div>
+      <p id="status" class="status-small" role="status"></p>
+      <div class="lists-container">
+        <ul id="queue-list" class="queue-list"></ul>
+        <ul id="ready-list" class="ready-list"></ul>
+      </div>
+      <button id="download-all" class="download-all-button" style="display: none;">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" aria-hidden="true">
+          <path d="M320 64C178.6 64 64 178.6 64 320C64 461.4 178.6 576 320 576C461.4 576 576 461.4 576 320C576 178.6 461.4 64 320 64zM308.7 451.3L204.7 347.3C200.1 342.7 198.8 335.8 201.2 329.9C203.6 324 209.5 320 216 320L272 320L272 224C272 206.3 286.3 192 304 192L336 192C353.7 192 368 206.3 368 224L368 320L424 320C430.5 320 436.3 323.9 438.8 329.9C441.3 335.9 439.9 342.8 435.3 347.3L331.3 451.3C325.1 457.5 314.9 457.5 308.7 451.3z" />
+        </svg>
+        <span>Download All</span>
+      </button>
+      <div class="bottom-row">
+        <button id="settings-button" class="icon-button settings-icon" title="Settings" aria-label="Settings">
+          <img src="icons/settings.svg" alt="" aria-hidden="true" />
+        </button>
+      </div>
+    </main>
+    <main class="container" id="settings-view" style="display: none;">
+      <div class="settings-header-row">
+        <h2 class="settings-title">Settings</h2>
+        <button id="back-button" class="icon-button settings-icon" title="Back" aria-label="Back to main view">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" aria-hidden="true">
+            <path d="M183.1 137.4C170.6 124.9 150.3 124.9 137.8 137.4C125.3 149.9 125.3 170.2 137.8 182.7L275.2 320L137.9 457.4C125.4 469.9 125.4 490.2 137.9 502.7C150.4 515.2 170.7 515.2 183.2 502.7L320.5 365.3L457.9 502.6C470.4 515.1 490.7 515.1 503.2 502.6C515.7 490.1 515.7 469.8 503.2 457.3L365.8 320L503.1 182.6C515.6 170.1 515.6 149.8 503.1 137.3C490.6 124.8 470.3 124.8 457.8 137.3L320.5 274.7L183.1 137.4z"/>
+          </svg>
+        </button>
+      </div>
+      <div class="settings-content">
+        <div class="setting-item">
+          <label for="openai-key" class="setting-label">OpenAI API Key</label>
+          <div class="input-with-clear">
+            <input id="openai-key" type="password" autocomplete="off" class="input setting-input" placeholder="sk-..."/>
+            <button id="clear-openai-key" class="clear-button" title="Clear API key" aria-label="Clear API key">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640">
+                <path d="M183.1 137.4C170.6 124.9 150.3 124.9 137.8 137.4C125.3 149.9 125.3 170.2 137.8 182.7L275.2 320L137.9 457.4C125.4 469.9 125.4 490.2 137.9 502.7C150.4 515.2 170.7 515.2 183.2 502.7L320.5 365.3L457.9 502.6C470.4 515.1 490.7 515.1 503.2 502.6C515.7 490.1 515.7 469.8 503.2 457.3L365.8 320L503.1 182.6C515.6 170.1 515.6 149.8 503.1 137.3C490.6 124.8 470.3 124.8 457.8 137.3L320.5 274.7L183.1 137.4z"/>
+              </svg>
+            </button>
+          </div>
+          <p class="setting-description">Optional: Used for enhanced PDF conversion</p>
+        </div>
+        <div class="setting-item">
+          <label for="claude-key" class="setting-label">Claude API Key</label>
+          <div class="input-with-clear">
+            <input id="claude-key" type="password" autocomplete="off" class="input setting-input" placeholder="sk-ant-..."/>
+            <button id="clear-claude-key" class="clear-button" title="Clear API key" aria-label="Clear API key">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640">
+                <path d="M183.1 137.4C170.6 124.9 150.3 124.9 137.8 137.4C125.3 149.9 125.3 170.2 137.8 182.7L275.2 320L137.9 457.4C125.4 469.9 125.4 490.2 137.9 502.7C150.4 515.2 170.7 515.2 183.2 502.7L320.5 365.3L457.9 502.6C470.4 515.1 490.7 515.1 503.2 502.6C515.7 490.1 515.7 469.8 503.2 457.3L365.8 320L503.1 182.6C515.6 170.1 515.6 149.8 503.1 137.3C490.6 124.8 470.3 124.8 457.8 137.3L320.5 274.7L183.1 137.4z"/>
+              </svg>
+            </button>
+          </div>
+          <p class="setting-description">Optional: Used for AI browser agent (Substack posting)</p>
+        </div>
+        <div class="setting-item">
+          <label class="setting-label">Video Settings</label>
+          <div class="video-settings-row">
+            <label class="checkbox-label"><input type="checkbox" id="video-download-checkbox" /> Video</label>
+            <label class="checkbox-label"><input type="checkbox" id="audio-download-checkbox" /> Audio</label>
+            <label class="checkbox-label"><input type="checkbox" id="transcript-download-checkbox" checked /> Transcript</label>
+          </div>
+          <p class="setting-description">What to download for video content (YouTube)</p>
+        </div>
+        <div class="setting-item">
+          <label class="setting-label">Browser State</label>
+          <div class="browser-state-row">
+            <button id="send-state" class="icon-button" title="Send browser cookies to local API" aria-label="Send browser state">
+              <img src="icons/download_cookies.svg" alt="" aria-hidden="true" />
+            </button>
+            <span class="setting-description">Send cookies for current page to local API</span>
+          </div>
+        </div>
+        <p id="settings-status" class="settings-status"></p>
+        <button id="save-settings" class="save-button">save</button>
+      </div>
+    </main>
+    <script src="animation.js"></script>
+    <script src="jszip.min.js"></script>
+    <script src="popup.js" type="module"></script>
+  </body>
+</html>

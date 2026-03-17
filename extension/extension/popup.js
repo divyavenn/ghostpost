@@ -61,6 +61,16 @@ function capturePageHtml(tabId) {
   });
 }
 
+function formatDuration(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) {
+    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
 function slugify(text) {
   return (text || '')
     .toLowerCase()
@@ -549,9 +559,26 @@ async function initialise() {
     bookmarkButton.title = 'Local daemon not running';
   }
 
-  // Show timestamp row only for video content types
+  // Show timestamp row and populate defaults from the page's video element
   if (activeContentType.isVideo) {
     timestampRow.style.display = 'flex';
+    startTimeInput.value = '0:00';
+    endTimeInput.value = '0:00';
+    try {
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: activeTab.id },
+        func: () => {
+          const video = document.querySelector('video');
+          return video ? video.duration : null;
+        },
+      });
+      const duration = results?.[0]?.result;
+      if (duration && isFinite(duration) && duration > 0) {
+        endTimeInput.value = formatDuration(duration);
+      }
+    } catch (e) {
+      // Leave defaults if we can't inject (e.g. restricted page)
+    }
   }
 
   queueDisabled = false;

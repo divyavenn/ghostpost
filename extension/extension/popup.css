@@ -536,31 +536,30 @@ svg {
 .timestamp-row {
   display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  gap: 10px;
 }
 
 .timestamp-input {
-  flex: 1;
+  background: transparent;
   border: none;
-  border-radius: 10px;
-  padding: 7px 10px;
-  font-size: 0.78rem;
-  background: #ff9a1f84;
   color: white;
-}
-
-.timestamp-input::placeholder {
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 2rem;
+  font-weight: 700;
+  text-align: center;
+  width: 5ch;
+  padding: 0 2px;
+  font-family: inherit;
 }
 
 .timestamp-input:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(255, 154, 48, 0.2);
 }
 
 .timestamp-sep {
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.6);
+  font-size: 1.6rem;
+  font-weight: 300;
+  color: rgba(255, 255, 255, 0.55);
   flex-shrink: 0;
 }
 

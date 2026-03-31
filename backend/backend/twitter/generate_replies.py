@@ -1,4 +1,6 @@
 import asyncio
+import json
+import math
 import os
 from typing import Any
 
@@ -6,7 +8,7 @@ from dotenv import load_dotenv
 from fastapi import APIRouter
 from pydantic import BaseModel, ValidationError
 
-from backend.config import DIVYA_API_KEY
+from backend.config import CLAUDE_API_KEY
 from backend.data.twitter.data_validation import ScrapedTweet
 
 from ..browser_automation.twitter.timeline import USERNAME
@@ -66,9 +68,9 @@ async def build_reply_examples_context(username: str, tweet_thread: str | list[s
         same_account_replies = get_replies_to_account(username, target_account, min(5, limit))
 
         if same_account_replies:
-            account_context = build_examples_from_posts(same_account_replies, title=f"Past replies to @{target_account}")
+            account_context = build_examples_from_posts(same_account_replies, post_type="reply")
             if account_context:
-                context_parts.append(account_context)
+                context_parts.append("\n\n".join(account_context))
                 notify(f"✅ Found {len(same_account_replies)} past replies to @{target_account}")
 
     # Part 2: Topic-based examples (RAG semantic search)
@@ -170,51 +172,22 @@ async def build_reply_examples_context(username: str, tweet_thread: str | list[s
     return context
 
 
-async def ask_model(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", target_handle: str | None = None, prompt_variant: str = "toned_down", username: str = "unknown") -> dict:
-    """Generate a tweet reply using the unified LLM caller with Claude fallback."""
-    from backend.utlils.llm import ask_llm, ask_claude
+async def ask_model(prompt: str, image_urls: list[str] = None, model: str | None = None, target_handle: str | None = None, prompt_variant: str = "toned_down", username: str = "unknown") -> dict:
+    """Generate a tweet reply using the centralized LLM router."""
+    from backend.utlils.llm import ask_llm
 
     # Build system prompt personalized with target handle using specified variant
     prompt_builder = get_prompt_builder(prompt_variant)
     system_prompt = prompt_builder(target_handle)
 
-    # If no model specified, use Claude directly (user has no model configured)
-    if not model or model == "":
-        notify(f"ℹ️ No model configured, using Claude")
-        return await ask_claude(
-            system_prompt=system_prompt,
-            user_prompt=prompt,
-            model="claude-opus-4-5-20251101",
-            image_urls=image_urls,
-            username=username,
-            prompt_type="TWEET REPLY"
-        )
-
-    # Try DIVYA model (OpenAI fine-tuned) first
-    response = await ask_llm(
+    return await ask_llm(
         system_prompt=system_prompt,
         user_prompt=prompt,
-        model=model,
+        model=model or "claude-sonnet-4-20250514",
         image_urls=image_urls,
         username=username,
         prompt_type="TWEET REPLY"
     )
-
-    # If DIVYA model failed, fallback to Claude
-    if "error" in response:
-        notify(f"⚠️ DIVYA model failed, falling back to Claude: {response.get('error')}")
-        response = await ask_claude(
-            system_prompt=system_prompt,
-            user_prompt=prompt,
-            model="claude-opus-4-5-20251101",
-            image_urls=image_urls,
-            username=username,
-            prompt_type="TWEET REPLY"
-        )
-        if "message" in response:
-            notify(f"✅ Claude fallback successful")
-
-    return response
 
 
 def build_prompt(tweet: dict[str, Any] | ScrapedTweet) -> tuple[str, list[str], bool, str | None] | None:
@@ -461,11 +434,9 @@ async def generate_replies_for_tweet(
 
 async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     from backend.data.twitter.edit_cache import purge_empty_thread_tweets, read_from_cache, write_to_cache
-    from backend.config import GEMINI_API_KEY
 
-    # Check if at least one API key is configured
-    if not DIVYA_API_KEY and not GEMINI_API_KEY:
-        error("❌ Neither DIVYA_API_KEY nor GEMINI_API_KEY environment variable is set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
+    if not CLAUDE_API_KEY:
+        error("CLAUDE_API_KEY environment variable is not set", status_code=500, function_name="generate_replies_endpoint", username=username, critical=True)
 
     # Purge tweets with empty thread content from cache and seen_tweets
     # so they can be re-scraped with proper thread data
@@ -476,7 +447,7 @@ async def generate_replies(username=USERNAME, delay_seconds=1, overwrite=False):
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
 
-    # Get models array - if not configured, use None to trigger Gemini
+    # Get models array - if not configured, use the default Claude model
     models = user_info["models"] if "models" in user_info and user_info["models"] else [None]
     number_of_generations = user_info["number_of_generations"] if "number_of_generations" in user_info else 1
 
@@ -570,6 +541,567 @@ class GeneratePostRequest(BaseModel):
     url: str | None = None
     contentType: str = "pdf"  # pdf, article, video, podcast, book, etc.
     textSample: str | None = None  # optional sample text from the resource
+    notes: str | None = None
+    scrapedContent: str | None = None
+    imageUrl: str | None = None
+
+
+class RecommendationResourceRequest(BaseModel):
+    title: str
+    author: str | None = None
+    publish_date: str | None = None
+    url: str | None = None
+    content_type: str = "pdf"
+    text_sample: str | None = None
+    notes: str | None = None
+    scraped_content: str | None = None
+    image_url: str | None = None
+
+
+def _trim_text(value: str | None, limit: int) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    return cleaned[:limit]
+
+
+def _build_recommendation_search_query(payload: RecommendationResourceRequest) -> str:
+    search_parts = [payload.title]
+    if payload.author:
+        search_parts.append(f"by {payload.author}")
+    if payload.notes:
+        search_parts.append(payload.notes[:300])
+    if payload.text_sample:
+        search_parts.append(payload.text_sample[:600])
+    elif payload.scraped_content:
+        search_parts.append(payload.scraped_content[:600])
+    return " ".join(part for part in search_parts if part)
+
+
+def _build_recommendation_memory_content(
+    post_text: str,
+    resource_title: str | None = None,
+    resource_author: str | None = None,
+    resource_url: str | None = None,
+    resource_content_type: str | None = None,
+    resource_text_sample: str | None = None,
+    resource_notes: str | None = None,
+) -> str:
+    lines = ["[PAST RECOMMENDATION EXAMPLE]"]
+
+    if resource_title:
+        lines.append(f"Title: {resource_title}")
+    if resource_author:
+        lines.append(f"Author: {resource_author}")
+    if resource_content_type:
+        lines.append(f"Type: {resource_content_type}")
+    if resource_url:
+        lines.append(f"URL: {resource_url}")
+    if resource_notes:
+        lines.append(f"Notes: {_trim_text(resource_notes, 400)}")
+    if resource_text_sample:
+        lines.append(f"Excerpt: {_trim_text(resource_text_sample, 1200)}")
+
+    lines.append(f"Approved post: {post_text.strip()}")
+    return "\n".join(line for line in lines if line)
+
+
+def _build_resource_info(payload: RecommendationResourceRequest) -> str:
+    resource_info = f"Title: {payload.title}"
+    if payload.author:
+        resource_info += f"\nAuthor: {payload.author}"
+    if payload.publish_date:
+        resource_info += f"\nPublished: {payload.publish_date}"
+    if payload.url:
+        resource_info += f"\nURL: {payload.url}"
+    resource_info += f"\nType: {payload.content_type}"
+    return resource_info
+
+
+def _cosine_similarity(left: list[float], right: list[float]) -> float:
+    if not left or not right or len(left) != len(right):
+        return 0.0
+
+    dot_product = sum(a * b for a, b in zip(left, right))
+    left_norm = math.sqrt(sum(a * a for a in left))
+    right_norm = math.sqrt(sum(b * b for b in right))
+    if left_norm == 0 or right_norm == 0:
+        return 0.0
+    return dot_product / (left_norm * right_norm)
+
+
+def _normalize_embedding(raw_embedding: Any) -> list[float] | None:
+    if isinstance(raw_embedding, str):
+        stripped = raw_embedding.strip()
+        if not stripped:
+            return None
+        try:
+            raw_embedding = json.loads(stripped)
+        except json.JSONDecodeError:
+            if stripped.startswith("[") and stripped.endswith("]"):
+                try:
+                    raw_embedding = [
+                        float(part.strip())
+                        for part in stripped[1:-1].split(",")
+                        if part.strip()
+                    ]
+                except ValueError:
+                    return None
+            else:
+                return None
+
+    if not isinstance(raw_embedding, list) or not raw_embedding:
+        return None
+
+    normalized: list[float] = []
+    for value in raw_embedding:
+        try:
+            normalized.append(float(value))
+        except (TypeError, ValueError):
+            return None
+    return normalized
+
+
+def _resolve_generation_user_id(username: str, function_name: str) -> str:
+    from backend.utlils.supabase_client import get_twitter_profile
+
+    profile = get_twitter_profile(username)
+    if not profile:
+        error(
+            f"Twitter profile not found for {username}",
+            status_code=404,
+            function_name=function_name,
+            username=username,
+            critical=True,
+        )
+        return ""
+
+    user_id = profile.get("user_id")
+    if not user_id:
+        error(
+            f"No user_id found for profile {username}",
+            status_code=500,
+            function_name=function_name,
+            username=username,
+            critical=True,
+        )
+        return ""
+
+    return user_id
+
+
+async def _backfill_standalone_post_memories(username: str, user_id: str) -> int:
+    from backend.rag.embeddings import generate_embeddings_batch
+    from backend.utlils.supabase_client import add_memory, get_db
+
+    user_info = read_user_info(username) or {}
+    post_queue = user_info.get("post_queue", []) or []
+
+    completed_items = [
+        item for item in post_queue
+        if item.get("type") == "standalone_post"
+        and item.get("status") == "completed"
+        and item.get("draft_id")
+        and str(item.get("reply") or "").strip()
+    ]
+    if not completed_items:
+        return 0
+
+    draft_ids = [str(item.get("draft_id")) for item in completed_items]
+    db = get_db()
+    existing = (
+        db.table("memories")
+        .select("source_id")
+        .eq("user_id", user_id)
+        .eq("source_type", "standalone_post")
+        .in_("source_id", draft_ids)
+        .execute()
+    )
+    existing_ids = {row.get("source_id") for row in (existing.data or [])}
+
+    missing_items = [
+        item for item in completed_items
+        if str(item.get("draft_id")) not in existing_ids
+    ]
+    if not missing_items:
+        return 0
+
+    memory_contents = [
+        _build_recommendation_memory_content(
+            post_text=str(item.get("reply") or ""),
+            resource_title=item.get("resource_title"),
+            resource_author=item.get("resource_author"),
+            resource_url=item.get("resource_url") or item.get("standalone_link_url"),
+            resource_content_type=item.get("resource_content_type"),
+            resource_text_sample=item.get("resource_text_sample"),
+            resource_notes=item.get("resource_notes"),
+        )
+        for item in missing_items
+    ]
+
+    try:
+        embeddings = await generate_embeddings_batch(memory_contents, batch_size=100, username=username)
+    except Exception as e:
+        error(
+            f"Failed to backfill standalone post memories: {e}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="_backfill_standalone_post_memories",
+            username=username,
+            critical=False,
+        )
+        return 0
+
+    created = 0
+    for item, content, embedding in zip(missing_items, memory_contents, embeddings):
+        try:
+            add_memory(
+                user_id=user_id,
+                content=content,
+                embedding=embedding,
+                source_type="standalone_post",
+                source_id=str(item.get("draft_id")),
+                visibility="private",
+            )
+            created += 1
+        except Exception as e:
+            error(
+                f"Failed to insert standalone post memory for {item.get('draft_id')}: {e}",
+                status_code=500,
+                exception_text=str(e),
+                function_name="_backfill_standalone_post_memories",
+                username=username,
+                critical=False,
+            )
+
+    if created:
+        notify(f"📝 Backfilled {created} standalone recommendation example(s) for @{username}")
+
+    return created
+
+
+async def _retrieve_recommendation_examples(
+    user_id: str,
+    query_embedding: list[float],
+    limit: int = 4,
+) -> list[dict[str, Any]]:
+    from backend.utlils.supabase_client import get_db
+
+    db = get_db()
+    response = (
+        db.table("memories")
+        .select("memory_id, source_id, source_type, content, embedding, created_at")
+        .eq("user_id", user_id)
+        .eq("source_type", "standalone_post")
+        .limit(200)
+        .execute()
+    )
+
+    ranked_examples: list[dict[str, Any]] = []
+    for row in response.data or []:
+        embedding = _normalize_embedding(row.get("embedding"))
+        if not embedding:
+            continue
+
+        similarity = _cosine_similarity(query_embedding, embedding)
+        ranked_examples.append({
+            "memory_id": row.get("memory_id"),
+            "source_id": row.get("source_id"),
+            "source_type": row.get("source_type"),
+            "content": row.get("content", ""),
+            "created_at": row.get("created_at"),
+            "similarity": similarity,
+        })
+
+    ranked_examples.sort(key=lambda row: row.get("similarity", 0), reverse=True)
+    return ranked_examples[:limit]
+
+
+def _format_recommendation_examples(examples: list[dict[str, Any]]) -> str:
+    if not examples:
+        return ""
+
+    context = "========== TOPIC-RELEVANT EXAMPLES OF YOUR PAST RECOMMENDATION POSTS ==========\n"
+    context += "Use these as examples of voice and framing. Do not copy them directly.\n\n"
+
+    for i, example in enumerate(examples, 1):
+        similarity = example.get("similarity", 0.0)
+        context += f"Example {i} (similarity: {similarity:.2f})\n"
+        context += f"{example.get('content', '').strip()}\n\n"
+
+    context += "========== END RECOMMENDATION EXAMPLES ==========\n"
+    return context
+
+
+async def _build_recommendation_context(
+    username: str,
+    user_id: str,
+    query_embedding: list[float],
+    search_query: str,
+) -> dict[str, Any]:
+    from backend.rag.retrieval import (
+        cluster_by_topic,
+        format_feedback_as_constraints,
+        format_memories_as_citations,
+        rerank_feedback,
+        rerank_memories,
+    )
+    from backend.utlils.supabase_client import search_feedback_vector, search_memories_vector
+
+    recommendation_examples: list[dict[str, Any]] = []
+    try:
+        await _backfill_standalone_post_memories(username, user_id)
+        recommendation_examples = await _retrieve_recommendation_examples(user_id, query_embedding, limit=4)
+    except Exception as e:
+        error(
+            f"Failed to retrieve recommendation examples: {e}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="_build_recommendation_context",
+            username=username,
+            critical=False,
+        )
+
+    memories: list[dict[str, Any]] = []
+    try:
+        memories = search_memories_vector(
+            user_id=user_id,
+            embedding=query_embedding,
+            limit=30,
+            visibility_filter="private",
+        )
+        memories = [mem for mem in memories if mem.get("source_type") != "standalone_post"]
+        if memories:
+            memories = await rerank_memories(memories, search_query, 8, username)
+            memories = cluster_by_topic(memories)
+    except Exception as e:
+        error(
+            f"Failed to retrieve memory context for recommendation post: {e}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="_build_recommendation_context",
+            username=username,
+            critical=False,
+        )
+        memories = []
+
+    feedback_entries: list[dict[str, Any]] = []
+    try:
+        feedback_entries = search_feedback_vector(
+            user_id=user_id,
+            embedding=query_embedding,
+            limit=10,
+        )
+        if feedback_entries:
+            feedback_entries = await rerank_feedback(feedback_entries, search_query, 5, username)
+    except Exception as e:
+        error(
+            f"Failed to retrieve feedback context for recommendation post: {e}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="_build_recommendation_context",
+            username=username,
+            critical=False,
+        )
+        feedback_entries = []
+
+    context_parts: list[str] = []
+    if recommendation_examples:
+        context_parts.append(_format_recommendation_examples(recommendation_examples))
+    if memories:
+        context_parts.append(format_memories_as_citations(memories))
+    if feedback_entries:
+        context_parts.append(format_feedback_as_constraints(feedback_entries))
+
+    return {
+        "context_string": "\n\n".join(part for part in context_parts if part),
+        "memory_count": len(memories),
+        "feedback_count": len(feedback_entries),
+        "recommendation_examples_count": len(recommendation_examples),
+    }
+
+
+async def generate_recommendation_post(
+    username: str,
+    payload: RecommendationResourceRequest,
+) -> dict[str, Any]:
+    from backend.rag.embeddings import generate_embedding
+    from backend.utlils.llm import ask_claude
+
+    user_id = _resolve_generation_user_id(username, "generate_recommendation_post")
+
+    search_query = _build_recommendation_search_query(payload)
+    notify(f"🔢 Generating embedding for resource: {payload.title}")
+    embedding = await generate_embedding(search_query, username=username)
+
+    notify("🔍 Building recommendation context from examples, memories, and feedback")
+    rag_context = await _build_recommendation_context(username, user_id, embedding, search_query)
+
+    resource_info = _build_resource_info(payload)
+
+    excerpt_section = ""
+    excerpt = _trim_text(payload.text_sample, 1200)
+    if excerpt:
+        excerpt_section = f"\n\nExcerpt from the resource:\n\"\"\"\n{excerpt}\n\"\"\""
+
+    scraped_section = ""
+    scraped_content = _trim_text(payload.scraped_content, 2000)
+    if scraped_content:
+        scraped_section = f"\n\nScraped content and notes from the resource:\n\"\"\"\n{scraped_content}\n\"\"\""
+
+    notes_section = ""
+    notes = _trim_text(payload.notes, 500)
+    if notes:
+        notes_section = f"\n\nWhat stood out to you:\n{notes}"
+
+    context_section = ""
+    if rag_context["context_string"]:
+        context_section = f"\n\n{rag_context['context_string']}"
+
+    system_prompt = """You are helping write a short, authentic social media post recommending a resource (article, book, PDF, video, podcast, etc.).
+
+Use the user's past recommendation examples, memories, and feedback to match their taste and voice.
+
+The post should:
+- Be concise (1-3 sentences, under 280 characters if possible)
+- Feel personal and specific, not like a generic review
+- Mention why YOU specifically found it valuable, clarifying, beautiful, surprising, or useful
+- Avoid generic phrases like "must-read", "game-changer", or "highly recommend"
+- Sound like something you'd casually share with smart friends
+- Prefer concrete reactions over summary
+
+If notes are provided, treat them as strong signals about what mattered to the user.
+Do not mention examples, memories, or feedback explicitly."""
+
+    user_prompt = f"""Write a short recommendation post for this resource:
+
+{resource_info}{notes_section}{excerpt_section}{scraped_section}{context_section}
+
+Write the post now (just the post text, no quotes or preamble):"""
+
+    notify(f"🤖 Generating recommendation post for: {payload.title}")
+    response = await ask_claude(
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        model="claude-sonnet-4-20250514",
+        username=username,
+        prompt_type="GENERATE_POST",
+    )
+
+    if "error" in response:
+        error(
+            f"Failed to generate post: {response.get('error')}",
+            status_code=500,
+            function_name="generate_recommendation_post",
+            username=username,
+            critical=True,
+        )
+        return {"error": response.get("error")}
+
+    post_text = response.get("message", "").strip()
+    if not post_text:
+        error(
+            f"Model returned an empty recommendation post for {payload.title}",
+            status_code=500,
+            function_name="generate_recommendation_post",
+            username=username,
+            critical=True,
+        )
+        return {"error": "Empty recommendation post"}
+
+    notify(f"✅ Generated post: {post_text[:100]}...")
+
+    return {
+        "post": post_text,
+        "memories_used": rag_context["memory_count"],
+        "feedback_used": rag_context["feedback_count"],
+        "recommendation_examples_used": rag_context["recommendation_examples_count"],
+        "resource_title": payload.title,
+    }
+
+
+async def queue_generated_recommendation_draft(
+    username: str,
+    payload: RecommendationResourceRequest,
+) -> dict[str, Any]:
+    from backend.twitter.posting import AddStandalonePostRequest, queue_standalone_post
+
+    generated = await generate_recommendation_post(username, payload)
+    queue_payload = AddStandalonePostRequest(
+        text=generated["post"],
+        image_url=payload.image_url,
+        link_url=payload.url,
+        resource_url=payload.url,
+        resource_title=payload.title,
+        resource_author=payload.author,
+        resource_content_type=payload.content_type,
+        resource_text_sample=_trim_text(payload.text_sample or payload.scraped_content, 1200),
+        resource_notes=_trim_text(payload.notes, 400),
+    )
+    result = await queue_standalone_post(queue_payload, username=username)
+    result["generated_post"] = generated["post"]
+    result["memories_used"] = generated["memories_used"]
+    result["feedback_used"] = generated["feedback_used"]
+    result["recommendation_examples_used"] = generated["recommendation_examples_used"]
+    return result
+
+
+async def index_completed_standalone_post_memory(username: str, item: dict[str, Any]) -> bool:
+    from backend.rag.embeddings import generate_embedding
+    from backend.utlils.supabase_client import add_memory, get_db
+
+    draft_id = str(item.get("draft_id") or "").strip()
+    post_text = str(item.get("reply") or "").strip()
+    if not draft_id or not post_text:
+        return False
+
+    user_id = _resolve_generation_user_id(username, "index_completed_standalone_post_memory")
+    db = get_db()
+    existing = (
+        db.table("memories")
+        .select("memory_id")
+        .eq("user_id", user_id)
+        .eq("source_type", "standalone_post")
+        .eq("source_id", draft_id)
+        .execute()
+    )
+    if existing.data:
+        return False
+
+    content = _build_recommendation_memory_content(
+        post_text=post_text,
+        resource_title=item.get("resource_title"),
+        resource_author=item.get("resource_author"),
+        resource_url=item.get("resource_url") or item.get("standalone_link_url"),
+        resource_content_type=item.get("resource_content_type"),
+        resource_text_sample=item.get("resource_text_sample"),
+        resource_notes=item.get("resource_notes"),
+    )
+
+    try:
+        embedding = await generate_embedding(content, username=username)
+        add_memory(
+            user_id=user_id,
+            content=content,
+            embedding=embedding,
+            source_type="standalone_post",
+            source_id=draft_id,
+            visibility="private",
+        )
+        notify(f"📝 Indexed completed standalone recommendation draft {draft_id}")
+        return True
+    except Exception as e:
+        error(
+            f"Failed to index completed standalone post {draft_id}: {e}",
+            status_code=500,
+            exception_text=str(e),
+            function_name="index_completed_standalone_post_memory",
+            username=username,
+            critical=False,
+        )
+        return False
 
 
 @router.post("/{username}/replies")
@@ -593,16 +1125,14 @@ async def generate_replies_endpoint(username: str, payload: GenerateRepliesReque
 async def regenerate_single_reply_endpoint(username: str, tweet_id: str) -> dict:
     """Regenerate AI reply for a single tweet."""
     from backend.data.twitter.edit_cache import read_from_cache, write_to_cache
-    from backend.config import GEMINI_API_KEY
 
-    # Check if at least one API key is configured
-    if not DIVYA_API_KEY and not GEMINI_API_KEY:
-        error("Neither DIVYA nor Gemini API key configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
+    if not CLAUDE_API_KEY:
+        error("CLAUDE_API_KEY not configured", status_code=500, function_name="regenerate_single_reply_endpoint", username=username, critical=True)
 
     # Read tweets from cache
     tweets = await read_from_cache(username=username)
     user_info = read_user_info(username)
-    # If models not configured, use None to trigger Gemini
+    # If models not configured, use the default Claude model
     models = user_info["models"] if "models" in user_info and user_info["models"] else [None]
     number_of_generations = user_info["number_of_generations"] if "number_of_generations" in user_info else 1
 
@@ -650,125 +1180,18 @@ async def generate_post_endpoint(username: str, payload: GeneratePostRequest) ->
     Uses the user's memories (past tweets, notes, preferences) to write a personalized
     blurb about why they liked/recommend the resource.
     """
-    from backend.rag.embeddings import generate_embedding
-    from backend.utlils.supabase_client import get_twitter_profile, search_memories_vector
-    from backend.utlils.llm import ask_claude
-
-    # Get user_id from username
-    profile = get_twitter_profile(username)
-    if not profile:
-        error(
-            f"Twitter profile not found for {username}",
-            status_code=404,
-            function_name="generate_post_endpoint",
-            username=username,
-            critical=True
-        )
-        return {"error": "Profile not found"}
-
-    user_id = profile.get("user_id")
-    if not user_id:
-        error(
-            f"No user_id found for profile {username}",
-            status_code=500,
-            function_name="generate_post_endpoint",
-            username=username,
-            critical=True
-        )
-        return {"error": "User ID not found"}
-
-    # Build search query from resource metadata
-    search_parts = [payload.title]
-    if payload.author:
-        search_parts.append(f"by {payload.author}")
-    if payload.textSample:
-        # Use a portion of the text sample for semantic search
-        search_parts.append(payload.textSample[:500])
-
-    search_query = " ".join(search_parts)
-
-    # Generate embedding for the resource
-    notify(f"🔢 Generating embedding for resource: {payload.title}")
-    embedding = await generate_embedding(search_query, username=username)
-
-    # Search memories for relevant context
-    notify(f"🔍 Searching memories for relevant context")
-    memories = search_memories_vector(
-        user_id=user_id,
-        embedding=embedding,
-        limit=10,
-        visibility_filter="private"
+    normalized_payload = RecommendationResourceRequest(
+        title=payload.title,
+        author=payload.author,
+        publish_date=payload.publishDate,
+        url=payload.url,
+        content_type=payload.contentType,
+        text_sample=payload.textSample,
+        notes=payload.notes,
+        scraped_content=payload.scrapedContent,
+        image_url=payload.imageUrl,
     )
-
-    # Build context from memories
-    memory_context = ""
-    if memories:
-        memory_context = "\n\nHere are some of your past thoughts and writings that may be relevant:\n"
-        for i, mem in enumerate(memories, 1):
-            content = mem.get("content", "")[:300]
-            source_type = mem.get("source_type", "unknown")
-            memory_context += f"\n[{source_type}] {content}\n"
-
-    # Build the LLM prompt
-    resource_info = f"Title: {payload.title}"
-    if payload.author:
-        resource_info += f"\nAuthor: {payload.author}"
-    if payload.publishDate:
-        resource_info += f"\nPublished: {payload.publishDate}"
-    if payload.url:
-        resource_info += f"\nURL: {payload.url}"
-    resource_info += f"\nType: {payload.contentType}"
-
-    text_sample_section = ""
-    if payload.textSample:
-        text_sample_section = f"\n\nExcerpt from the resource:\n\"\"\"\n{payload.textSample[:1000]}\n\"\"\""
-
-    system_prompt = """You are helping write a short, authentic social media post recommending a resource (article, book, PDF, video, etc.).
-
-Write in the user's voice based on their past writings provided as context. The post should:
-- Be concise (1-3 sentences, under 280 characters if possible)
-- Feel personal and authentic, not like a generic review
-- Mention why YOU specifically found it valuable or interesting
-- Avoid generic phrases like "must-read" or "game-changer"
-- Sound like something you'd casually share with friends
-
-If the context shows the user has related interests or past thoughts on similar topics, weave that connection in naturally."""
-
-    user_prompt = f"""Write a short recommendation post for this resource:
-
-{resource_info}{text_sample_section}{memory_context}
-
-Write the post now (just the post text, no quotes or preamble):"""
-
-    # Generate the post
-    notify(f"🤖 Generating recommendation post for: {payload.title}")
-    response = await ask_claude(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        model="claude-sonnet-4-20250514",
-        username=username,
-        prompt_type="GENERATE_POST"
-    )
-
-    if "error" in response:
-        error(
-            f"Failed to generate post: {response.get('error')}",
-            status_code=500,
-            function_name="generate_post_endpoint",
-            username=username,
-            critical=True
-        )
-        return {"error": response.get("error")}
-
-    post_text = response.get("message", "").strip()
-
-    notify(f"✅ Generated post: {post_text[:100]}...")
-
-    return {
-        "post": post_text,
-        "memories_used": len(memories),
-        "resource_title": payload.title
-    }
+    return await generate_recommendation_post(username, normalized_payload)
 
 
 if __name__ == "__main__":

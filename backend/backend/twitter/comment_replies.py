@@ -9,7 +9,7 @@ import asyncio
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 
-from backend.config import DIVYA_API_KEY
+from backend.config import CLAUDE_API_KEY
 from backend.utlils.utils import error, notify, read_user_info
 
 # Prompt variants for comment replies - can add more for A/B testing
@@ -250,50 +250,21 @@ def build_comment_prompt(comment: dict, thread_context: list[dict], user_handle:
     return text_prompt, image_urls
 
 
-async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str = "nakul-1", commenter_handle: str | None = None, prompt_variant: str = "default", username: str = "unknown") -> dict:
-    """Generate a comment reply using the unified LLM caller with Claude fallback."""
-    from backend.utlils.llm import ask_llm, ask_claude
+async def ask_model_for_comment(prompt: str, image_urls: list[str] = None, model: str | None = None, commenter_handle: str | None = None, prompt_variant: str = "default", username: str = "unknown") -> dict:
+    """Generate a comment reply using the centralized LLM router."""
+    from backend.utlils.llm import ask_llm
 
     # Build system prompt personalized with commenter handle
     system_prompt = build_comment_reply_system_prompt(commenter_handle)
 
-    # If no model specified, use Claude directly (user has no model configured)
-    if not model or model == "":
-        notify(f"ℹ️ No model configured, using Claude")
-        return await ask_claude(
-            system_prompt=system_prompt,
-            user_prompt=prompt,
-            model="claude-opus-4-5-20251101",
-            image_urls=image_urls,
-            username=username,
-            prompt_type="COMMENT REPLY"
-        )
-
-    # Try DIVYA model (OpenAI fine-tuned) first
-    response = await ask_llm(
+    return await ask_llm(
         system_prompt=system_prompt,
         user_prompt=prompt,
-        model=model,
+        model=model or "claude-sonnet-4-20250514",
         image_urls=image_urls,
         username=username,
         prompt_type="COMMENT REPLY"
     )
-
-    # If DIVYA model failed, fallback to Claude
-    if "error" in response:
-        notify(f"⚠️ DIVYA model failed, falling back to Claude: {response.get('error')}")
-        response = await ask_claude(
-            system_prompt=system_prompt,
-            user_prompt=prompt,
-            model="claude-opus-4-5-20251101",
-            image_urls=image_urls,
-            username=username,
-            prompt_type="COMMENT REPLY"
-        )
-        if "message" in response:
-            notify(f"✅ Claude fallback successful")
-
-    return response
 
 
 async def generate_replies_for_comment(
@@ -399,15 +370,13 @@ async def generate_comment_replies(
         get_thread_context,
         update_comment_generated_replies,
     )
-    from backend.config import GEMINI_API_KEY
 
-    # Check if at least one API key is configured
-    if not DIVYA_API_KEY and not GEMINI_API_KEY:
-        error("Neither DIVYA_API_KEY nor GEMINI_API_KEY configured", status_code=500, function_name="generate_comment_replies", username=username, critical=True)
-        raise ValueError("Neither DIVYA_API_KEY nor GEMINI_API_KEY configured")
+    if not CLAUDE_API_KEY:
+        error("CLAUDE_API_KEY not configured", status_code=500, function_name="generate_comment_replies", username=username, critical=True)
+        raise ValueError("CLAUDE_API_KEY not configured")
 
     user_info = read_user_info(username)
-    # If models not configured, use None to trigger Gemini
+    # If models not configured, use the default Claude model
     models = user_info.get("models", [None]) if user_info and user_info.get("models") else [None]
     # Always generate only 1 reply for comments (UI only shows one option)
     num_generations = 1
@@ -596,11 +565,9 @@ async def regenerate_single_comment_reply_endpoint(
         get_thread_context,
         update_comment_generated_replies,
     )
-    from backend.config import GEMINI_API_KEY
 
-    # Check if at least one API key is configured
-    if not DIVYA_API_KEY and not GEMINI_API_KEY:
-        error("Neither DIVYA_API_KEY nor GEMINI_API_KEY configured", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
+    if not CLAUDE_API_KEY:
+        error("CLAUDE_API_KEY not configured", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
 
     comment = get_comment(username, comment_id)
     if not comment:
@@ -611,7 +578,7 @@ async def regenerate_single_comment_reply_endpoint(
         error(f"No thread context for comment {comment_id}", status_code=500, function_name="regenerate_single_comment_reply_endpoint", username=username, critical=True)
 
     user_info = read_user_info(username)
-    # If models not configured, use None to trigger Gemini
+    # If models not configured, use the default Claude model
     models = user_info.get("models", [None]) if user_info and user_info.get("models") else [None]
     # Always generate only 1 reply for comments (UI only shows one option)
     num_generations = 1

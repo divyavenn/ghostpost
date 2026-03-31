@@ -119,6 +119,7 @@ fn main() {
     // Create shared config state
     let config_state = Arc::new(ConfigState::new());
     let config_for_server = Arc::clone(&config_state);
+    let config_for_remote_jobs = Arc::clone(&config_state);
 
     // Create shutdown channel for server
     let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
@@ -147,6 +148,10 @@ fn main() {
                     error!("Server error: {}", e);
                     app_handle.exit(1);
                 }
+            });
+
+            tauri::async_runtime::spawn(async move {
+                remote::remote_job_loop(config_for_remote_jobs).await;
             });
 
             // Hide the main window by default (runs in tray)

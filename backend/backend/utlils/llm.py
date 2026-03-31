@@ -8,7 +8,7 @@ All LLM calls should go through ask_llm() to ensure consistent:
 - Message formatting (proper system/user roles)
 """
 
-from backend.config import CLAUDE_API_KEY, OBELISK_KEY, DIVYA_API_KEY, DIVYA_MODEL_NAME
+from backend.config import CLAUDE_API_KEY, MODEL_NAME, OPENAI_API_KEY
 from backend.utlils.utils import DEBUG_LOGS, error, notify
 
 
@@ -259,18 +259,18 @@ async def ask_claude(
 async def ask_llm(
     system_prompt: str,
     user_prompt: str,
-    model: str = "chatgpt-4o",
+    model: str | None = None,
     image_urls: list[str] | None = None,
     username: str = "unknown",
     prompt_type: str = "LLM"
 ) -> dict:
     """
-    Call OpenAI API with DIVYA fine-tuned model.
+    Universal LLM router for Claude, OpenAI, and Gemini models.
 
     Args:
         system_prompt: System instructions
         user_prompt: User message content
-        model: Model name (defaults to "chatgpt-4o", but uses DIVYA_MODEL_NAME from .env)
+        model: Optional model name. Falls back to MODEL_NAME from .env.
         image_urls: Optional list of image URLs to include
         username: Username for logging/rate limiting
         prompt_type: Type of prompt for logging
@@ -279,19 +279,37 @@ async def ask_llm(
         dict with either {"message": str} or {"error": str}
     """
 
+    actual_model = MODEL_NAME or model or "claude-sonnet-4-20250514"
+
+    if actual_model.startswith("claude-"):
+        return await ask_claude(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model=actual_model,
+            image_urls=image_urls,
+            username=username,
+            prompt_type=prompt_type,
+        )
+
+    if actual_model.startswith("gemini-"):
+        return await ask_gemini(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            model=actual_model,
+            image_urls=image_urls,
+            username=username,
+            prompt_type=prompt_type,
+        )
+
     from backend.twitter.rate_limiter import LLM_OBELISK, call_api
 
-    if not DIVYA_API_KEY:
-        error("DIVYA_API_KEY not configured", status_code=500, function_name="ask_llm", username=username, critical=False)
-        return {"error": "DIVYA_API_KEY not configured"}
-
-    # Use DIVYA_MODEL_NAME from .env instead of the model parameter
-    actual_model = DIVYA_MODEL_NAME or model
+    if not OPENAI_API_KEY:
+        error("OPENAI_API_KEY not configured", status_code=500, function_name="ask_llm", username=username, critical=False)
+        return {"error": "OPENAI_API_KEY not configured"}
 
     url = "https://api.openai.com/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {DIVYA_API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}", "Content-Type": "application/json"}
 
-    # Build user message content (with optional images)
     if image_urls and len(image_urls) > 0:
         user_content = [{"type": "text", "text": user_prompt}]
         for img_url in image_urls:
@@ -307,7 +325,6 @@ async def ask_llm(
         ]
     }
 
-    # Use rate limiter with retry
     response = await call_api(
         method="POST",
         url=url,
@@ -329,7 +346,6 @@ async def ask_llm(
 
     data = response.data
 
-    # Extract message content
     try:
         if not data:
             error(

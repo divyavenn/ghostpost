@@ -116,6 +116,12 @@ class AddStandalonePostRequest(BaseModel):
     text: str
     image_url: str | None = None
     link_url: str | None = None
+    resource_url: str | None = None
+    resource_title: str | None = None
+    resource_author: str | None = None
+    resource_content_type: str | None = None
+    resource_text_sample: str | None = None
+    resource_notes: str | None = None
 
 
 class UpdateStandalonePostRequest(BaseModel):
@@ -698,6 +704,12 @@ async def queue_standalone_post(payload: AddStandalonePostRequest, username: str
         "reply": text,
         "standalone_image_url": payload.image_url,
         "standalone_link_url": payload.link_url,
+        "resource_url": payload.resource_url,
+        "resource_title": payload.resource_title,
+        "resource_author": payload.resource_author,
+        "resource_content_type": payload.resource_content_type,
+        "resource_text_sample": payload.resource_text_sample,
+        "resource_notes": payload.resource_notes,
         "status": "awaiting_approval",
         "queued_at": now_iso,
         "updated_at": now_iso,

@@ -686,7 +686,7 @@ sendStateButton.addEventListener('click', async () => {
   }
 });
 
-// Bookmark button handler - sends URL to local endpoint
+// Ghostpost button handler - sends URL to daemon so it can create a Ghostpost draft
 bookmarkButton.addEventListener('click', async () => {
   if (!activeTab || !activeTab.url) {
     setStatus('No active tab');
@@ -694,7 +694,7 @@ bookmarkButton.addEventListener('click', async () => {
   }
 
   bookmarkButton.disabled = true;
-  setStatus('Bookmarking...');
+  setStatus('Sending to Ghostpost...');
 
   try {
     // Get highlighted text from the active tab
@@ -721,9 +721,9 @@ bookmarkButton.addEventListener('click', async () => {
     if (response.success) {
       notesInput.value = '';
     }
-    setStatus(response.success ? 'Bookmarked!' : 'Failed to bookmark');
+    setStatus(response.success ? 'Sent to Ghostpost' : 'Failed to send to Ghostpost');
   } catch (error) {
-    setStatus(error.message || 'Bookmark failed');
+    setStatus(error.message || 'Ghostpost draft failed');
   } finally {
     bookmarkButton.disabled = false;
   }

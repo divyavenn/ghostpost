@@ -20,8 +20,9 @@ from pydantic import BaseModel, Field
 
 from backend.config import CACHE_DIR
 from backend.auth.supabase_routes import verify_supabase_token
+from backend.twitter.generate_replies import RecommendationResourceRequest, queue_generated_recommendation_draft
 from backend.utlils.supabase_client import get_twitter_profiles_for_user, get_user_by_id, update_user
-from backend.utlils.utils import notify
+from backend.utlils.utils import atomic_file_update, error, notify
 
 router = APIRouter(prefix="/desktop", tags=["desktop-pairing"])
 
@@ -57,12 +58,7 @@ def _load_state() -> dict[str, Any]:
 
 
 def _save_state(state: dict[str, Any]) -> None:
-    import json
-
-    PAIRING_STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    tmp = PAIRING_STATE_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(state, indent=2))
-    tmp.replace(PAIRING_STATE_FILE)
+    atomic_file_update(PAIRING_STATE_FILE, state)
 
 
 def _normalize_platforms(platforms: list[str] | None) -> list[str]:
@@ -407,3 +403,39 @@ async def sync_accounts(payload: AccountsSyncRequest, x_daemon_token: str = Head
         "device_id": device["id"],
         "accounts": device["accounts"],
     }
+
+
+@router.post("/standalone-drafts")
+async def create_standalone_draft_for_daemon(
+    payload: RecommendationResourceRequest,
+    x_daemon_token: str = Header(...),
+) -> dict[str, Any]:
+    """Generate and queue a standalone Ghostpost draft for the daemon's paired account."""
+    resolved = resolve_daemon_token(x_daemon_token)
+    user_id = resolved.get("user_id")
+    if not user_id:
+        error(
+            "Daemon user not found while creating standalone draft",
+            status_code=401,
+            function_name="create_standalone_draft_for_daemon",
+            user_id=user_id,
+            critical=False,
+        )
+        raise HTTPException(status_code=401, detail="Daemon user not found")
+
+    profiles = get_twitter_profiles_for_user(user_id)
+    if not profiles:
+        error(
+            f"No linked X profile for daemon user {user_id}",
+            status_code=403,
+            function_name="create_standalone_draft_for_daemon",
+            user_id=user_id,
+            critical=False,
+        )
+        raise HTTPException(status_code=403, detail="No linked X profile for paired daemon user")
+
+    username = profiles[0]["handle"]
+    result = await queue_generated_recommendation_draft(username=username, payload=payload)
+    result["username"] = username
+    result["user_id"] = user_id
+    return result

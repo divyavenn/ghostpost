@@ -86,8 +86,8 @@ USE_BROWSERBASE_FOR_SCRAPING = False
 OBELISK_KEY = os.getenv("OBELISK_KEY")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY")
-DIVYA_API_KEY = os.getenv("DIVYA_API_KEY")
-DIVYA_MODEL_NAME = os.getenv("DIVYA_MODEL_NAME")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+MODEL_NAME = os.getenv("MODEL_NAME")
 
 # =============================================================================
 # SUPABASE CONFIGURATION

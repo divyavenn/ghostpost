@@ -81,6 +81,24 @@ pub struct BookmarkResponse {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct GhostpostDraftRequest {
+    pub url: String,
+    #[serde(default)]
+    pub excerpt: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GhostpostDraftResponse {
+    pub success: bool,
+    pub draft_id: Option<String>,
+    pub status: Option<String>,
+    pub username: Option<String>,
+    pub error: Option<String>,
+}
+
 /// Request for confirming Substack post
 #[derive(Debug, Deserialize)]
 pub struct ConfirmSubstackPostRequest {
@@ -364,6 +382,91 @@ async fn bookmark_handler(
         })
         .into_response(),
     )
+}
+
+async fn ghostpost_standalone_draft_handler(
+    State(state): State<Arc<ServerState>>,
+    Json(req): Json<GhostpostDraftRequest>,
+) -> impl IntoResponse {
+    let url = req.url.clone();
+
+    let entry = match tokio::task::spawn_blocking({
+        let url = url.clone();
+        move || consumed_core::metadata::extract(&url)
+    })
+    .await
+    {
+        Ok(Ok(entry)) => entry,
+        Ok(Err(e)) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(GhostpostDraftResponse {
+                    success: false,
+                    draft_id: None,
+                    status: None,
+                    username: None,
+                    error: Some(format!("Failed to extract metadata: {}", e)),
+                })
+                .into_response(),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(GhostpostDraftResponse {
+                    success: false,
+                    draft_id: None,
+                    status: None,
+                    username: None,
+                    error: Some(format!("Metadata task join error: {}", e)),
+                })
+                .into_response(),
+            );
+        }
+    };
+
+    let title = entry.title.clone();
+    let author = entry.author.clone();
+    let content_type = entry.content_type.to_string();
+    let image_url = entry.image_url.clone();
+    let scraped_markdown = scrape_content(&url, &content_type).await;
+
+    match crate::remote::create_standalone_draft(
+        state.config.clone(),
+        url.clone(),
+        title.clone(),
+        author.clone(),
+        content_type.clone(),
+        req.excerpt.clone(),
+        req.notes.clone(),
+        scraped_markdown,
+        image_url.clone(),
+    )
+    .await
+    {
+        Ok(draft) => (
+            StatusCode::OK,
+            Json(GhostpostDraftResponse {
+                success: true,
+                draft_id: draft.draft_id,
+                status: Some(draft.status),
+                username: Some(draft.username),
+                error: None,
+            })
+            .into_response(),
+        ),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(GhostpostDraftResponse {
+                success: false,
+                draft_id: None,
+                status: None,
+                username: None,
+                error: Some(e),
+            })
+            .into_response(),
+        ),
+    }
 }
 
 /// Run the full bookmark pipeline in the background:
@@ -924,17 +1027,13 @@ async fn dispatch_task(
                 );
                 return;
             };
-            let Some(url) = required_payload_string(payload, "url") else {
-                let _ = state.task_queue.update_task_status(
-                    task_id,
-                    TaskStatus::Failed,
-                    None,
-                    Some("Missing url for post_substack task".to_string()),
-                );
-                return;
-            };
+            let url = required_payload_string(payload, "url");
             let image_url = required_payload_string(payload, "image_url");
-            let content_with_url = format!("{}\n\n{}", content, url);
+            let content_with_url = if let Some(ref url) = url {
+                format!("{}\n\n{}", content, url)
+            } else {
+                content.clone()
+            };
             execute_substack_task(state, task_id, &content_with_url, image_url.as_deref()).await;
         }
         TaskType::PostTweet => {
@@ -947,17 +1046,9 @@ async fn dispatch_task(
                 );
                 return;
             };
-            let Some(url) = required_payload_string(payload, "url") else {
-                let _ = state.task_queue.update_task_status(
-                    task_id,
-                    TaskStatus::Failed,
-                    None,
-                    Some("Missing url for post_x task".to_string()),
-                );
-                return;
-            };
+            let url = required_payload_string(payload, "url");
             let image_url = required_payload_string(payload, "image_url");
-            execute_twitter_task(state, task_id, &content, image_url.as_deref(), Some(&url)).await;
+            execute_twitter_task(state, task_id, &content, image_url.as_deref(), url.as_deref()).await;
         }
         TaskType::PostLinkedIn => {
             let Some(content) = required_payload_string(payload, "content") else {
@@ -969,17 +1060,13 @@ async fn dispatch_task(
                 );
                 return;
             };
-            let Some(url) = required_payload_string(payload, "url") else {
-                let _ = state.task_queue.update_task_status(
-                    task_id,
-                    TaskStatus::Failed,
-                    None,
-                    Some("Missing url for post_linkedin task".to_string()),
-                );
-                return;
-            };
+            let url = required_payload_string(payload, "url");
             let image_url = required_payload_string(payload, "image_url");
-            let content_with_url = format!("{}\n\n{}", content, url);
+            let content_with_url = if let Some(ref url) = url {
+                format!("{}\n\n{}", content, url)
+            } else {
+                content.clone()
+            };
             execute_linkedin_task(state, task_id, &content_with_url, image_url.as_deref()).await;
         }
         TaskType::ResearchReddit => match RedditResearchRequest::from_payload(payload) {
@@ -1803,6 +1890,7 @@ pub fn create_router(state: Arc<ServerState>) -> Router {
         .route("/health", get(health))
         .route("/import-cookies", post(import_cookies_handler))
         .route("/bookmark", post(bookmark_handler))
+        .route("/ghostpost/standalone-draft", post(ghostpost_standalone_draft_handler))
         .route("/scrape", post(scrape_handler))
         .route(
             "/confirm-substack-post",

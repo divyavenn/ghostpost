@@ -24,7 +24,7 @@ const DAEMON_HEALTH_URL = `${DAEMON_BASE_URL}/health`;
 const DAEMON_SCRAPE_URL = `${DAEMON_BASE_URL}/scrape`;
 const BROWSER_STATE_URL = `${DAEMON_BASE_URL}/import-cookies`;
 const LOCAL_METADATA_URL = `${DAEMON_BASE_URL}/log`;
-const LOCAL_BOOKMARK_URL = `${DAEMON_BASE_URL}/bookmark`;
+const LOCAL_GHOSTPOST_DRAFT_URL = `${DAEMON_BASE_URL}/ghostpost/standalone-draft`;
 
 let daemonAvailable = false;
 
@@ -412,7 +412,7 @@ async function handleMessage(message) {
     case 'sendBrowserState':
       return sendBrowserState(message.url, message.browserInfo);
     case 'bookmark':
-      return sendBookmark(message.url, message.highlightedText, message.notes);
+      return sendGhostpostDraft(message.url, message.highlightedText, message.notes);
     case 'getDaemonStatus':
       await checkDaemonHealth();
       return { daemonAvailable };
@@ -891,8 +891,8 @@ async function sendBrowserState(tabUrl, browserInfo) {
   }
 }
 
-// Send bookmark to daemon
-async function sendBookmark(url, excerpt = '', notes = '') {
+// Send website context to daemon so it can create a Ghostpost draft
+async function sendGhostpostDraft(url, excerpt = '', notes = '') {
   try {
     const payload = { url };
     if (excerpt) {
@@ -902,7 +902,7 @@ async function sendBookmark(url, excerpt = '', notes = '') {
       payload.notes = notes;
     }
 
-    const response = await fetch(LOCAL_BOOKMARK_URL, {
+    const response = await fetch(LOCAL_GHOSTPOST_DRAFT_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -919,11 +919,10 @@ async function sendBookmark(url, excerpt = '', notes = '') {
 
     return {
       success: true,
-      title: result.title,
-      author: result.author,
+      draftId: result.draft_id,
     };
   } catch (error) {
-    console.warn('[Bookmark] Failed:', error);
+    console.warn('[Ghostpost Draft] Failed:', error);
     return { success: false, error: error.message };
   }
 }

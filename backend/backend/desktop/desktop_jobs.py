@@ -12,8 +12,10 @@ linked to one Ghostpost account handle.
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+import json
 import hashlib
 import secrets
+import threading
 from typing import Any
 
 try:
@@ -26,6 +28,7 @@ import uuid
 from fastapi import APIRouter, Header, HTTPException, Query
 from pydantic import BaseModel
 
+from backend.config import CACHE_DIR
 from backend.desktop.pairing import resolve_daemon_token
 from backend.desktop.task_types import (
     DesktopTaskType,
@@ -39,7 +42,7 @@ from backend.utlils.supabase_client import (
     get_user_by_id,
     update_user,
 )
-from backend.utlils.utils import notify, read_user_info, write_user_info
+from backend.utlils.utils import atomic_file_update, error, notify, read_user_info, write_user_info
 
 router = APIRouter(prefix="/desktop-jobs", tags=["desktop"])
 
@@ -103,8 +106,103 @@ class QueueDesktopTaskRequest(BaseModel):
     params: dict[str, Any] = {}
 
 
-# In-memory queue/auth state (MVP).
-desktop_jobs: dict[str, DesktopJob] = {}
+# Durable job state for the daemon bridge MVP.
+DESKTOP_JOBS_STATE_FILE = CACHE_DIR / "desktop_jobs_state.json"
+_JOBS_STATE_LOCK = threading.Lock()
+
+
+def _serialize_job(job: DesktopJob) -> dict[str, Any]:
+    return {
+        "id": job.id,
+        "username": job.username,
+        "job_type": job.job_type,
+        "params": job.params,
+        "created_at": job.created_at.isoformat(),
+        "status": job.status,
+        "result": job.result,
+        "error": job.error,
+        "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+        "worker_name": job.worker_name,
+    }
+
+
+def _deserialize_job(data: dict[str, Any]) -> DesktopJob | None:
+    try:
+        created_at_raw = str(data.get("created_at") or "")
+        if not created_at_raw:
+            return None
+        completed_at_raw = data.get("completed_at")
+        return DesktopJob(
+            id=str(data.get("id") or ""),
+            username=str(data.get("username") or ""),
+            job_type=str(data.get("job_type") or ""),
+            params=dict(data.get("params") or {}),
+            created_at=datetime.fromisoformat(created_at_raw),
+            status=str(data.get("status") or "pending"),
+            result=data.get("result") if isinstance(data.get("result"), dict) else None,
+            error=data.get("error") if isinstance(data.get("error"), str) else None,
+            completed_at=datetime.fromisoformat(completed_at_raw) if isinstance(completed_at_raw, str) and completed_at_raw else None,
+            worker_name=data.get("worker_name") if isinstance(data.get("worker_name"), str) else None,
+        )
+    except Exception as exc:
+        error(
+            "Failed to deserialize persisted desktop job",
+            status_code=500,
+            exception_text=str(exc),
+            function_name="_deserialize_job",
+            critical=False,
+        )
+        return None
+
+
+def _load_persisted_jobs() -> dict[str, DesktopJob]:
+    if not DESKTOP_JOBS_STATE_FILE.exists():
+        return {}
+
+    try:
+        raw = json.loads(DESKTOP_JOBS_STATE_FILE.read_text())
+    except Exception as exc:
+        error(
+            "Failed to load desktop job state",
+            status_code=500,
+            exception_text=str(exc),
+            function_name="_load_persisted_jobs",
+            critical=False,
+        )
+        return {}
+
+    if not isinstance(raw, dict):
+        return {}
+
+    jobs: dict[str, DesktopJob] = {}
+    for job_data in raw.get("jobs", []):
+        if not isinstance(job_data, dict):
+            continue
+        job = _deserialize_job(job_data)
+        if not job or not job.id:
+            continue
+        jobs[job.id] = job
+    return jobs
+
+
+def _persist_jobs() -> None:
+    with _JOBS_STATE_LOCK:
+        try:
+            atomic_file_update(
+                DESKTOP_JOBS_STATE_FILE,
+                {"jobs": [_serialize_job(job) for job in desktop_jobs.values()]},
+            )
+        except Exception as exc:
+            error(
+                "Failed to persist desktop job state",
+                status_code=500,
+                exception_text=str(exc),
+                function_name="_persist_jobs",
+                critical=False,
+            )
+
+
+desktop_jobs: dict[str, DesktopJob] = _load_persisted_jobs()
 desktop_auth_tokens: dict[str, DesktopToken] = {}
 
 
@@ -130,6 +228,7 @@ def create_desktop_job(username: str, job_type: str, params: dict) -> str:
         status="pending",
     )
     desktop_jobs[job_id] = job
+    _persist_jobs()
     notify(f"📱 Queued desktop job {job_id} ({normalized_task_type}) for @{username}")
     return job_id
 
@@ -312,18 +411,27 @@ def _auth_alert_state_changed(
     return True
 
 
-def _claim_pending_jobs(identity: DesktopIdentity, worker_name: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+def _claim_pending_jobs(
+    identity: DesktopIdentity,
+    worker_name: str | None = None,
+    limit: int = 20,
+    allowed_job_types: set[str] | None = None,
+) -> list[dict[str, Any]]:
     pending: list[dict[str, Any]] = []
     claimed = 0
+    state_changed = False
     username = identity.username
     for job in sorted(desktop_jobs.values(), key=lambda j: j.created_at):
         if job.username != username or job.status != "pending":
+            continue
+        if allowed_job_types and job.job_type not in allowed_job_types:
             continue
         expected_handle = str(job.params.get("expected_twitter_handle") or username)
         try:
             _assert_x_account_match(identity, job.job_type, expected_handle=expected_handle)
             if job.params.get("_auth_block"):
                 job.params.pop("_auth_block", None)
+                state_changed = True
         except HTTPException as exc:
             detail = exc.detail if isinstance(exc.detail, dict) else {}
             code = str(detail.get("code", "ACCOUNT_LOGIN_REQUIRED"))
@@ -337,6 +445,7 @@ def _claim_pending_jobs(identity: DesktopIdentity, worker_name: str | None = Non
                         expected_handle=expected,
                         reported_handle=reported,
                     )
+                    state_changed = True
                 continue
             raise
         pending.append({
@@ -350,6 +459,7 @@ def _claim_pending_jobs(identity: DesktopIdentity, worker_name: str | None = Non
         job.status = "running"
         device_suffix = f" [{identity.device_id}]" if identity.device_id else ""
         job.worker_name = f"{worker_name or 'token-auth'}{device_suffix}"
+        state_changed = True
 
         if job.job_type in {DesktopTaskType.POST_X.value, DesktopTaskType.POST_ALL.value}:
             draft_id = str(job.params.get("draft_id") or "")
@@ -370,6 +480,8 @@ def _claim_pending_jobs(identity: DesktopIdentity, worker_name: str | None = Non
         if claimed >= limit:
             break
 
+    if state_changed:
+        _persist_jobs()
     if pending:
         notify(f"📤 Claimed {len(pending)} desktop job(s) for @{username}")
     return pending
@@ -450,6 +562,7 @@ async def _complete_job_internal(
     job.status = "completed"
     job.result = result
     job.completed_at = datetime.now(UTC)
+    _persist_jobs()
     notify(f"✅ Desktop job {job_id} completed for @{job.username}")
 
     await process_job_result(job)
@@ -495,6 +608,7 @@ async def _start_job_internal(
             details="Desktop execution started",
         )
 
+    _persist_jobs()
     notify(f"▶️ Desktop job {job_id} marked running for @{job.username}")
     return {"status": "running", "job_id": job_id}
 
@@ -519,6 +633,7 @@ async def _fail_job_internal(
     job.status = "failed"
     job.error = error_message
     job.completed_at = datetime.now(UTC)
+    _persist_jobs()
     notify(f"❌ Desktop job {job_id} failed for @{job.username}: {error_message}")
 
     if job.job_type in {DesktopTaskType.POST_X.value, DesktopTaskType.POST_ALL.value}:
@@ -619,9 +734,25 @@ async def queue_desktop_task(payload: QueueDesktopTaskRequest) -> dict[str, Any]
 async def get_pending_jobs_for_token(
     x_desktop_token: str = Header(...),
     limit: int = Query(default=20, ge=1, le=100),
+    supported_job_types: str | None = Query(default=None),
 ) -> list[dict[str, Any]]:
     identity = _resolve_identity(x_desktop_token)
-    return _claim_pending_jobs(identity, worker_name="token-auth", limit=limit)
+    allowed_job_types = None
+    if supported_job_types:
+        try:
+            allowed_job_types = {
+                normalize_task_type(task_type.strip()).value
+                for task_type in supported_job_types.split(",")
+                if task_type.strip()
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _claim_pending_jobs(
+        identity,
+        worker_name="token-auth",
+        limit=limit,
+        allowed_job_types=allowed_job_types,
+    )
 
 
 @router.post("/tasks/{job_id}/complete")
@@ -771,6 +902,7 @@ async def delete_job(job_id: str) -> dict[str, Any]:
     if job_id not in desktop_jobs:
         raise HTTPException(status_code=404, detail="Job not found")
     del desktop_jobs[job_id]
+    _persist_jobs()
     return {"status": "deleted", "job_id": job_id}
 
 
@@ -859,7 +991,23 @@ async def process_job_result(job: DesktopJob):
         draft_id = str(job.params.get("draft_id") or "")
         if not draft_id:
             return
-        _update_post_queue_item_status(job.username, draft_id, "completed", result=job.result or {})
+        item = _update_post_queue_item_status(job.username, draft_id, "completed", result=job.result or {})
+        if not item:
+            return
+
+        try:
+            from backend.twitter.generate_replies import index_completed_standalone_post_memory
+
+            await index_completed_standalone_post_memory(job.username, item)
+        except Exception as e:
+            error(
+                f"Failed to index completed standalone post memory for draft {draft_id}",
+                status_code=500,
+                exception_text=str(e),
+                function_name="process_job_result",
+                username=job.username,
+                critical=False,
+            )
 
 
 def cleanup_old_jobs(max_age_hours: int = 24):
@@ -875,6 +1023,7 @@ def cleanup_old_jobs(max_age_hours: int = 24):
     for job_id in to_delete:
         del desktop_jobs[job_id]
     if to_delete:
+        _persist_jobs()
         notify(f"🧹 Cleaned up {len(to_delete)} old desktop job(s)")
 
     return len(to_delete)
